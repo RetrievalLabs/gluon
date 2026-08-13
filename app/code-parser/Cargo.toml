@@ -1,0 +1,12 @@
+[package]
+name = "code-parser"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+
+[dependencies]
+quick-xml = { version = "0.41.0", features = ["serialize"] }
+regex = "1.13.1"
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1.4"
+walkdir = "2.5.0"
