@@ -29,4 +29,27 @@ Use this skill when an agent needs to run or explain Gluon CLI commands in produ
 
 ## Commands
 
-No stable Gluon CLI commands are documented yet.
+### `code-parser parse-build`
+
+Parses Maven and Gradle project build metadata.
+
+Required input:
+
+- `--path <project-root>`: file or directory to scan.
+
+Flags:
+
+- `--format json`: output JSON. This is the only supported format.
+- `--resolve`: run Maven or Gradle to collect effective dependency and plugin versions.
+
+Outputs:
+
+- Declared Java versions, build tools, plugins, and dependencies from build files.
+- Resolved dependencies and plugins when `--resolve` succeeds.
+- Diagnostics for malformed files, missing tools, wrapper issues, and build resolution failures.
+
+Example:
+
+```bash
+cargo run -- parse-build --path /path/to/project --resolve --format json
+```
