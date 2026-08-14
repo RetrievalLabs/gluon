@@ -64,7 +64,6 @@ Use terse, technical communication by default.
 - Keep user-facing explanations terse, but do not make persisted project files awkward or unclear.
 - Preserve exact behavior and terminology over token savings.
 
-
 ### Example
 
 Verbose:
@@ -76,3 +75,19 @@ Preferred:
 
 > Auth middleware bug. Token expiry not checked before request continues. Add expiry guard.
 
+
+## Parallel Work
+
+- Use multiple agents only for large tasks with independent work; use one agent for small or tightly coupled tasks.
+- Use a read-only Context Agent to research relevant code, architecture, dependencies, patterns, and tests before implementation.
+- Implementation agents use context findings and avoid duplicate research.
+- Give each agent an isolated scope; avoid editing same files.
+- Main agent reviews, integrates, resolves conflicts, and runs final validation.
+
+### Example
+
+- Context Agent: Research relevant context.
+- Agent 1: Implement API changes.
+- Agent 2: Implement parser changes.
+- Agent 3: Add/update tests.
+- Main Agent: Review, integrate, and validate.
