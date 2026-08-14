@@ -16,6 +16,25 @@ A Java modernization platform that migrates applications from Java 9 to Java 25 
 - Preserve existing behavior unless explicitly required otherwise.
 - Update `docs/architecture.md` when architecture changes.
 
+### Comments
+
+- Add clear, concise comments for non-obvious logic.
+- Prefer explaining **why** something is done rather than describing **what** the code does.
+
+Good:
+```rust
+// Keep the original source location because diagnostics are mapped back to
+// the user's code after the transformation is applied.
+let location = source_map.resolve(node.span);
+```
+
+Avoid:
+
+```rust
+// Resolve the source location.
+let location = source_map.resolve(node.span);
+```
+
 
 ## Token-Efficient Communication
 
@@ -44,6 +63,7 @@ Use terse, technical communication by default.
 - Write code, comments, docs, commit messages, and PR text in normal professional prose.
 - Keep user-facing explanations terse, but do not make persisted project files awkward or unclear.
 - Preserve exact behavior and terminology over token savings.
+
 
 ### Example
 
