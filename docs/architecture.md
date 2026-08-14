@@ -1,12 +1,15 @@
 
-## Enviroment setup
+## Environment Setup
 
-- A vm is created with all mvn version and gradle version
-- Git and claude
-- A volume is attached to it to store the important files and data
-- Java 8 and java 25 version
+- A VM is provisioned with the required Maven and Gradle versions.
+- Git and Claude are installed in the VM.
+- A persistent volume is attached for important files and data.
+- Java 8 and Java 25 are available.
 
 ## Parsing
 
-- Rust cli will parse the pom.xml or gradle to get the java version, build tool version, plugins and dependency with version
-
+- The Rust CLI parses `pom.xml` and Gradle build files to detect:
+  - Java version
+  - Build tool version
+  - Plugins and plugin versions
+  - Dependencies and dependency versions
