@@ -6,7 +6,7 @@ A Java modernization platform that migrates applications from Java 9 to Java 25 
 
 ## Repository Structure
 
-- app - contains different services for the platform
+- app - contains different components of the platform
 - docs - contains architecture and planning docs
 
 ## Coding Rules
