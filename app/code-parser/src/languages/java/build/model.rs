@@ -12,6 +12,19 @@ pub struct BuildReport {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+impl BuildReport {
+    pub fn push_java_version(&mut self, version: JavaVersionInfo) {
+        if self
+            .java_versions
+            .iter()
+            .any(|existing| existing.version == version.version)
+        {
+            return;
+        }
+        self.java_versions.push(version);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BuildToolInfo {
     pub tool: String,

@@ -151,12 +151,10 @@ fn parse_effective_pom(stdout: &str, report: &mut BuildReport) {
     let mut effective = BuildReport::default();
     parse_pom_contents(xml, "effective-pom", &mut effective);
 
-    report
-        .java_versions
-        .extend(effective.java_versions.into_iter().map(|mut version| {
-            version.source = "maven help:effective-pom".to_string();
-            version
-        }));
+    for mut version in effective.java_versions {
+        version.source = "maven help:effective-pom".to_string();
+        report.push_java_version(version);
+    }
     report
         .resolved_dependencies
         .extend(

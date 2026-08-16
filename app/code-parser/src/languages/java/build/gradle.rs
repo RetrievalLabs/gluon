@@ -223,7 +223,7 @@ fn parse_java_versions(contents: &str, file: &str, report: &mut BuildReport) {
     for (kind, pattern) in patterns {
         let regex = Regex::new(pattern).expect("valid Java version regex");
         for captures in regex.captures_iter(contents) {
-            report.java_versions.push(JavaVersionInfo {
+            report.push_java_version(JavaVersionInfo {
                 version: captures[1].replace('_', "."),
                 kind: kind.to_string(),
                 file: file.to_string(),

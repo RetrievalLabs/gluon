@@ -52,7 +52,7 @@ pub fn parse_pom_contents(contents: &str, file: &str, report: &mut BuildReport) 
         "java.version",
     ] {
         if let Some(version) = properties.get(key) {
-            report.java_versions.push(JavaVersionInfo {
+            report.push_java_version(JavaVersionInfo {
                 version: resolve_property(version, &properties),
                 kind: key.to_string(),
                 file: file.to_string(),
@@ -113,7 +113,7 @@ fn capture_compiler_configuration(
 ) {
     for key in ["release", "source", "target"] {
         if let Some(version) = capture_tag(plugin_block, key) {
-            report.java_versions.push(JavaVersionInfo {
+            report.push_java_version(JavaVersionInfo {
                 version: resolve_property(&version, properties),
                 kind: format!("maven.compiler.{key}"),
                 file: file.to_string(),
@@ -228,5 +228,24 @@ mod tests {
                 .iter()
                 .any(|version| version.version == "21")
         );
+    }
+
+    #[test]
+    fn keeps_one_entry_for_duplicate_java_versions() {
+        let pom = r#"
+            <project>
+              <properties>
+                <java.version>17</java.version>
+                <maven.compiler.release>17</maven.compiler.release>
+              </properties>
+            </project>
+        "#;
+        let mut report = BuildReport::default();
+
+        parse_pom_contents(pom, "pom.xml", &mut report);
+
+        assert_eq!(report.java_versions.len(), 1);
+        assert_eq!(report.java_versions[0].version, "17");
+        assert_eq!(report.java_versions[0].kind, "maven.compiler.release");
     }
 }
