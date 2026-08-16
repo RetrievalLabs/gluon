@@ -297,7 +297,7 @@ fn plugin_matches(rule: &MatchRule, plugin: &PluginInfo) -> bool {
             .or(rule.artifact_id_pattern.as_deref()),
         &plugin.id,
     );
-    plugin_id_match || string_match(None, rule.artifact_id_pattern.as_deref(), &plugin.id)
+    plugin_id_match
 }
 
 fn build_tool_matches(rule: &MatchRule, tool: &BuildToolInfo) -> bool {
@@ -444,5 +444,23 @@ mod tests {
                 .iter()
                 .any(|item| item.id == "maven-compiler-plugin-java25")
         );
+    }
+
+    #[test]
+    fn plugin_rule_does_not_match_unrelated_plugin() {
+        let report = BuildReport {
+            resolved_plugins: vec![PluginInfo {
+                id: "org.graalvm.buildtools:native-maven-plugin".to_string(),
+                version: Some("0.10.3".to_string()),
+                file: None,
+                source: "maven:resolved".to_string(),
+            }],
+            ..BuildReport::default()
+        };
+        let kb = JavaCompatibilityKnowledgeBase::load_default().unwrap();
+        let (recommendations, unknown) = analyze_plugins(&report, 25, &kb.plugins);
+
+        assert!(recommendations.is_empty());
+        assert_eq!(unknown.len(), 1);
     }
 }
