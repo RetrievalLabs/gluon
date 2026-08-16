@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use tree_sitter::{Node, Parser, TreeCursor};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::languages::java::build::model::Diagnostic;
@@ -69,7 +70,9 @@ fn scan_file(
     findings: &mut Vec<ApiFinding>,
 ) {
     let display_path = relative_path(source_root, file);
-    for (line_index, line) in contents.lines().enumerate() {
+    let candidates = syntax_candidates(contents).unwrap_or_else(|| line_candidates(contents));
+
+    for candidate in candidates {
         for (category, rules) in kb_rules {
             for rule in *rules {
                 if let Some(minimum) = rule.applies_when_target_java_at_least {
@@ -77,13 +80,13 @@ fn scan_file(
                         continue;
                     }
                 }
-                for matched_text in matched_terms(rule, line) {
+                for matched_text in matched_terms(rule, &candidate.values) {
                     findings.push(ApiFinding {
                         rule_id: rule.id.clone(),
                         category: (*category).to_string(),
                         severity: rule.severity.clone(),
                         file: display_path.clone(),
-                        line: line_index + 1,
+                        line: candidate.line,
                         matched_text,
                         guidance: rule.guidance.clone(),
                         source_ids: rule.source_ids.clone(),
@@ -94,57 +97,192 @@ fn scan_file(
     }
 }
 
-fn matched_terms(rule: &ApiRule, line: &str) -> Vec<String> {
-    if rule
-        .except_symbol_prefixes
-        .iter()
-        .any(|prefix| line.contains(prefix))
-    {
+#[derive(Debug)]
+struct SourceCandidate {
+    line: usize,
+    values: Vec<String>,
+}
+
+fn syntax_candidates(contents: &str) -> Option<Vec<SourceCandidate>> {
+    let mut parser = Parser::new();
+    parser
+        .set_language(&tree_sitter_java::LANGUAGE.into())
+        .ok()?;
+    let tree = parser.parse(contents, None)?;
+    let mut candidates = Vec::new();
+    let mut cursor = tree.walk();
+    collect_syntax_candidates(contents, &mut cursor, &mut candidates);
+    Some(candidates)
+}
+
+fn collect_syntax_candidates(
+    contents: &str,
+    cursor: &mut TreeCursor<'_>,
+    candidates: &mut Vec<SourceCandidate>,
+) {
+    let node = cursor.node();
+    collect_node_candidates(contents, node, candidates);
+
+    if cursor.goto_first_child() {
+        loop {
+            collect_syntax_candidates(contents, cursor, candidates);
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+        cursor.goto_parent();
+    }
+}
+
+fn collect_node_candidates(contents: &str, node: Node<'_>, candidates: &mut Vec<SourceCandidate>) {
+    if !node.is_named() || is_ignored_syntax_node(node.kind()) {
+        return;
+    }
+
+    let raw = node.utf8_text(contents.as_bytes()).unwrap_or("");
+    let mut values = match node.kind() {
+        "import_declaration" => import_candidates(raw),
+        "scoped_identifier"
+        | "field_access"
+        | "method_invocation"
+        | "object_creation_expression"
+        | "annotation"
+        | "marker_annotation" => expression_candidates(raw),
+        _ => Vec::new(),
+    };
+
+    if values.is_empty() {
+        return;
+    }
+    values.sort();
+    values.dedup();
+    candidates.push(SourceCandidate {
+        line: node.start_position().row + 1,
+        values,
+    });
+}
+
+fn import_candidates(raw: &str) -> Vec<String> {
+    let imported = raw
+        .trim()
+        .trim_start_matches("import")
+        .trim()
+        .trim_start_matches("static")
+        .trim()
+        .trim_end_matches(';')
+        .trim();
+    expression_candidates(imported)
+}
+
+fn expression_candidates(raw: &str) -> Vec<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+
+    let mut candidates = vec![trimmed.to_string(), compact_whitespace(trimmed)];
+    if let Some(method_name) = method_invocation_name(trimmed) {
+        candidates.push(method_name);
+    }
+    for literal in class_for_name_literals(trimmed) {
+        candidates.push(literal);
+    }
+    candidates
+}
+
+fn method_invocation_name(value: &str) -> Option<String> {
+    let before_args = value.split_once('(')?.0.trim();
+    let method = before_args.rsplit('.').next()?.trim();
+    if method.is_empty() {
+        return None;
+    }
+    let args = value.split_once('(')?.1.rsplit_once(')')?.0;
+    Some(format!("{}({})", method, compact_whitespace(args)))
+}
+
+fn class_for_name_literals(value: &str) -> Vec<String> {
+    let compact = compact_whitespace(value);
+    let Some(arguments) = compact.strip_prefix("Class.forName(") else {
+        return Vec::new();
+    };
+    let Some(literal) = arguments.strip_prefix('"') else {
+        return Vec::new();
+    };
+    let Some((class_name, _)) = literal.split_once('"') else {
+        return Vec::new();
+    };
+    vec![
+        class_name.to_string(),
+        format!("Class.forName(\"{class_name}"),
+    ]
+}
+
+fn line_candidates(contents: &str) -> Vec<SourceCandidate> {
+    contents
+        .lines()
+        .enumerate()
+        .map(|(index, line)| SourceCandidate {
+            line: index + 1,
+            values: vec![line.to_string(), compact_whitespace(line)],
+        })
+        .collect()
+}
+
+fn compact_whitespace(value: &str) -> String {
+    value.split_whitespace().collect()
+}
+
+fn is_ignored_syntax_node(kind: &str) -> bool {
+    matches!(
+        kind,
+        "comment" | "line_comment" | "block_comment" | "string_literal" | "character_literal"
+    )
+}
+
+fn matched_terms(rule: &ApiRule, candidates: &[String]) -> Vec<String> {
+    if rule.except_symbol_prefixes.iter().any(|prefix| {
+        candidates
+            .iter()
+            .any(|candidate| candidate.contains(prefix))
+    }) {
         return Vec::new();
     }
 
     let mut terms = Vec::new();
     for symbol in &rule.symbols {
-        if line.contains(symbol)
-            || line.contains(&call_form(symbol))
-            || line.contains(&constructor_form(symbol))
+        if candidates
+            .iter()
+            .any(|candidate| candidate == symbol || candidate.starts_with(&format!("{symbol}.")))
         {
             terms.push(symbol.clone());
         }
     }
     for prefix in &rule.symbol_prefixes {
-        if line.contains(prefix) {
+        if candidates.iter().any(|candidate| {
+            candidate.starts_with(prefix) || candidate.contains(&format!(".{prefix}"))
+        }) {
             terms.push(prefix.clone());
         }
     }
     for pattern in &rule.patterns {
-        if line.contains(pattern) {
+        if candidates
+            .iter()
+            .any(|candidate| candidate.contains(pattern))
+        {
             terms.push(pattern.clone());
         }
     }
     for pattern in &rule.symbol_patterns {
-        if wildcard_match(pattern, line) {
+        if candidates
+            .iter()
+            .any(|candidate| wildcard_match(pattern, candidate))
+        {
             terms.push(pattern.clone());
         }
     }
+    terms.sort();
+    terms.dedup();
     terms
-}
-
-fn call_form(symbol: &str) -> String {
-    symbol
-        .trim_end_matches("()")
-        .rsplit('.')
-        .next()
-        .unwrap_or(symbol)
-        .to_string()
-}
-
-fn constructor_form(symbol: &str) -> String {
-    symbol
-        .rsplit('.')
-        .next()
-        .unwrap_or(symbol)
-        .replace("<init>", "new")
 }
 
 fn wildcard_match(pattern: &str, line: &str) -> bool {
@@ -223,6 +361,63 @@ mod tests {
             findings
                 .iter()
                 .any(|finding| finding.matched_text == "setAccessible(true)")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ignores_comments_and_non_reflective_strings() {
+        let root = test_dir("source-scan-comments");
+        fs::create_dir_all(root.join("src/main/java/demo")).unwrap();
+        fs::write(
+            root.join("src/main/java/demo/Demo.java"),
+            r#"
+            package demo;
+            class Demo {
+              // import javax.xml.bind.JAXBContext;
+              String text = "sun.misc.BASE64Encoder";
+            }
+            "#,
+        )
+        .unwrap();
+        let kb = JavaCompatibilityKnowledgeBase::load_default().unwrap();
+        let (findings, diagnostics) = scan_java_sources(
+            &root,
+            25,
+            &[
+                ("removed_api", &kb.removed_apis),
+                ("internal_api", &kb.internal_apis),
+            ],
+        );
+
+        assert!(diagnostics.is_empty());
+        assert!(findings.is_empty());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn detects_reflective_class_for_name_literal() {
+        let root = test_dir("source-scan-reflection");
+        fs::create_dir_all(root.join("src/main/java/demo")).unwrap();
+        fs::write(
+            root.join("src/main/java/demo/Demo.java"),
+            r#"
+            package demo;
+            class Demo {
+              Class<?> type = Class.forName("sun.misc.Unsafe");
+            }
+            "#,
+        )
+        .unwrap();
+        let kb = JavaCompatibilityKnowledgeBase::load_default().unwrap();
+        let (findings, diagnostics) =
+            scan_java_sources(&root, 25, &[("reflective_access", &kb.reflective_access)]);
+
+        assert!(diagnostics.is_empty());
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.matched_text == "Class.forName(\"sun.")
         );
         let _ = fs::remove_dir_all(root);
     }

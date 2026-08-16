@@ -27,5 +27,5 @@
 - Dependency compatibility coverage is curated and inventory-driven; unmatched dependencies are treated as requiring official-source verification before automated upgrades.
 - `code-parser analyze-report` consumes a resolved `build-report.json`, loads Java compatibility KB files, and produces a separate `compatibility-report.json` with dependency, plugin, API, source-change, unknown-inventory, and diagnostic sections.
 - Compatibility analysis prefers resolved dependencies and plugins when present, falls back to declared inventory, and includes declared source metadata when available.
-- Java source analysis is lightweight text scanning over `.java` files. It ignores build output and VCS directories and reports findings only; it does not edit source files.
+- Java source analysis parses `.java` files with tree-sitter and matches syntax candidates against compatibility rules. It ignores build output and VCS directories and reports findings only; it does not edit source files.
 - Compatibility recommendations are advisory. Automated source or build-file rewrites happen in later migration steps after report review and test-backed planning.
