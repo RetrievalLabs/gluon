@@ -6,6 +6,13 @@ A Rust-based CLI tool for parsing Java build metadata.
 
 - `src/languages/<language>/` - language-specific parsers and orchestration.
 - `src/languages/java/build/` - Java build metadata parsing and resolution.
+- `src/languages/java/build/model.rs` - shared build report data model.
+- `src/languages/java/build/maven.rs` - static Maven `pom.xml` parsing.
+- `src/languages/java/build/gradle.rs` - static Gradle build, wrapper, and version catalog parsing.
+- `src/languages/java/build/resolver/` - optional Maven and Gradle command-based resolution.
+- `src/languages/java/build/resolver/runner.rs` - command execution, executable checks, and command diagnostics.
+- `src/languages/java/build/resolver/maven.rs` - Maven resolution commands and output parsing.
+- `src/languages/java/build/resolver/gradle.rs` - Gradle resolution commands and output parsing.
 
 ## Rules
 
@@ -14,6 +21,7 @@ A Rust-based CLI tool for parsing Java build metadata.
 - Add focused unit tests for parser behavior, fixture-based Maven and Gradle tests, and CLI tests for arguments, exit codes, stdout, and stderr.
 - Add a regression test for each parser bug fix.
 - Keep tests deterministic and offline.
+- Update this file's Structure section whenever code-parser directories or module responsibilities change.
 - Update `../../skills/gluon-cli/SKILL.md` whenever new CLI commands are added so production agents know how to use them.
 
 ## Rust Documentation
