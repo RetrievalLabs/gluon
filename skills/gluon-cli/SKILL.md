@@ -74,12 +74,16 @@ Flags:
 - `--format json`: output JSON. This is the only supported format.
 - `--source-path <project-root>`: source tree to scan. Defaults to `project_root` from the build report.
 - `--output-dir <directory>`: write JSON to `<directory>/<project-directory-name>/compatibility-report.json` and print the written path.
+- `--enable-jdk-tools`: compile project with the detected source Java JDK and run target JDK `jdeps` and `jdeprscan` on compiled classes.
+- `--jdk-root <directory>`: root containing `jdk8`, `jdk11`, `jdk17`, `jdk21`, and `jdk25`. Defaults to `/opt/jdks`.
+- `--classes-path <directory>`: compiled classes directory to scan. May be repeated. When omitted, the command attempts compilation and discovers common Maven/Gradle class directories.
 
 Outputs:
 
 - Source and target Java versions.
 - Dependency and plugin update recommendations from curated KB rules.
-- Removed, deprecated-for-removal, internal API, and reflective access findings from Java source text scanning.
+- Removed, deprecated-for-removal, internal API, and reflective access findings from tree-sitter Java syntax scanning.
+- Optional `jdk_tool_findings` from `jdeps --jdk-internals` and `jdeprscan --release <target> --for-removal`.
 - Code-change recommendations derived from API findings, replacements, and incremental migration guidance.
 - Unknown dependencies and plugins that need official-source verification before automated upgrades.
 - Diagnostics for missing or unreadable source paths while preserving dependency and plugin analysis.
@@ -92,4 +96,8 @@ gluon-cli code-parser analyze-report --report /path/to/gluon/data/project/build-
 
 ```bash
 gluon-cli code-parser analyze-report --report /path/to/gluon/data/project/build-report.json --target-java 25 --format json --output-dir /path/to/gluon/data
+```
+
+```bash
+gluon-cli code-parser analyze-report --report /path/to/gluon/data/project/build-report.json --target-java 25 --source-path /path/to/project --enable-jdk-tools
 ```

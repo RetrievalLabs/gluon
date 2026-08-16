@@ -209,6 +209,42 @@ fn analyze_report_warns_for_missing_source_path_and_keeps_dependency_analysis() 
     let _ = fs::remove_dir_all(root);
 }
 
+#[test]
+fn analyze_report_jdk_tools_missing_root_emits_warnings() {
+    let root = test_dir("analyze-jdk-tools");
+    fs::create_dir_all(root.join("target/classes")).unwrap();
+    let report_path = write_build_report(&root, r#""resolved_dependencies":[]"#);
+    let missing_jdk_root = root.join("missing-jdks");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["analyze-report", "--report"])
+        .arg(&report_path)
+        .args(["--target-java", "25", "--enable-jdk-tools", "--jdk-root"])
+        .arg(&missing_jdk_root)
+        .args(["--classes-path"])
+        .arg(root.join("target/classes"))
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        value["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|diagnostic| {
+                diagnostic["category"] == "jdk_tools"
+                    && diagnostic["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("jdeps not found")
+            })
+    );
+    assert_eq!(value["jdk_tool_findings"].as_array().unwrap().len(), 0);
+    let _ = fs::remove_dir_all(root);
+}
+
 fn write_build_report(root: &PathBuf, dependency_fragment: &str) -> PathBuf {
     let report_path = root.join("build-report.json");
     fs::write(

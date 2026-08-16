@@ -4,6 +4,7 @@ use std::path::Path;
 use crate::languages::java::build::model::{
     BuildReport, BuildToolInfo, DependencyInfo, PluginInfo,
 };
+use crate::languages::java::compatibility::jdk_tools::{JdkToolOptions, run_jdk_tools};
 use crate::languages::java::compatibility::knowledge_base::{
     CompatibilityRule, JavaCompatibilityKnowledgeBase, MatchRule, ReplacementRule,
 };
@@ -19,6 +20,20 @@ pub fn analyze_report(
     build_report: &BuildReport,
     target_java: u32,
     source_path: &Path,
+) -> Result<CompatibilityReport, String> {
+    analyze_report_with_options(
+        build_report,
+        target_java,
+        source_path,
+        &JdkToolOptions::default(),
+    )
+}
+
+pub fn analyze_report_with_options(
+    build_report: &BuildReport,
+    target_java: u32,
+    source_path: &Path,
+    jdk_tool_options: &JdkToolOptions,
 ) -> Result<CompatibilityReport, String> {
     let kb = JavaCompatibilityKnowledgeBase::load_default()?;
     let mut diagnostics = Vec::new();
@@ -40,6 +55,14 @@ pub fn analyze_report(
         ],
     );
     diagnostics.extend(scan_diagnostics);
+
+    let (jdk_tool_findings, jdk_tool_diagnostics) = run_jdk_tools(
+        source_path,
+        source_java.as_deref(),
+        target_java,
+        jdk_tool_options,
+    );
+    diagnostics.extend(jdk_tool_diagnostics);
 
     let code_change_recommendations =
         derive_code_change_recommendations(&api_findings, &kb.replacements, target_java)
@@ -64,6 +87,7 @@ pub fn analyze_report(
         dependency_recommendations,
         plugin_recommendations,
         api_findings,
+        jdk_tool_findings,
         code_change_recommendations,
         unknown_dependencies,
         unknown_plugins,

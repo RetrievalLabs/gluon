@@ -9,10 +9,21 @@ pub struct CompatibilityReport {
     pub dependency_recommendations: Vec<DependencyRecommendation>,
     pub plugin_recommendations: Vec<PluginRecommendation>,
     pub api_findings: Vec<ApiFinding>,
+    pub jdk_tool_findings: Vec<JdkToolFinding>,
     pub code_change_recommendations: Vec<CodeChangeRecommendation>,
     pub unknown_dependencies: Vec<UnknownDependency>,
     pub unknown_plugins: Vec<UnknownPlugin>,
     pub diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct JdkToolFinding {
+    pub tool: String,
+    pub severity: String,
+    pub class_name: Option<String>,
+    pub matched_text: String,
+    pub source: String,
+    pub guidance: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

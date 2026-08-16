@@ -17,7 +17,8 @@ A Rust-based CLI tool for parsing Java build metadata.
 - `src/languages/java/compatibility/model.rs` - compatibility report data model.
 - `src/languages/java/compatibility/knowledge_base.rs` - YAML knowledge base loading and loose rule structs.
 - `src/languages/java/compatibility/analyzer.rs` - dependency, plugin, and source-finding recommendation logic.
-- `src/languages/java/compatibility/source_scan.rs` - lightweight Java source text scanner for removed, deprecated, internal, and reflective API usage.
+- `src/languages/java/compatibility/jdk_tools.rs` - optional VM JDK compile, `jdeps`, and `jdeprscan` enrichment.
+- `src/languages/java/compatibility/source_scan.rs` - tree-sitter Java syntax scanner for removed, deprecated, internal, and reflective API usage.
 - `data/java/` - curated Java migration compatibility knowledge base, including incremental migration guidance, removed APIs, deprecated-for-removal APIs, internal APIs, replacements, dependency compatibility, and plugin compatibility.
 
 ## Rules

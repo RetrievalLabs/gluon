@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use crate::languages::java::build::model::BuildReport;
 use crate::languages::java::build::parse_build;
-use crate::languages::java::compatibility::analyze_report;
+use crate::languages::java::compatibility::analyzer::analyze_report_with_options;
+use crate::languages::java::compatibility::jdk_tools::{DEFAULT_JDK_ROOT, JdkToolOptions};
 
 #[derive(Debug, PartialEq, Eq)]
 enum CliOptions {
@@ -26,6 +27,9 @@ struct AnalyzeReportOptions {
     format: String,
     output_dir: Option<PathBuf>,
     source_path: Option<PathBuf>,
+    enable_jdk_tools: bool,
+    jdk_root: PathBuf,
+    classes_paths: Vec<PathBuf>,
 }
 
 pub fn run_cli<I, S>(args: I) -> i32
@@ -138,6 +142,9 @@ fn parse_analyze_report_args(
     let mut format = "json".to_string();
     let mut output_dir = None;
     let mut source_path = None;
+    let mut enable_jdk_tools = false;
+    let mut jdk_root = PathBuf::from(DEFAULT_JDK_ROOT);
+    let mut classes_paths = Vec::new();
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -164,6 +171,17 @@ fn parse_analyze_report_args(
                 let value = args.next().ok_or("--source-path requires a value")?;
                 source_path = Some(PathBuf::from(value));
             }
+            "--enable-jdk-tools" => {
+                enable_jdk_tools = true;
+            }
+            "--jdk-root" => {
+                let value = args.next().ok_or("--jdk-root requires a value")?;
+                jdk_root = PathBuf::from(value);
+            }
+            "--classes-path" => {
+                let value = args.next().ok_or("--classes-path requires a value")?;
+                classes_paths.push(PathBuf::from(value));
+            }
             "--help" | "-h" => return Err("help requested".to_string()),
             other => return Err(format!("unsupported argument: {other}")),
         }
@@ -179,6 +197,9 @@ fn parse_analyze_report_args(
         format,
         output_dir,
         source_path,
+        enable_jdk_tools,
+        jdk_root,
+        classes_paths,
     })
 }
 
@@ -195,7 +216,18 @@ fn run_analyze_report(options: AnalyzeReportOptions) -> i32 {
         .clone()
         .unwrap_or_else(|| PathBuf::from(&build_report.project_root));
 
-    match analyze_report(&build_report, options.target_java, &source_path) {
+    let jdk_tool_options = JdkToolOptions {
+        enabled: options.enable_jdk_tools,
+        jdk_root: options.jdk_root,
+        classes_paths: options.classes_paths,
+    };
+
+    match analyze_report_with_options(
+        &build_report,
+        options.target_java,
+        &source_path,
+        &jdk_tool_options,
+    ) {
         Ok(report) => match serde_json::to_string_pretty(&report) {
             Ok(json) => {
                 if let Some(output_dir) = &options.output_dir {
@@ -227,7 +259,7 @@ fn run_analyze_report(options: AnalyzeReportOptions) -> i32 {
 
 fn print_usage() {
     eprintln!(
-        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>]"
+        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]"
     );
 }
 
@@ -385,6 +417,46 @@ mod tests {
                 format: "json".to_string(),
                 output_dir: Some(PathBuf::from("data")),
                 source_path: Some(PathBuf::from("project")),
+                enable_jdk_tools: false,
+                jdk_root: PathBuf::from(DEFAULT_JDK_ROOT),
+                classes_paths: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_analyze_report_jdk_tool_arguments() {
+        let options = parse_args([
+            "code-parser",
+            "analyze-report",
+            "--report",
+            "build-report.json",
+            "--target-java",
+            "25",
+            "--enable-jdk-tools",
+            "--jdk-root",
+            "/vm/jdks",
+            "--classes-path",
+            "target/classes",
+            "--classes-path",
+            "target/test-classes",
+        ])
+        .expect("valid arguments");
+
+        assert_eq!(
+            options,
+            CliOptions::AnalyzeReport(AnalyzeReportOptions {
+                report: PathBuf::from("build-report.json"),
+                target_java: 25,
+                format: "json".to_string(),
+                output_dir: None,
+                source_path: None,
+                enable_jdk_tools: true,
+                jdk_root: PathBuf::from("/vm/jdks"),
+                classes_paths: vec![
+                    PathBuf::from("target/classes"),
+                    PathBuf::from("target/test-classes"),
+                ],
             })
         );
     }
