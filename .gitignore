@@ -2,6 +2,9 @@
 target/
 app/code-parser/target/
 
+
+bin/
+
 # Editor and OS files
 .idea/
 .vscode/
