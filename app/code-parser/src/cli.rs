@@ -143,7 +143,7 @@ fn parse_analyze_report_args(
     let mut output_dir = None;
     let mut source_path = None;
     let mut enable_jdk_tools = false;
-    let mut jdk_root = PathBuf::from(DEFAULT_JDK_ROOT);
+    let mut jdk_root = default_jdk_root();
     let mut classes_paths = Vec::new();
 
     while let Some(arg) = args.next() {
@@ -261,6 +261,12 @@ fn print_usage() {
     eprintln!(
         "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]"
     );
+}
+
+fn default_jdk_root() -> PathBuf {
+    std::env::var_os("GLUON_JDK_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_JDK_ROOT))
 }
 
 fn read_build_report(path: &Path) -> Result<BuildReport, String> {
@@ -418,7 +424,7 @@ mod tests {
                 output_dir: Some(PathBuf::from("data")),
                 source_path: Some(PathBuf::from("project")),
                 enable_jdk_tools: false,
-                jdk_root: PathBuf::from(DEFAULT_JDK_ROOT),
+                jdk_root: default_jdk_root(),
                 classes_paths: Vec::new(),
             })
         );

@@ -75,7 +75,7 @@ Flags:
 - `--source-path <project-root>`: source tree to scan. Defaults to `project_root` from the build report.
 - `--output-dir <directory>`: write JSON to `<directory>/<project-directory-name>/compatibility-report.json` and print the written path.
 - `--enable-jdk-tools`: compile project with the detected source Java JDK and run target JDK `jdeps` and `jdeprscan` on compiled classes.
-- `--jdk-root <directory>`: root containing `jdk8`, `jdk11`, `jdk17`, `jdk21`, and `jdk25`. Defaults to `/opt/jdks`.
+- `--jdk-root <directory>`: root containing `jdk8`, `jdk11`, `jdk17`, `jdk21`, and `jdk25`. Defaults to `GLUON_JDK_ROOT` when set, otherwise `/opt/jdks`.
 - `--classes-path <directory>`: compiled classes directory to scan. May be repeated. When omitted, the command attempts compilation and discovers common Maven/Gradle class directories.
 
 Outputs:

@@ -18,7 +18,9 @@ impl Default for JdkToolOptions {
     fn default() -> Self {
         Self {
             enabled: false,
-            jdk_root: PathBuf::from(DEFAULT_JDK_ROOT),
+            jdk_root: std::env::var_os("GLUON_JDK_ROOT")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_JDK_ROOT)),
             classes_paths: Vec::new(),
         }
     }

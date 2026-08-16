@@ -11,7 +11,7 @@
   - `/opt/jdks/jdk17`
   - `/opt/jdks/jdk21`
   - `/opt/jdks/jdk25`
-- Java compatibility analyzer uses `/opt/jdks` as the default JDK root for optional `jdeps` and `jdeprscan` enrichment.
+- Java compatibility analyzer uses `GLUON_JDK_ROOT` when set, otherwise `/opt/jdks`, as the default JDK root for optional `jdeps` and `jdeprscan` enrichment.
 - Apache Maven 3.9.16
 - Gradle 9.7.0
 - Gradle wrapper support enabled; prefer project `./gradlew` when present
