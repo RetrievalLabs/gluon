@@ -13,6 +13,7 @@ Use this skill when an agent needs to run or explain Gluon CLI commands in produ
 - Prefer documented CLI commands over ad hoc scripts when the CLI supports the workflow.
 - Run commands from the repository root unless a command explicitly requires another working directory.
 - Capture the command, important output, and any generated files when reporting results.
+- Read stderr for verbose status, failure context, and generated JSON paths.
 - Do not assume a command exists because it is planned; verify it with CLI help or source code first.
 
 ## Command Discovery
@@ -48,7 +49,8 @@ Outputs:
 - Declared Java versions, build tools, plugins, and dependencies from build files.
 - Resolved dependencies and plugins when `--resolve` succeeds.
 - Diagnostics for malformed files, missing tools, wrapper issues, and build resolution failures.
-- When `--output-dir` is set, report JSON is written to disk instead of printed to stdout.
+- When `--output-dir` is set, report JSON is written to disk instead of printed to stdout. Stdout and stderr include the generated JSON path.
+- If report diagnostics include errors, stderr summarizes the first error diagnostics and points to the JSON report for full details.
 
 Example:
 
@@ -87,6 +89,8 @@ Outputs:
 - Code-change recommendations derived from API findings, replacements, and incremental migration guidance.
 - Unknown dependencies and plugins that need official-source verification before automated upgrades.
 - Diagnostics for missing or unreadable source paths while preserving dependency and plugin analysis.
+- When `--output-dir` is set, report JSON is written to disk instead of printed to stdout. Stdout and stderr include the generated JSON path.
+- If report diagnostics include errors, stderr summarizes the first error diagnostics and points to the JSON report for full details.
 
 Example:
 

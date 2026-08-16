@@ -81,7 +81,10 @@ fn parse_build_writes_report_to_output_dir() {
     let report = fs::read_to_string(&report_path).unwrap();
     assert!(report.contains("\"version\": \"21\""));
     assert!(String::from_utf8_lossy(&output.stdout).contains(&report_path.display().to_string()));
-    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains(&format!(
+        "JSON report written to: {}",
+        report_path.display()
+    )));
     let _ = fs::remove_dir_all(root);
     let _ = fs::remove_dir_all(output_root);
 }
@@ -140,6 +143,10 @@ fn analyze_report_writes_report_to_output_dir() {
         String::from_utf8_lossy(&output.stdout)
             .contains(&compatibility_report.display().to_string())
     );
+    assert!(String::from_utf8_lossy(&output.stderr).contains(&format!(
+        "JSON report written to: {}",
+        compatibility_report.display()
+    )));
     let _ = fs::remove_dir_all(root);
     let _ = fs::remove_dir_all(output_root);
 }
@@ -158,7 +165,9 @@ fn analyze_report_rejects_missing_report() {
         .unwrap();
 
     assert_eq!(output.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("failed to read report"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("code-parser analyze-report failed"));
+    assert!(stderr.contains("failed to read report"));
 }
 
 #[test]

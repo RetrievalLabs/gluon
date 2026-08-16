@@ -43,9 +43,9 @@ where
                 Ok(json) => {
                     if let Some(output_dir) = &options.output_dir {
                         match write_report(&options.path, output_dir, "build-report.json", &json) {
-                            Ok(path) => println!("wrote {}", path.display()),
+                            Ok(path) => report_written(&path),
                             Err(error) => {
-                                eprintln!("{error}");
+                                command_failed("parse-build", &error);
                                 return 1;
                             }
                         }
@@ -53,21 +53,24 @@ where
                         println!("{json}");
                     }
 
-                    if has_error_diagnostics(&report) { 1 } else { 0 }
+                    exit_code_for_report("parse-build", &report)
                 }
                 Err(error) => {
-                    eprintln!("failed to serialize report: {error}");
+                    command_failed(
+                        "parse-build",
+                        &format!("failed to serialize report: {error}"),
+                    );
                     1
                 }
             },
             Err(error) => {
-                eprintln!("{error}");
+                command_failed("parse-build", &error);
                 2
             }
         },
         Ok(CliOptions::AnalyzeReport(options)) => run_analyze_report(options),
         Err(error) => {
-            eprintln!("{error}");
+            command_failed("arguments", &error);
             print_usage();
             2
         }
@@ -207,7 +210,7 @@ fn run_analyze_report(options: AnalyzeReportOptions) -> i32 {
     let build_report = match read_build_report(&options.report) {
         Ok(report) => report,
         Err(error) => {
-            eprintln!("{error}");
+            command_failed("analyze-report", &error);
             return 2;
         }
     };
@@ -233,9 +236,9 @@ fn run_analyze_report(options: AnalyzeReportOptions) -> i32 {
                 if let Some(output_dir) = &options.output_dir {
                     match write_report(&source_path, output_dir, "compatibility-report.json", &json)
                     {
-                        Ok(path) => println!("wrote {}", path.display()),
+                        Ok(path) => report_written(&path),
                         Err(error) => {
-                            eprintln!("{error}");
+                            command_failed("analyze-report", &error);
                             return 1;
                         }
                     }
@@ -243,15 +246,18 @@ fn run_analyze_report(options: AnalyzeReportOptions) -> i32 {
                     println!("{json}");
                 }
 
-                if has_error_diagnostics(&report) { 1 } else { 0 }
+                exit_code_for_report("analyze-report", &report)
             }
             Err(error) => {
-                eprintln!("failed to serialize compatibility report: {error}");
+                command_failed(
+                    "analyze-report",
+                    &format!("failed to serialize compatibility report: {error}"),
+                );
                 1
             }
         },
         Err(error) => {
-            eprintln!("{error}");
+            command_failed("analyze-report", &error);
             2
         }
     }
@@ -307,6 +313,15 @@ fn write_report(
     Ok(report_path)
 }
 
+fn report_written(path: &Path) {
+    println!("wrote {}", path.display());
+    eprintln!("JSON report written to: {}", path.display());
+}
+
+fn command_failed(command: &str, error: &str) {
+    eprintln!("code-parser {command} failed: {error}");
+}
+
 fn sanitize_path_segment(value: &str) -> String {
     value
         .chars()
@@ -336,11 +351,35 @@ impl ReportDiagnostics for crate::languages::java::compatibility::model::Compati
     }
 }
 
-fn has_error_diagnostics(report: &impl ReportDiagnostics) -> bool {
-    report
+fn exit_code_for_report(command: &str, report: &impl ReportDiagnostics) -> i32 {
+    let errors: Vec<_> = report
         .diagnostics()
         .iter()
-        .any(|diagnostic| diagnostic.severity == "error")
+        .filter(|diagnostic| diagnostic.severity == "error")
+        .collect();
+
+    if errors.is_empty() {
+        return 0;
+    }
+
+    eprintln!(
+        "code-parser {command} completed with {} error diagnostic(s)",
+        errors.len()
+    );
+    for diagnostic in errors.iter().take(5) {
+        eprintln!("- [{}] {}", diagnostic.category, diagnostic.message);
+        if let Some(command) = &diagnostic.command {
+            eprintln!("  command: {}", command.join(" "));
+        }
+    }
+    if errors.len() > 5 {
+        eprintln!(
+            "- {} more error diagnostic(s) in JSON report",
+            errors.len() - 5
+        );
+    }
+
+    1
 }
 
 #[cfg(test)]
