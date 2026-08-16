@@ -5,6 +5,24 @@ description: >
   Dependency compatibility rules for Java 8 to Java 25 migrations. Rules are
   intentionally conservative and focus on dependencies known to inspect,
   generate, or deeply integrate with bytecode, javac, or major frameworks.
+coverage_policy:
+  mode: curated_and_inventory_driven
+  exhaustive_all_maven_artifacts: false
+  unknown_dependency:
+    severity: info
+    risk: needs_source_verification
+    compatibility:
+      java:
+        "25":
+          min_version: "unknown"
+          recommended_version: "do-not-upgrade-blindly"
+          supported_versions: []
+          unsupported_versions: []
+    guidance: >
+      If a resolved dependency has no matching rule, keep declared version unless
+      build/tests fail, security policy requires an update, or official project
+      docs/release notes identify a Java 25 compatibility boundary. Add a
+      project-family rule before automated migration changes it.
 sources:
   - id: asm-versions
     url: "https://asm.ow2.io/versions.html"
@@ -89,6 +107,141 @@ sources:
     trust: official
   - id: protobuf-version-support
     url: "https://protobuf.dev/support/version-support/"
+    trust: official
+  - id: gradle-compatibility
+    url: "https://docs.gradle.org/current/userguide/compatibility.html"
+    trust: official
+  - id: openjdk-jep-320
+    url: "https://openjdk.org/jeps/320"
+    trust: official
+  - id: openjdk-jep-403
+    url: "https://openjdk.org/jeps/403"
+    trust: official
+  - id: jackson-releases
+    url: "https://github.com/FasterXML/jackson/wiki/Jackson-Releases"
+    trust: official
+  - id: slf4j-manual
+    url: "https://www.slf4j.org/manual.html"
+    trust: official
+  - id: logback-download
+    url: "https://logback.qos.ch/download.html"
+    trust: official
+  - id: log4j-home
+    url: "https://logging.apache.org/log4j/2.x/"
+    trust: official
+  - id: junit-user-guide
+    url: "https://docs.junit.org/current/user-guide/"
+    trust: official
+  - id: junit4-home
+    url: "https://junit.org/junit4/"
+    trust: official
+  - id: assertj-home
+    url: "https://assertj.github.io/"
+    trust: official
+  - id: hamcrest-home
+    url: "https://hamcrest.org/JavaHamcrest/"
+    trust: official
+  - id: testcontainers-docs
+    url: "https://java.testcontainers.org/"
+    trust: official
+  - id: hikaricp-readme
+    url: "https://github.com/brettwooldridge/HikariCP"
+    trust: official
+  - id: apache-commons-components
+    url: "https://commons.apache.org/components.html"
+    trust: official
+  - id: guava-compatibility
+    url: "https://github.com/google/guava/wiki/Compatibility"
+    trust: official
+  - id: caffeine-readme
+    url: "https://github.com/ben-manes/caffeine"
+    trust: official
+  - id: ehcache-home
+    url: "https://www.ehcache.org/"
+    trust: official
+  - id: hazelcast-versioning
+    url: "https://docs.hazelcast.com/hazelcast/5.7/deploy/versioning-compatibility"
+    trust: official
+  - id: resilience4j-readme
+    url: "https://github.com/resilience4j/resilience4j"
+    trust: official
+  - id: micrometer-readme
+    url: "https://github.com/micrometer-metrics/micrometer"
+    trust: official
+  - id: opentelemetry-java-docs
+    url: "https://opentelemetry.io/docs/languages/java/"
+    trust: official
+  - id: reactor-core-reference
+    url: "https://docs.spring.io/projectreactor/reactor-core/docs/current/reference/html/"
+    trust: official
+  - id: rxjava-readme
+    url: "https://github.com/ReactiveX/RxJava"
+    trust: official
+  - id: okhttp-readme
+    url: "https://github.com/square/okhttp"
+    trust: official
+  - id: apache-httpclient5
+    url: "https://hc.apache.org/httpcomponents-client-5.6.x/"
+    trust: official
+  - id: apache-httpclient4
+    url: "https://hc.apache.org/httpcomponents-client-4.5.x/"
+    trust: official
+  - id: postgresql-jdbc-download
+    url: "https://jdbc.postgresql.org/download/"
+    trust: official
+  - id: mysql-connector-j-compatibility
+    url: "https://dev.mysql.com/doc/connector-j/en/connector-j-versions.html"
+    trust: official
+  - id: oracle-jdbc-faq
+    url: "https://www.oracle.com/database/technologies/faq-jdbc.html"
+    trust: official
+  - id: microsoft-jdbc-download
+    url: "https://learn.microsoft.com/en-us/sql/connect/jdbc/download-microsoft-jdbc-driver-for-sql-server"
+    trust: official
+  - id: elasticsearch-java-client
+    url: "https://www.elastic.co/docs/reference/elasticsearch/clients/java"
+    trust: official
+  - id: aws-sdk-java2
+    url: "https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/home.html"
+    trust: official
+  - id: azure-sdk-java
+    url: "https://learn.microsoft.com/en-us/azure/developer/java/sdk/overview"
+    trust: official
+  - id: google-cloud-java-support
+    url: "https://docs.cloud.google.com/java/docs/supported-java-versions"
+    trust: official
+  - id: camel-dependencies
+    url: "https://camel.apache.org/manual/what-are-the-dependencies.html"
+    trust: official
+  - id: camel-download
+    url: "https://camel.apache.org/download/"
+    trust: official
+  - id: cxf-faq
+    url: "https://cxf.apache.org/faq.html"
+    trust: official
+  - id: jersey-roadmap
+    url: "https://github.com/eclipse-ee4j/jersey/wiki/Road-Map"
+    trust: official
+  - id: resteasy-docs
+    url: "https://docs.resteasy.dev/"
+    trust: official
+  - id: undertow-home
+    url: "https://undertow.io/"
+    trust: official
+  - id: thymeleaf-home
+    url: "https://www.thymeleaf.org/"
+    trust: official
+  - id: freemarker-download
+    url: "https://freemarker.apache.org/freemarkerdownload.html"
+    trust: official
+  - id: snakeyaml-readme
+    url: "https://github.com/snakeyaml/snakeyaml"
+    trust: official
+  - id: xstream-faq
+    url: "https://x-stream.github.io/faq.html"
+    trust: official
+  - id: jaxb-ri
+    url: "https://eclipse-ee4j.github.io/jaxb-ri/"
     trust: official
 dependencies:
   - id: asm-java25
@@ -776,3 +929,1028 @@ dependencies:
       migration should not mix incompatible generator/runtime major versions.
     edit_strategy: >
       Upgrade protoc, protobuf-java, and generated sources together.
+
+  - id: jackson-java25
+    match:
+      group_id_pattern: "com.fasterxml.jackson*"
+      artifact_id_pattern: "jackson-*"
+    risk: serialization_framework
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "TBD"
+          recommended_version: "latest-supported-2.x-or-3.x"
+          supported_versions: []
+          unsupported_versions:
+            - "1.x"
+          notes:
+            - "Jackson 1.x is legacy/unsupported. Choose Jackson major through framework BOM because 3.x can introduce API migration work."
+    source_ids:
+      - jackson-releases
+    reason: >
+      Jackson is common serialization infrastructure. Java 25 migration should
+      avoid legacy unsupported Jackson lines and keep all Jackson modules aligned.
+    edit_strategy: >
+      Prefer Spring Boot, Quarkus, Micronaut, or Jackson BOM management. Do not
+      mix jackson-core, jackson-databind, jackson-annotations, and datatype
+      modules from different release lines.
+
+  - id: slf4j-java25
+    match:
+      group_id: org.slf4j
+      artifact_id_pattern: "slf4j-*"
+    risk: logging_facade
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "2.0.x"
+          recommended_version: "2.0.x"
+          supported_versions:
+            - "2.0.x"
+          unsupported_versions:
+            - "1.7.x"
+          notes:
+            - "SLF4J 1.7 can run on modern JDKs but is legacy; SLF4J 2.0 is preferred for modern stacks."
+    source_ids:
+      - slf4j-manual
+    reason: >
+      Logging facade versions must align with implementation bindings such as
+      Logback or Log4j.
+    edit_strategy: >
+      Upgrade facade and binding together. For Spring Boot, use managed logging
+      versions.
+
+  - id: logback-java25
+    match:
+      group_id: ch.qos.logback
+      artifact_id_pattern: "logback-*"
+    risk: logging_implementation
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "1.5.x"
+          recommended_version: "1.6.x"
+          supported_versions:
+            - "1.5.x"
+            - "1.6.x"
+          unsupported_versions:
+            - "<1.3.x"
+          notes:
+            - "Logback 1.6 requires JDK 11+ and SLF4J 2.0.1+; conditional configuration behavior changed in recent versions."
+    source_ids:
+      - logback-download
+    reason: >
+      Logback version must match SLF4J binding expectations and framework
+      logging system.
+    edit_strategy: >
+      Upgrade through framework BOM where possible and validate logback.xml for
+      removed conditional-expression support.
+
+  - id: log4j2-java25
+    match:
+      group_id_pattern: "org.apache.logging.log4j"
+      artifact_id_pattern: "log4j-*"
+    risk: logging_implementation
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "2.13.0"
+          recommended_version: "latest-2.x"
+          supported_versions:
+            - "2.13.0+"
+          unsupported_versions:
+            - "<2.13.0"
+    source_ids:
+      - log4j-home
+    reason: >
+      Modern Log4j 2 lines support Java 8+ and receive current fixes. Very old
+      Log4j versions carry security and compatibility risk.
+    edit_strategy: >
+      Keep log4j-api, log4j-core, bridges, and BOM aligned.
+
+  - id: junit4-java25
+    match:
+      group_id: junit
+      artifact_id: junit
+    risk: test_framework_legacy
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "4.13.2"
+          recommended_version: "junit-jupiter-or-4.13.2"
+          supported_versions:
+            - "4.13.2"
+          unsupported_versions:
+            - "<4.13.2"
+    source_ids:
+      - junit4-home
+    reason: >
+      JUnit 4 is legacy but common in enterprise projects. Keep latest 4.x when
+      full JUnit Jupiter migration is outside current scope.
+    edit_strategy: >
+      Prefer adding JUnit Vintage for mixed suites during migration, then move to
+      Jupiter incrementally.
+
+  - id: junit-jupiter-java25
+    match:
+      group_id_pattern: "org.junit*"
+      artifact_id_pattern: "junit-*"
+    risk: test_framework
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "5.x"
+          recommended_version: "6.x"
+          supported_versions:
+            - "5.x"
+            - "6.x"
+          unsupported_versions: []
+          notes:
+            - "JUnit 6 requires Java 17+ at runtime; JUnit 5 requires Java 8+."
+    source_ids:
+      - junit-user-guide
+    reason: >
+      Test framework and build plugin versions must align for Java 25 test
+      execution.
+    edit_strategy: >
+      Use JUnit BOM and align Surefire/Failsafe versions.
+
+  - id: assertj-java25
+    match:
+      group_id: org.assertj
+      artifact_id_pattern: "assertj-*"
+    risk: test_assertions
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "3.x"
+          recommended_version: "latest-supported"
+          supported_versions:
+            - "3.x"
+            - "4.x"
+          unsupported_versions:
+            - "<3.x"
+    source_ids:
+      - assertj-home
+    reason: >
+      AssertJ Core 3.x supports Java 8+; newer major lines can require newer Java
+      and may affect test source compatibility.
+    edit_strategy: >
+      Keep within framework/test BOM unless test source migration is planned.
+
+  - id: hamcrest-java25
+    match:
+      group_id: org.hamcrest
+      artifact_id_pattern: "hamcrest*"
+    risk: test_assertions
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "2.x"
+          recommended_version: "latest-supported"
+          supported_versions:
+            - "2.x"
+            - "3.x"
+          unsupported_versions:
+            - "1.x"
+    source_ids:
+      - hamcrest-home
+    reason: >
+      Hamcrest is commonly pulled by JUnit 4; old 1.x artifacts can create
+      duplicate matcher classes and dependency convergence problems.
+    edit_strategy: >
+      Keep Hamcrest aligned with JUnit/Test framework management.
+
+  - id: testcontainers-java25
+    match:
+      group_id: org.testcontainers
+      artifact_id_pattern: "*"
+    risk: integration_test_infrastructure
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "latest-supported"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+          notes:
+            - "Java support is not the only constraint; Docker/container runtime support is required."
+    source_ids:
+      - testcontainers-docs
+    reason: >
+      Testcontainers depends on container runtime behavior and integrates with
+      JUnit/build tooling.
+    edit_strategy: >
+      Upgrade Testcontainers BOM/modules together and validate Docker runtime in
+      CI.
+
+  - id: hikaricp-java25
+    match:
+      group_id: com.zaxxer
+      artifact_id: HikariCP
+    risk: jdbc_pool
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "5.x"
+          recommended_version: "latest-supported"
+          supported_versions:
+            - "5.x"
+            - "6.x"
+            - "7.x"
+          unsupported_versions:
+            - "<5.x"
+    source_ids:
+      - hikaricp-readme
+    reason: >
+      Current HikariCP lines require Java 11+; Java 6/7/8 artifacts are
+      maintenance mode.
+    edit_strategy: >
+      Prefer framework-managed HikariCP and verify JDBC driver compatibility.
+
+  - id: apache-commons-java25
+    match:
+      group_id_pattern: "org.apache.commons|commons-*"
+      artifact_id_pattern: "*"
+    risk: utility_library
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "component-specific"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+          notes:
+            - "Apache Commons components have independent versioning and Java baselines."
+    source_ids:
+      - apache-commons-components
+    reason: >
+      Apache Commons is a family, not one compatibility surface. Each component
+      must be checked separately when stale or failing.
+    edit_strategy: >
+      Do not bulk-upgrade all Commons artifacts. Update only affected components
+      or BOM-managed versions.
+
+  - id: guava-java25
+    match:
+      group_id: com.google.guava
+      artifact_id: guava
+    risk: core_utility_library
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "21.0"
+          recommended_version: "latest-jre"
+          supported_versions:
+            - "21.0+"
+          unsupported_versions:
+            - "<21.0"
+          notes:
+            - "Use -jre flavor for server-side Java; -android flavor targets Android compatibility."
+    source_ids:
+      - guava-compatibility
+      - guava-compatibility
+    reason: >
+      Guava 21+ requires Java 8 and current JRE flavor should work on modern JDKs.
+    edit_strategy: >
+      Avoid major behavior changes from old Guava without tests; verify removed
+      APIs used by application code.
+
+  - id: caffeine-java25
+    match:
+      group_id: com.github.ben-manes.caffeine
+      artifact_id_pattern: "*"
+    risk: cache_library
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "latest-supported"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+    source_ids:
+      - caffeine-readme
+    reason: >
+      Caffeine is often framework-managed and usually low-risk for Java runtime
+      migration, but cache integrations must align with Spring/Hibernate.
+    edit_strategy: >
+      Prefer framework BOM. Verify cache statistics and expiry behavior after
+      upgrade.
+
+  - id: ehcache-java25
+    match:
+      group_id_pattern: "org.ehcache|net.sf.ehcache"
+      artifact_id_pattern: "*ehcache*"
+    risk: cache_library_jakarta
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "3.11.x"
+          recommended_version: "3.11.x+"
+          supported_versions:
+            - "3.11.x+"
+          unsupported_versions:
+            - "2.x"
+          notes:
+            - "Ehcache 3.11 requires Java 8+ and is last line to support Java 8; Ehcache 2.x is legacy."
+    source_ids:
+      - ehcache-home
+    reason: >
+      Ehcache can interact with JAXB/Jakarta dependencies and framework cache
+      integration.
+    edit_strategy: >
+      Upgrade cache provider through framework cache abstraction and validate XML
+      config namespace/dependencies.
+
+  - id: hazelcast-java25
+    match:
+      group_id: com.hazelcast
+      artifact_id_pattern: "hazelcast*"
+    risk: distributed_cache_cluster
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "5.7.x"
+          recommended_version: "5.7.x+"
+          supported_versions:
+            - "5.7.x+"
+          unsupported_versions:
+            - "<5.7.x"
+    source_ids:
+      - hazelcast-versioning
+    reason: >
+      Hazelcast is clustered infrastructure; Java compatibility must align across
+      members, clients, and management tooling.
+    edit_strategy: >
+      Upgrade cluster/client versions according to Hazelcast compatibility docs,
+      not per-jar.
+
+  - id: resilience4j-java25
+    match:
+      group_id: io.github.resilience4j
+      artifact_id_pattern: "resilience4j-*"
+    risk: fault_tolerance_framework
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "2.x"
+          recommended_version: "latest-supported"
+          supported_versions:
+            - "2.x"
+            - "3.x"
+          unsupported_versions:
+            - "1.x"
+          notes:
+            - "Resilience4j 2 requires Java 17; 3.x raises baseline further and should be coordinated with Spring Boot 4/Spring Framework 7."
+    source_ids:
+      - resilience4j-readme
+    reason: >
+      Resilience4j modules align with Java and Spring Boot major versions.
+    edit_strategy: >
+      Upgrade through Spring Cloud/Spring Boot compatible release train where
+      applicable.
+
+  - id: micrometer-java25
+    match:
+      group_id_pattern: "io.micrometer"
+      artifact_id_pattern: "micrometer-*"
+    risk: observability_facade
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "latest-supported"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+          notes:
+            - "Micrometer artifacts generally support Java 8+ with module-specific exceptions."
+    source_ids:
+      - micrometer-readme
+    reason: >
+      Micrometer is usually managed by Spring Boot and tied to observability
+      ecosystem versions.
+    edit_strategy: >
+      Prefer framework BOM; update registry-specific modules with core.
+
+  - id: opentelemetry-java25
+    match:
+      group_id_pattern: "io.opentelemetry*"
+      artifact_id_pattern: "*"
+    risk: observability_agent
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "latest-supported"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+          notes:
+            - "OpenTelemetry Java API supports Java 8+; agent/instrumentation support is library-version-specific."
+    source_ids:
+      - opentelemetry-java-docs
+    reason: >
+      Java agent instrumentation can depend on bytecode libraries and target
+      library versions.
+    edit_strategy: >
+      Align API, SDK, instrumentation BOM, and Java agent version.
+
+  - id: reactor-java25
+    match:
+      group_id: io.projectreactor
+      artifact_id_pattern: "reactor-*"
+    risk: reactive_runtime
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "3.x"
+          recommended_version: "framework-managed"
+          supported_versions:
+            - "3.x"
+          unsupported_versions: []
+    source_ids:
+      - reactor-core-reference
+    reason: >
+      Reactor Core runs on Java 8+; practical compatibility is tied to Spring
+      Framework and Netty versions.
+    edit_strategy: >
+      Prefer Spring BOM management and keep reactor-netty aligned with Netty.
+
+  - id: rxjava-java25
+    match:
+      group_id_pattern: "io.reactivex*"
+      artifact_id_pattern: "rxjava*"
+    risk: reactive_runtime
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "3.x"
+          recommended_version: "3.x"
+          supported_versions:
+            - "3.x"
+          unsupported_versions:
+            - "1.x"
+            - "2.x"
+          notes:
+            - "RxJava 1.x/2.x are legacy; RxJava 3.x requires Java 8+."
+    source_ids:
+      - rxjava-readme
+    reason: >
+      RxJava major versions have API differences and maintenance status matters
+      more than Java 25 bytecode support.
+    edit_strategy: >
+      Do not migrate RxJava major versions automatically; flag for manual source
+      migration when legacy versions are present.
+
+  - id: okhttp-java25
+    match:
+      group_id: com.squareup.okhttp3
+      artifact_id_pattern: "okhttp*"
+    risk: http_client_tls
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "4.x"
+          recommended_version: "latest-supported"
+          supported_versions:
+            - "4.x"
+            - "5.x"
+          unsupported_versions:
+            - "3.12.x"
+          notes:
+            - "OkHttp 3.12.x is for old Java/Android compatibility; modern Java should use current line."
+    source_ids:
+      - okhttp-readme
+    reason: >
+      HTTP clients interact with platform TLS/security providers that change
+      across JDK releases.
+    edit_strategy: >
+      Keep OkHttp and Okio aligned; verify TLS and proxy behavior.
+
+  - id: apache-httpclient4-java25
+    match:
+      group_id: org.apache.httpcomponents
+      artifact_id_pattern: "httpclient*"
+    risk: http_client_legacy
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "4.5.14"
+          recommended_version: "migrate-to-httpclient5"
+          supported_versions:
+            - "4.5.14"
+          unsupported_versions:
+            - "<4.5.14"
+    source_ids:
+      - apache-httpclient4
+      - apache-httpclient5
+    reason: >
+      HttpClient 4.x is legacy; HttpClient 5.x is current and uses different
+      package names.
+    edit_strategy: >
+      Keep latest 4.5.x unless source migration to HttpClient 5.x is in scope.
+
+  - id: apache-httpclient5-java25
+    match:
+      group_id_pattern: "org.apache.httpcomponents.client5|org.apache.httpcomponents.core5"
+      artifact_id_pattern: "http*"
+    risk: http_client
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "5.x"
+          recommended_version: "latest-5.x"
+          supported_versions:
+            - "5.x"
+          unsupported_versions: []
+    source_ids:
+      - apache-httpclient5
+    reason: >
+      HttpClient 5.x is current Apache HTTP client family.
+    edit_strategy: >
+      Align client5 and core5 versions.
+
+  - id: postgresql-jdbc-java25
+    match:
+      group_id: org.postgresql
+      artifact_id: postgresql
+    risk: jdbc_driver
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "42.7.x"
+          recommended_version: "latest-42.7.x"
+          supported_versions:
+            - "42.7.x"
+          unsupported_versions: []
+    source_ids:
+      - postgresql-jdbc-download
+    reason: >
+      pgJDBC current line supports Java 6+ but server-version testing boundaries
+      matter.
+    edit_strategy: >
+      Upgrade driver only after checking database server version and SSL/auth
+      behavior.
+
+  - id: mysql-jdbc-java25
+    match:
+      group_id_pattern: "com.mysql|mysql"
+      artifact_id_pattern: "mysql-connector-*|mysql-connector-java"
+    risk: jdbc_driver
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "8.0.x"
+          recommended_version: "26.x"
+          supported_versions:
+            - "8.0.x+"
+            - "9.x"
+            - "26.x"
+          unsupported_versions:
+            - "5.x"
+    source_ids:
+      - mysql-connector-j-compatibility
+    reason: >
+      Connector/J compatibility depends on both Java runtime and MySQL server
+      version.
+    edit_strategy: >
+      Use vendor compatibility table and database server version before changing
+      driver major line.
+
+  - id: oracle-jdbc-java25
+    match:
+      group_id: com.oracle.database.jdbc
+      artifact_id_pattern: "ojdbc*"
+    risk: jdbc_driver
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "ojdbc17"
+          recommended_version: "ojdbc17"
+          supported_versions:
+            - "ojdbc17"
+          unsupported_versions: []
+          notes:
+            - "Oracle JDBC downloads state ojdbc17 is certified with JDK 17, 19, 21, and 25."
+    source_ids:
+      - oracle-jdbc-faq
+    reason: >
+      Oracle JDBC driver choice is tied to JDK and database support matrix.
+    edit_strategy: >
+      Select driver artifact from Oracle's table; validate UCP and ons artifacts
+      if used.
+
+  - id: mssql-jdbc-java25
+    match:
+      group_id: com.microsoft.sqlserver
+      artifact_id: mssql-jdbc
+    risk: jdbc_driver
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "13.4.x"
+          recommended_version: "13.4.x+"
+          supported_versions:
+            - "13.4.x+"
+          unsupported_versions:
+            - "<13.4.x"
+    source_ids:
+      - microsoft-jdbc-download
+    reason: >
+      Microsoft JDBC Driver 13.4 supports Java 8, 11, 17, 21, and 25.
+    edit_strategy: >
+      Use the jre-specific artifact/classifier required by the driver line and
+      validate SQL Server version support.
+
+  - id: elasticsearch-java-client-java25
+    match:
+      group_id_pattern: "co.elastic.clients|org.elasticsearch.client"
+      artifact_id_pattern: "*"
+    risk: search_client_server_compatibility
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "latest-supported"
+          recommended_version: "match-server-minor"
+          supported_versions: []
+          unsupported_versions: []
+    source_ids:
+      - elasticsearch-java-client
+    reason: >
+      Elasticsearch Java client compatibility is tied to server minor version and
+      maintained Java runtimes.
+    edit_strategy: >
+      Match client version to Elasticsearch server feature level instead of
+      blindly selecting latest.
+
+  - id: aws-sdk-java1-java25
+    match:
+      group_id: com.amazonaws
+      artifact_id_pattern: "aws-java-sdk*"
+    risk: cloud_sdk_legacy
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "latest-1.12.x"
+          recommended_version: "migrate-to-aws-sdk-v2"
+          supported_versions:
+            - "1.12.x"
+          unsupported_versions:
+            - "<1.12.x"
+    source_ids:
+      - aws-sdk-java2
+    reason: >
+      AWS SDK v1 is legacy for new development; SDK v2 is current Java 8+ line.
+    edit_strategy: >
+      Keep latest v1 for minimal migration, or plan explicit v2 source migration.
+
+  - id: aws-sdk-java2-java25
+    match:
+      group_id: software.amazon.awssdk
+      artifact_id_pattern: "*"
+    risk: cloud_sdk
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "2.x"
+          recommended_version: "latest-2.x"
+          supported_versions:
+            - "2.x"
+          unsupported_versions: []
+    source_ids:
+      - aws-sdk-java2
+    reason: >
+      AWS SDK for Java 2.x is Java 8+ and should be kept BOM-aligned.
+    edit_strategy: >
+      Use aws-sdk-java BOM and align HTTP client implementation.
+
+  - id: azure-sdk-java25
+    match:
+      group_id_pattern: "com.azure*"
+      artifact_id_pattern: "azure-*"
+    risk: cloud_sdk
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "latest-supported"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+    source_ids:
+      - azure-sdk-java
+    reason: >
+      Azure SDK for Java supports Java 8+ and publishes active support state per
+      package.
+    edit_strategy: >
+      Use Azure SDK BOM and keep service packages on active support versions.
+
+  - id: google-cloud-java25
+    match:
+      group_id_pattern: "com.google.cloud|com.google.api-client|com.google.apis"
+      artifact_id_pattern: "*"
+    risk: cloud_sdk
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "latest-supported"
+          recommended_version: "latest-supported"
+          supported_versions:
+            - "tested-on-java-25"
+          unsupported_versions: []
+    source_ids:
+      - google-cloud-java-support
+    reason: >
+      Google Cloud Java client libraries are documented as tested against Java 25.
+    edit_strategy: >
+      Use libraries-bom and avoid mixing generated client families.
+
+  - id: camel-java25
+    match:
+      group_id_pattern: "org.apache.camel*"
+      artifact_id_pattern: "camel-*"
+    risk: integration_framework
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "4.22.x"
+          recommended_version: "4.22.x+"
+          supported_versions:
+            - "4.22.x+"
+          unsupported_versions:
+            - "<4.22.x"
+    source_ids:
+      - camel-dependencies
+      - camel-download
+    reason: >
+      Camel 4.22 LTS documents support for Java 17, 21, and 25.
+    edit_strategy: >
+      Upgrade Camel BOM/platform and components together; validate route DSL and
+      Jakarta namespace changes.
+
+  - id: cxf-java25
+    match:
+      group_id_pattern: "org.apache.cxf"
+      artifact_id_pattern: "cxf-*"
+    risk: soap_rest_stack_jakarta
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "TBD"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+          notes:
+            - "CXF Java 25-specific support boundary not verified; CXF 4.x is Jakarta namespace line."
+    source_ids:
+      - cxf-faq
+    reason: >
+      CXF often touches JAX-WS/JAX-RS/JAXB APIs removed from the JDK or moved to
+      Jakarta.
+    edit_strategy: >
+      Align CXF major version with javax vs jakarta source namespace and target
+      application server.
+
+  - id: jersey-java25
+    match:
+      group_id_pattern: "org.glassfish.jersey*"
+      artifact_id_pattern: "jersey-*"
+    risk: rest_stack_jakarta
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "4.x"
+          recommended_version: "4.x+"
+          supported_versions:
+            - "4.x"
+            - "5.x"
+          unsupported_versions:
+            - "2.x"
+          notes:
+            - "Jersey 2.x is Java EE 8/javax; Jersey 4.x is Jakarta EE 11."
+    source_ids:
+      - jersey-roadmap
+    reason: >
+      Jersey major version must align with javax or jakarta REST API namespace.
+    edit_strategy: >
+      Do not upgrade Jersey major line without source/import and container
+      namespace migration.
+
+  - id: resteasy-java25
+    match:
+      group_id_pattern: "org.jboss.resteasy"
+      artifact_id_pattern: "resteasy-*"
+    risk: rest_stack_jakarta
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "7.x"
+          recommended_version: "7.x"
+          supported_versions:
+            - "7.x"
+          unsupported_versions:
+            - "<6.x"
+    source_ids:
+      - resteasy-docs
+    reason: >
+      RESTEasy 7.x tracks Jakarta RESTful Web Services 4.0; older lines map to
+      older EE/Jakarta APIs.
+    edit_strategy: >
+      Align RESTEasy with WildFly/Quarkus/container version and source namespace.
+
+  - id: undertow-java25
+    match:
+      group_id: io.undertow
+      artifact_id_pattern: "undertow-*"
+    risk: web_server_servlet
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "latest-supported"
+          recommended_version: "framework-managed"
+          supported_versions: []
+          unsupported_versions: []
+    source_ids:
+      - undertow-home
+    reason: >
+      Undertow Servlet/WebSocket support must align with Java EE or Jakarta
+      namespace and server framework.
+    edit_strategy: >
+      Upgrade through WildFly/Quarkus/Spring Boot management when possible.
+
+  - id: thymeleaf-java25
+    match:
+      group_id: org.thymeleaf
+      artifact_id_pattern: "thymeleaf*"
+    risk: template_engine_spring_integration
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "3.1.x"
+          recommended_version: "3.1.x+"
+          supported_versions:
+            - "3.1.x+"
+          unsupported_versions:
+            - "<3.1.x"
+    source_ids:
+      - thymeleaf-home
+    reason: >
+      Thymeleaf compatibility is usually tied to Spring integration package and
+      Spring Framework major version.
+    edit_strategy: >
+      Align thymeleaf-spring module with Spring major version.
+
+  - id: freemarker-java25
+    match:
+      group_id: org.freemarker
+      artifact_id: freemarker
+    risk: template_engine
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "2.3.34"
+          recommended_version: "latest-supported"
+          supported_versions:
+            - "2.3.34+"
+          unsupported_versions: []
+    source_ids:
+      - freemarker-download
+    reason: >
+      FreeMarker 2.3.34 requires Java 8+ and is current stable line.
+    edit_strategy: >
+      Keep framework-managed where possible; validate template output after
+      upgrades.
+
+  - id: snakeyaml-java25
+    match:
+      group_id: org.yaml
+      artifact_id_pattern: "snakeyaml*"
+    risk: config_parser_security
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "2.x"
+          recommended_version: "latest-2.x"
+          supported_versions:
+            - "2.x"
+          unsupported_versions:
+            - "1.x"
+    source_ids:
+      - snakeyaml-readme
+    reason: >
+      SnakeYAML 1.x is common transitively and has had security-sensitive
+      parsing behavior; modern stacks use 2.x.
+    edit_strategy: >
+      Upgrade through framework BOM when possible because Spring Boot and
+      Kubernetes clients may pin SnakeYAML.
+
+  - id: xstream-java25
+    match:
+      group_id: com.thoughtworks.xstream
+      artifact_id: xstream
+    risk: reflective_serialization
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "latest-supported"
+          recommended_version: "replace-or-latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+          notes:
+            - "XStream uses reflection-heavy serialization patterns; Java 17+ encapsulation may require --add-opens."
+    source_ids:
+      - xstream-faq
+      - openjdk-jep-403
+    reason: >
+      Reflection-based serialization can fail under strong JDK encapsulation.
+    edit_strategy: >
+      Prefer reducing or replacing XStream usage. If retained, pin latest
+      supported release and make required --add-opens explicit.
+
+  - id: jaxb-implementation-java25
+    match:
+      group_id_pattern: "org.glassfish.jaxb|com.sun.xml.bind|javax.xml.bind|jakarta.xml.bind"
+      artifact_id_pattern: "*"
+    risk: removed_jdk_module_jakarta_namespace
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "jakarta-line-or-javax-standalone"
+          recommended_version: "framework-compatible"
+          supported_versions: []
+          unsupported_versions: []
+          notes:
+            - "JDK-bundled JAXB was removed in Java 11; choose javax or jakarta artifacts to match source imports."
+    source_ids:
+      - jaxb-ri
+      - openjdk-jep-320
+    reason: >
+      JAXB moved out of the JDK and later moved package namespace through
+      Jakarta EE.
+    edit_strategy: >
+      Do not mix javax.xml.bind source imports with jakarta.xml.bind-api without
+      source migration.
+
+  - id: jaxws-implementation-java25
+    match:
+      group_id_pattern: "com.sun.xml.ws|javax.xml.ws|jakarta.xml.ws"
+      artifact_id_pattern: "*"
+    risk: removed_jdk_module_jakarta_namespace
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "jakarta-line-or-javax-standalone"
+          recommended_version: "framework-compatible"
+          supported_versions: []
+          unsupported_versions: []
+          notes:
+            - "JDK-bundled JAX-WS was removed in Java 11; SOAP stacks must bring explicit API/runtime dependencies."
+    source_ids:
+      - openjdk-jep-320
+      - cxf-faq
+    reason: >
+      JAX-WS moved out of the JDK and framework compatibility depends on javax
+      vs jakarta namespace.
+    edit_strategy: >
+      Align SOAP stack, generated sources, APIs, and runtime implementation.

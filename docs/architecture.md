@@ -23,4 +23,5 @@
 - Gradle resolution prefers `./gradlew` when present and falls back to `gradle`.
 - Build resolution failures are returned as diagnostics while preserving offline parse results.
 - Java migration compatibility knowledge is stored as curated YAML under `app/code-parser/data/java`.
-- Compatibility data tracks removed APIs, internal API risks, replacement dependencies, dependency compatibility, and build plugin compatibility separately from parser logic.
+- Compatibility data tracks removed APIs, deprecated-for-removal APIs, internal API risks, replacement dependencies, dependency compatibility, and build plugin compatibility separately from parser logic.
+- Dependency compatibility coverage is curated and inventory-driven; unmatched dependencies are treated as requiring official-source verification before automated upgrades.

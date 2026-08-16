@@ -55,6 +55,8 @@ removed_apis:
     symbol_prefixes:
       - java.applet
       - javax.swing.JApplet
+    symbols:
+      - java.awt.Window.warningString
       - javax.naming.Context.APPLET
     reason: >
       Applet-related APIs and fields were removed after long deprecation.
@@ -100,11 +102,13 @@ removed_apis:
       - oracle-jdk25-removed-apis
     symbols:
       - java.lang.Compiler
+      - java.lang.ThreadGroup.allowThreadSuspension(boolean)
     reason: >
-      The old JIT compiler control API was removed in Java 21.
+      The old JIT compiler control API and ThreadGroup suspension control API
+      were removed in Java 21.
     guidance: >
-      Remove calls; modern JVMs do not support this API as a useful tuning
-      surface.
+      Remove calls; modern JVMs do not support these APIs as useful tuning or
+      thread-control surfaces.
 
   - id: jdk25-synth-look-and-feel-load-removal
     removed_in_java: 25
