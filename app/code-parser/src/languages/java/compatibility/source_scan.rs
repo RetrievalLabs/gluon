@@ -42,14 +42,18 @@ pub fn scan_java_sources(
             continue;
         }
         match fs::read_to_string(entry.path()) {
-            Ok(contents) => scan_file(
-                source_path,
-                entry.path(),
-                &contents,
-                target_java,
-                kb_rules,
-                &mut findings,
-            ),
+            Ok(contents) => {
+                if let Err(diagnostic) = scan_file(
+                    source_path,
+                    entry.path(),
+                    &contents,
+                    target_java,
+                    kb_rules,
+                    &mut findings,
+                ) {
+                    diagnostics.push(diagnostic);
+                }
+            }
             Err(error) => diagnostics.push(Diagnostic::warning(
                 "source_scan",
                 format!("failed to read {}: {error}", entry.path().display()),
@@ -68,9 +72,15 @@ fn scan_file(
     target_java: u32,
     kb_rules: &[(&str, &[ApiRule])],
     findings: &mut Vec<ApiFinding>,
-) {
+) -> Result<(), Diagnostic> {
     let display_path = relative_path(source_root, file);
-    let candidates = syntax_candidates(contents).unwrap_or_else(|| line_candidates(contents));
+    let candidates = syntax_candidates(contents).map_err(|error| {
+        Diagnostic::warning(
+            "source_scan",
+            format!("failed to parse Java source {}: {error}", file.display()),
+            Some(file.display().to_string()),
+        )
+    })?;
 
     for candidate in candidates {
         for (category, rules) in kb_rules {
@@ -95,6 +105,8 @@ fn scan_file(
             }
         }
     }
+
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -103,16 +115,21 @@ struct SourceCandidate {
     values: Vec<String>,
 }
 
-fn syntax_candidates(contents: &str) -> Option<Vec<SourceCandidate>> {
+fn syntax_candidates(contents: &str) -> Result<Vec<SourceCandidate>, String> {
     let mut parser = Parser::new();
     parser
         .set_language(&tree_sitter_java::LANGUAGE.into())
-        .ok()?;
-    let tree = parser.parse(contents, None)?;
+        .map_err(|error| format!("failed to initialize Java parser: {error}"))?;
+    let tree = parser
+        .parse(contents, None)
+        .ok_or_else(|| "parser returned no syntax tree".to_string())?;
+    if tree.root_node().has_error() {
+        return Err("syntax tree contains parse errors".to_string());
+    }
     let mut candidates = Vec::new();
     let mut cursor = tree.walk();
     collect_syntax_candidates(contents, &mut cursor, &mut candidates);
-    Some(candidates)
+    Ok(candidates)
 }
 
 fn collect_syntax_candidates(
@@ -215,17 +232,6 @@ fn class_for_name_literals(value: &str) -> Vec<String> {
         class_name.to_string(),
         format!("Class.forName(\"{class_name}"),
     ]
-}
-
-fn line_candidates(contents: &str) -> Vec<SourceCandidate> {
-    contents
-        .lines()
-        .enumerate()
-        .map(|(index, line)| SourceCandidate {
-            line: index + 1,
-            values: vec![line.to_string(), compact_whitespace(line)],
-        })
-        .collect()
 }
 
 fn compact_whitespace(value: &str) -> String {
@@ -418,6 +424,33 @@ mod tests {
             findings
                 .iter()
                 .any(|finding| finding.matched_text == "Class.forName(\"sun.")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn malformed_java_emits_warning_without_line_scan_fallback() {
+        let root = test_dir("source-scan-malformed");
+        fs::create_dir_all(root.join("src/main/java/demo")).unwrap();
+        fs::write(
+            root.join("src/main/java/demo/Demo.java"),
+            r#"
+            package demo;
+            import javax.xml.bind.JAXBContext
+            class Demo {
+            "#,
+        )
+        .unwrap();
+        let kb = JavaCompatibilityKnowledgeBase::load_default().unwrap();
+        let (findings, diagnostics) =
+            scan_java_sources(&root, 25, &[("removed_api", &kb.removed_apis)]);
+
+        assert!(findings.is_empty());
+        assert_eq!(diagnostics.len(), 1);
+        assert!(
+            diagnostics[0]
+                .message
+                .contains("failed to parse Java source")
         );
         let _ = fs::remove_dir_all(root);
     }
