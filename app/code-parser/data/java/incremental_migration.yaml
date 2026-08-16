@@ -1,0 +1,670 @@
+schema_version: 1
+source_java: 8
+target_java: 25
+verified_on: "2026-08-16"
+description: >
+  Incremental Java 8 to Java 25 migration guide. Entries are release-oriented
+  and focus on changes that affect source edits, build configuration, runtime
+  flags, testing, and modernization opportunities.
+coverage_policy:
+  mode: curated_migration_relevant_changes
+  exhaustive_all_jeps: false
+  guidance: >
+    Use this file to plan staged migrations and code edits. It does not replace
+    compiler diagnostics, jdeprscan, jdeps, release notes, or application tests.
+    Preview/incubator features are modernization opportunities, not required
+    migration edits unless project already uses them.
+sources:
+  - id: oracle-jdk25-migration-index
+    url: "https://docs.oracle.com/en/java/javase/25/migrate/index.html"
+    trust: official
+  - id: oracle-jdk25-migrating-from-8
+    url: "https://docs.oracle.com/en/java/javase/25/migrate/migrating-jdk-8-later-jdk-releases.html"
+    trust: official
+  - id: oracle-jdk25-significant-changes
+    url: "https://docs.oracle.com/en/java/javase/25/migrate/significant-changes-jdk-25.html"
+    trust: official
+  - id: oracle-jdk23-significant-changes
+    url: "https://docs.oracle.com/en/java/javase/23/migrate/significant-changes-jdk-release.html"
+    trust: official
+  - id: oracle-jdk17-significant-changes
+    url: "https://docs.oracle.com/en/java/javase/17/migrate/significant-changes-jdk-release.html"
+    trust: official
+  - id: oracle-jdk25-removed-apis
+    url: "https://docs.oracle.com/en/java/javase/25/migrate/removed-apis.html"
+    trust: official
+  - id: oracle-jdk25-removed-tools
+    url: "https://docs.oracle.com/en/java/javase/25/migrate/removed-tools-and-components.html"
+    trust: official
+  - id: oracle-jdk25-security-updates
+    url: "https://docs.oracle.com/en/java/javase/25/migrate/security-updates.html"
+    trust: official
+  - id: jep-220
+    url: "https://openjdk.org/jeps/220"
+    trust: official
+  - id: jep-223
+    url: "https://openjdk.org/jeps/223"
+    trust: official
+  - id: jep-261
+    url: "https://openjdk.org/jeps/261"
+    trust: official
+  - id: jep-286
+    url: "https://openjdk.org/jeps/286"
+    trust: official
+  - id: jep-320
+    url: "https://openjdk.org/jeps/320"
+    trust: official
+  - id: jep-321
+    url: "https://openjdk.org/jeps/321"
+    trust: official
+  - id: jep-322
+    url: "https://openjdk.org/jeps/322"
+    trust: official
+  - id: jep-330
+    url: "https://openjdk.org/jeps/330"
+    trust: official
+  - id: jep-361
+    url: "https://openjdk.org/jeps/361"
+    trust: official
+  - id: jep-378
+    url: "https://openjdk.org/jeps/378"
+    trust: official
+  - id: jep-395
+    url: "https://openjdk.org/jeps/395"
+    trust: official
+  - id: jep-394
+    url: "https://openjdk.org/jeps/394"
+    trust: official
+  - id: jep-409
+    url: "https://openjdk.org/jeps/409"
+    trust: official
+  - id: jep-403
+    url: "https://openjdk.org/jeps/403"
+    trust: official
+  - id: jep-400
+    url: "https://openjdk.org/jeps/400"
+    trust: official
+  - id: jep-425
+    url: "https://openjdk.org/jeps/425"
+    trust: official
+  - id: jep-431
+    url: "https://openjdk.org/jeps/431"
+    trust: official
+  - id: jep-440
+    url: "https://openjdk.org/jeps/440"
+    trust: official
+  - id: jep-441
+    url: "https://openjdk.org/jeps/441"
+    trust: official
+  - id: jep-444
+    url: "https://openjdk.org/jeps/444"
+    trust: official
+  - id: jep-451
+    url: "https://openjdk.org/jeps/451"
+    trust: official
+  - id: jep-454
+    url: "https://openjdk.org/jeps/454"
+    trust: official
+  - id: jep-456
+    url: "https://openjdk.org/jeps/456"
+    trust: official
+  - id: jep-458
+    url: "https://openjdk.org/jeps/458"
+    trust: official
+  - id: jep-467
+    url: "https://openjdk.org/jeps/467"
+    trust: official
+  - id: jep-472
+    url: "https://openjdk.org/jeps/472"
+    trust: official
+  - id: jep-477
+    url: "https://openjdk.org/jeps/477"
+    trust: official
+  - id: jep-498
+    url: "https://openjdk.org/jeps/498"
+    trust: official
+  - id: jep-506
+    url: "https://openjdk.org/jeps/506"
+    trust: official
+  - id: jep-507
+    url: "https://openjdk.org/jeps/507"
+    trust: official
+  - id: jep-510
+    url: "https://openjdk.org/jeps/510"
+    trust: official
+  - id: jep-512
+    url: "https://openjdk.org/jeps/512"
+    trust: official
+  - id: jep-513
+    url: "https://openjdk.org/jeps/513"
+    trust: official
+  - id: jep-519
+    url: "https://openjdk.org/jeps/519"
+    trust: official
+migration_strategy:
+  recommended_steps:
+    - id: inventory
+      action: "Parse build files, resolve dependency/plugin graph, and run source/API scanners."
+      commands:
+        - "gluon-cli code-parser parse-build --path <project> --resolve --format json --output-dir <gluon-data>"
+        - "jdeps --jdk-internals <jar-or-classes>"
+        - "jdeprscan --release 25 --for-removal --class-path <classpath> <classes-or-jar>"
+    - id: first-runtime
+      action: "Make project compile and tests run on an intermediate LTS before using Java 25-only source features."
+      guidance: "Use build toolchains and dependency/BOM upgrades before editing business logic."
+    - id: source-modernization
+      action: "Apply feature-driven source edits only after behavior-preserving migration passes."
+      guidance: "Prefer small mechanical edits backed by tests; avoid mixing Java version migration with unrelated refactors."
+release_path:
+  - java: 9
+    lts: false
+    migration_risk: high
+    source_ids:
+      - oracle-jdk25-migrating-from-8
+      - jep-220
+      - jep-223
+      - jep-261
+    changes:
+      - id: module-system
+        category: platform
+        status: final
+        summary: "Java Platform Module System introduced modules, strong module boundaries, modular runtime images, and new command-line flags."
+        codebase_impact:
+          - "Split packages and duplicate classes can break module-path builds."
+          - "Reflection into JDK internals starts producing illegal-access warnings."
+          - "Code assuming application class loader is URLClassLoader can fail."
+        edit_guidance:
+          - "Keep legacy apps on classpath first; move to module-info.java only when dependencies are module-ready."
+          - "Replace URLClassLoader casts with ClassLoader APIs or explicit custom loaders."
+          - "Use --add-exports/--add-opens only as temporary migration flags."
+      - id: jdk-layout-change
+        category: runtime_layout
+        status: final
+        summary: "JDK/JRE image layout changed; JDK internals moved under modular runtime image."
+        codebase_impact:
+          - "Scripts that read JAVA_HOME/jre, rt.jar, tools.jar, or ext dirs can break."
+        edit_guidance:
+          - "Remove rt.jar/tools.jar assumptions."
+          - "Use java.home, ToolProvider, standard tool APIs, or build-tool toolchains."
+      - id: cldr-default-locale-data
+        category: behavior_change
+        status: final
+        summary: "CLDR locale data became default for locale-sensitive formatting."
+        codebase_impact:
+          - "Formatted dates, times, currencies, and month names can differ from Java 8."
+        edit_guidance:
+          - "Use explicit Locale and explicit DateTimeFormatter/SimpleDateFormat patterns where output is persisted or asserted."
+          - "Update brittle locale-sensitive tests."
+      - id: collection-factory-methods
+        category: library_feature
+        status: final
+        summary: "List.of, Set.of, Map.of, and copyOf-style immutable collection factories arrived."
+        codebase_impact:
+          - "Useful replacement for hand-built unmodifiable wrappers."
+        edit_guidance:
+          - "Use only when null rejection and immutability semantics match existing behavior."
+
+  - java: 10
+    lts: false
+    migration_risk: low
+    source_ids:
+      - jep-286
+      - jep-322
+    changes:
+      - id: local-variable-type-inference
+        category: language_feature
+        status: final
+        summary: "var can be used for local variable declarations with initializer."
+        codebase_impact:
+          - "No migration required."
+        edit_guidance:
+          - "Use var only where inferred type remains obvious; do not change public API signatures."
+      - id: time-based-versioning
+        category: runtime_metadata
+        status: final
+        summary: "Version strings use FEATURE.INTERIM.UPDATE.PATCH scheme."
+        codebase_impact:
+          - "Custom Java version parsers can misread versions like 17, 21, or 25."
+        edit_guidance:
+          - "Replace string parsing with Runtime.version() or build-tool version comparison helpers."
+
+  - java: 11
+    lts: true
+    migration_risk: high
+    source_ids:
+      - oracle-jdk25-migrating-from-8
+      - oracle-jdk25-removed-apis
+      - oracle-jdk25-removed-tools
+      - jep-320
+      - jep-321
+      - jep-330
+    changes:
+      - id: java-ee-corba-removal
+        category: removed_api
+        status: final
+        summary: "Java EE and CORBA modules were removed from the JDK."
+        codebase_impact:
+          - "javax.xml.bind, javax.xml.ws, javax.activation, javax.annotation, javax.jws, org.omg references can fail."
+        edit_guidance:
+          - "Add explicit standalone dependencies or migrate to Jakarta packages when framework version requires it."
+          - "Do not mix javax source imports with jakarta dependencies."
+      - id: http-client-standard
+        category: library_feature
+        status: final
+        summary: "java.net.http HTTP Client standardized with HTTP/2 and WebSocket support."
+        codebase_impact:
+          - "Can replace simple uses of legacy HttpURLConnection or third-party clients when behavior is simple."
+        edit_guidance:
+          - "Do not replace mature clients blindly; compare timeout, proxy, TLS, pooling, retry, and observability behavior."
+      - id: single-file-source-launch
+        category: tooling_feature
+        status: final
+        summary: "java can launch a single source file directly."
+        codebase_impact:
+          - "Useful for scripts and small utilities."
+        edit_guidance:
+          - "Keep production builds under Maven/Gradle; avoid converting maintained modules into ad hoc scripts."
+
+  - java: 12
+    lts: false
+    migration_risk: low
+    source_ids:
+      - oracle-jdk17-significant-changes
+    changes:
+      - id: switch-expressions-preview
+        category: language_preview
+        status: preview
+        summary: "Switch expressions began preview cycle."
+        codebase_impact:
+          - "No required migration edit."
+        edit_guidance:
+          - "Wait for Java 14 final switch expressions before source modernization."
+
+  - java: 13
+    lts: false
+    migration_risk: low
+    source_ids:
+      - oracle-jdk17-significant-changes
+    changes:
+      - id: text-blocks-preview
+        category: language_preview
+        status: preview
+        summary: "Text blocks began preview cycle."
+        codebase_impact:
+          - "No required migration edit."
+        edit_guidance:
+          - "Wait for Java 15 final text blocks before replacing string concatenation."
+
+  - java: 14
+    lts: false
+    migration_risk: medium
+    source_ids:
+      - oracle-jdk17-significant-changes
+      - jep-361
+    changes:
+      - id: switch-expressions-final
+        category: language_feature
+        status: final
+        summary: "Switch expressions became final."
+        codebase_impact:
+          - "Modernization opportunity for value-producing switch logic."
+        edit_guidance:
+          - "Convert only branch logic already expression-like."
+          - "Preserve fall-through behavior intentionally; arrow labels do not fall through."
+      - id: helpful-null-pointer-exceptions
+        category: diagnostics
+        status: final
+        summary: "NullPointerException messages can identify which expression was null."
+        codebase_impact:
+          - "Tests asserting exact NPE messages may fail."
+        edit_guidance:
+          - "Avoid exact NPE message assertions unless part of public contract."
+
+  - java: 15
+    lts: false
+    migration_risk: low
+    source_ids:
+      - oracle-jdk17-significant-changes
+      - jep-378
+    changes:
+      - id: text-blocks-final
+        category: language_feature
+        status: final
+        summary: "Text blocks became final."
+        codebase_impact:
+          - "Useful for SQL, JSON, XML, and expected-output tests."
+        edit_guidance:
+          - "Replace only when whitespace semantics are verified."
+          - "Use stripIndent/stripTrailing only when exact output compatibility is preserved."
+      - id: hidden-classes
+        category: runtime_feature
+        status: final
+        summary: "Hidden classes support frameworks that generate classes at runtime."
+        codebase_impact:
+          - "Bytecode-generation libraries need modern versions."
+        edit_guidance:
+          - "Upgrade Byte Buddy, ASM, CGLIB, Mockito, Hibernate enhancer, and similar tooling before Java 25 testing."
+
+  - java: 16
+    lts: false
+    migration_risk: medium
+    source_ids:
+      - oracle-jdk17-significant-changes
+      - jep-394
+      - jep-395
+    changes:
+      - id: records-final
+        category: language_feature
+        status: final
+        summary: "Records became final."
+        codebase_impact:
+          - "Modernization option for shallow immutable data carriers."
+        edit_guidance:
+          - "Convert DTO/value classes only when constructor validation, serialization, ORM mapping, and framework reflection behavior are compatible."
+      - id: pattern-instanceof-final
+        category: language_feature
+        status: final
+        summary: "Pattern matching for instanceof became final."
+        codebase_impact:
+          - "Modernization option for instanceof-and-cast idiom."
+        edit_guidance:
+          - "Replace local casts mechanically when variable scope and null behavior are unchanged."
+
+  - java: 17
+    lts: true
+    migration_risk: high
+    source_ids:
+      - oracle-jdk25-migrating-from-8
+      - oracle-jdk17-significant-changes
+      - jep-403
+      - jep-409
+    changes:
+      - id: strong-encapsulation-default
+        category: runtime_breaking_change
+        status: final
+        summary: "JDK internals are strongly encapsulated by default."
+        codebase_impact:
+          - "Reflection into java.* internals can throw InaccessibleObjectException."
+          - "--illegal-access no longer restores Java 8-era access."
+        edit_guidance:
+          - "Replace internal API and reflection usage."
+          - "Use --add-opens/--add-exports only as tracked temporary flags."
+          - "Upgrade frameworks, mock libraries, bytecode libraries, and application servers first."
+      - id: sealed-classes-final
+        category: language_feature
+        status: final
+        summary: "Sealed classes and interfaces became final."
+        codebase_impact:
+          - "Modernization option for closed hierarchies."
+        edit_guidance:
+          - "Use for domain hierarchies only when extension boundaries are intentional and downstream subclassing is not part of API contract."
+
+  - java: 18
+    lts: false
+    migration_risk: medium
+    source_ids:
+      - oracle-jdk25-migrating-from-8
+      - jep-400
+    changes:
+      - id: utf8-by-default
+        category: behavior_change
+        status: final
+        summary: "UTF-8 became default charset for Java SE APIs."
+        codebase_impact:
+          - "File, stream, resource, and test output code relying on platform default charset can change behavior."
+        edit_guidance:
+          - "Add explicit StandardCharsets.UTF_8 or required legacy charset at IO boundaries."
+          - "Run tests with -Dfile.encoding=UTF-8 on old JDK and -Dfile.encoding=COMPAT on new JDK to isolate behavior."
+
+  - java: 19
+    lts: false
+    migration_risk: medium
+    source_ids:
+      - oracle-jdk23-significant-changes
+      - jep-425
+    changes:
+      - id: virtual-threads-preview
+        category: concurrency_preview
+        status: preview
+        summary: "Virtual threads began preview cycle."
+        codebase_impact:
+          - "No required migration edit."
+        edit_guidance:
+          - "Do not move thread pools to virtual threads until blocking behavior, JDBC drivers, ThreadLocal use, and monitoring are tested."
+
+  - java: 20
+    lts: false
+    migration_risk: low
+    source_ids:
+      - oracle-jdk23-significant-changes
+    changes:
+      - id: virtual-threads-second-preview
+        category: concurrency_preview
+        status: preview
+        summary: "Virtual threads continued preview cycle with minor changes."
+        codebase_impact:
+          - "No required migration edit."
+        edit_guidance:
+          - "Wait for Java 21 final virtual threads before production modernization."
+
+  - java: 21
+    lts: true
+    migration_risk: high
+    source_ids:
+      - oracle-jdk23-significant-changes
+      - jep-431
+      - jep-440
+      - jep-441
+      - jep-444
+      - jep-451
+    changes:
+      - id: virtual-threads-final
+        category: concurrency_feature
+        status: final
+        summary: "Virtual threads became final."
+        codebase_impact:
+          - "Modernization opportunity for blocking request/task workloads."
+          - "ThreadLocal-heavy code, synchronized blocking, pools, and monitoring can behave differently operationally."
+        edit_guidance:
+          - "Do not automatically replace all executors."
+          - "Prefer virtual threads at request/task boundaries after measuring JDBC, HTTP clients, locks, and thread-local context propagation."
+      - id: sequenced-collections
+        category: library_feature
+        status: final
+        summary: "SequencedCollection, SequencedSet, and SequencedMap APIs model first/last encounter order."
+        codebase_impact:
+          - "Modernization option for code with ad hoc first/last/reversed helpers."
+        edit_guidance:
+          - "Use when collection ordering is part of contract; avoid changing unordered collection semantics."
+      - id: pattern-switch-record-patterns-final
+        category: language_feature
+        status: final
+        summary: "Pattern matching for switch and record patterns became final."
+        codebase_impact:
+          - "Modernization option for visitor-like instanceof chains and record deconstruction."
+        edit_guidance:
+          - "Preserve null/default behavior and exhaustiveness."
+          - "Avoid changing public APIs solely to enable pattern matching."
+      - id: dynamic-agent-loading-warning
+        category: integrity_warning
+        status: warning
+        summary: "Dynamic Java agent loading emits warnings to prepare for stricter future defaults."
+        codebase_impact:
+          - "Mockito inline, profilers, coverage, and APM tools can warn."
+        edit_guidance:
+          - "Configure agents explicitly at JVM startup when required."
+          - "Upgrade test/observability tools that support modern agent configuration."
+
+  - java: 22
+    lts: false
+    migration_risk: medium
+    source_ids:
+      - oracle-jdk23-significant-changes
+      - jep-454
+      - jep-456
+      - jep-458
+    changes:
+      - id: foreign-function-memory-final
+        category: native_interop_feature
+        status: final
+        summary: "Foreign Function and Memory API became final."
+        codebase_impact:
+          - "Modern replacement path for some JNI and Unsafe memory access."
+        edit_guidance:
+          - "Migrate JNI/Unsafe only when native boundary is well covered by tests."
+          - "Keep library abstractions around native calls."
+      - id: unnamed-variables-patterns
+        category: language_feature
+        status: final
+        summary: "Underscore can mark unnamed variables and patterns."
+        codebase_impact:
+          - "Modernization option for unused lambda/catch/pattern variables."
+        edit_guidance:
+          - "Use for real unused variables; do not remove variable names that aid diagnostics or logging."
+      - id: multi-file-source-launch
+        category: tooling_feature
+        status: final
+        summary: "java launcher can run multi-file source-code programs."
+        codebase_impact:
+          - "Useful for scripts and examples."
+        edit_guidance:
+          - "Keep production code under build tool; do not replace application packaging."
+
+  - java: 23
+    lts: false
+    migration_risk: medium
+    source_ids:
+      - oracle-jdk23-significant-changes
+      - jep-467
+      - jep-477
+    changes:
+      - id: markdown-javadoc
+        category: documentation_feature
+        status: final
+        summary: "Javadoc comments can use Markdown syntax."
+        codebase_impact:
+          - "Documentation modernization opportunity."
+        edit_guidance:
+          - "Do not bulk-convert existing Javadocs unless generated documentation is compared."
+      - id: string-templates-withdrawn
+        category: preview_removed
+        status: withdrawn
+        summary: "String Templates preview was withdrawn and is not in JDK 23."
+        codebase_impact:
+          - "Code using preview string templates from Java 21/22 will not compile."
+        edit_guidance:
+          - "Replace STR/StringTemplate usage with String.format, MessageFormat, template engine, or explicit builders."
+      - id: implicit-classes-preview
+        category: language_preview
+        status: preview
+        summary: "Implicitly declared classes and instance main methods continued preview cycle."
+        codebase_impact:
+          - "No enterprise migration requirement."
+        edit_guidance:
+          - "Avoid using preview entry-point forms in production codebase migration."
+
+  - java: 24
+    lts: false
+    migration_risk: medium
+    source_ids:
+      - oracle-jdk25-migrating-from-8
+      - jep-472
+      - jep-498
+    changes:
+      - id: native-access-warnings
+        category: integrity_warning
+        status: warning
+        summary: "JDK warns about restricted native access in preparation for stronger future defaults."
+        codebase_impact:
+          - "JNI, Panama FFM, and native libraries can emit runtime warnings."
+        edit_guidance:
+          - "Make native access explicit with supported flags only for known modules."
+          - "Upgrade libraries that use native access internally."
+      - id: unsafe-memory-access-warnings
+        category: internal_api_warning
+        status: warning
+        summary: "Use of memory-access methods in sun.misc.Unsafe emits warnings."
+        codebase_impact:
+          - "Old Netty, Cassandra, Spark, serialization, and off-heap libraries may warn."
+        edit_guidance:
+          - "Upgrade owning libraries instead of editing transitive Unsafe callers directly."
+
+  - java: 25
+    lts: true
+    migration_risk: target
+    source_ids:
+      - oracle-jdk25-significant-changes
+      - oracle-jdk25-removed-apis
+      - oracle-jdk25-removed-tools
+      - jep-506
+      - jep-507
+      - jep-510
+      - jep-512
+      - jep-513
+      - jep-519
+    changes:
+      - id: compact-source-files-final
+        category: language_feature
+        status: final
+        summary: "Compact source files and instance main methods became final."
+        codebase_impact:
+          - "Useful for small programs and teaching examples, not required for enterprise migration."
+        edit_guidance:
+          - "Do not rewrite application entry points to compact source files."
+      - id: flexible-constructor-bodies-final
+        category: language_feature
+        status: final
+        summary: "Statements before explicit constructor invocation became final under flexible constructor bodies."
+        codebase_impact:
+          - "Can simplify validation/preparation before super(...) or this(...)."
+        edit_guidance:
+          - "Apply only where it removes awkward static helper code and preserves initialization order."
+      - id: scoped-values-final
+        category: concurrency_feature
+        status: final
+        summary: "Scoped Values became final for immutable data sharing within and across child threads."
+        codebase_impact:
+          - "Modernization candidate for request context currently stored in ThreadLocal."
+        edit_guidance:
+          - "Do not mechanically replace all ThreadLocal usage."
+          - "Use scoped values for immutable request-scoped context, especially with virtual threads."
+      - id: primitive-patterns-preview
+        category: language_preview
+        status: preview
+        summary: "Primitive types in patterns, instanceof, and switch continued preview."
+        codebase_impact:
+          - "No required migration edit."
+        edit_guidance:
+          - "Avoid preview syntax in production migration unless project explicitly enables preview features."
+      - id: kdf-api
+        category: security_feature
+        status: final
+        summary: "Key Derivation Function API added."
+        codebase_impact:
+          - "Modernization opportunity for custom or provider-specific KDF plumbing."
+        edit_guidance:
+          - "Use only after validating provider, algorithm, and compliance requirements."
+      - id: compact-object-headers
+        category: runtime_feature
+        status: product
+        summary: "Compact object headers became product feature."
+        codebase_impact:
+          - "No source edit required; can affect memory/performance testing."
+        edit_guidance:
+          - "Benchmark memory-sensitive services under representative load before enabling or relying on footprint changes."
+      - id: graal-jit-removal
+        category: removed_component
+        status: removed
+        summary: "Optional experimental Graal JIT compiler removed from JDK."
+        codebase_impact:
+          - "Launch scripts using -XX:+UseGraalJIT fail."
+        edit_guidance:
+          - "Remove Graal JIT flags or use GraalVM distribution intentionally."
+      - id: jdk25-api-removals
+        category: removed_api
+        status: removed
+        summary: "Selected obsolete APIs removed in Java SE 25."
+        codebase_impact:
+          - "Direct references to removed Swing Synth API and other removed symbols fail compilation."
+        edit_guidance:
+          - "Use removed_apis.yaml for exact symbol detection and replacements."
