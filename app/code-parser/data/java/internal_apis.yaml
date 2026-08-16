@@ -1,0 +1,199 @@
+schema_version: 1
+target_java: 25
+verified_on: "2026-08-16"
+description: >
+  JDK internal API usage rules for Java 8 to Java 25 migrations. These rules
+  identify imports, type references, and reflective access patterns that can
+  fail after Java 9 module encapsulation and Java 17 strong encapsulation.
+sources:
+  - id: openjdk-jep-260
+    url: "https://openjdk.org/jeps/260"
+    trust: official
+  - id: openjdk-jep-396
+    url: "https://openjdk.org/jeps/396"
+    trust: official
+  - id: openjdk-jep-403
+    url: "https://openjdk.org/jeps/403"
+    trust: official
+  - id: oracle-jdk17-significant-changes
+    url: "https://docs.oracle.com/en/java/javase/25/migrate/significant-changes-jdk-17.html"
+    trust: official
+  - id: oracle-jdeps
+    url: "https://docs.oracle.com/en/java/javase/21/docs/specs/man/jdeps.html"
+    trust: official
+  - id: openjdk-jdeps-jdk8
+    url: "https://wiki.openjdk.org/spaces/JDK8/pages/17957128/Java+Dependency+Analysis+Tool"
+    trust: official
+  - id: oracle-jdk25-removed-apis
+    url: "https://docs.oracle.com/en/java/javase/25/migrate/removed-apis.html"
+    trust: official
+analysis_tools:
+  - name: jdeps
+    command:
+      - jdeps
+      - --jdk-internals
+      - "<jar-or-classes>"
+    source_ids:
+      - oracle-jdeps
+      - openjdk-jdeps-jdk8
+    purpose: >
+      Detect class-level dependencies on unsupported JDK internal APIs in
+      compiled classes and dependency jars.
+internal_apis:
+  - id: jdk-internal-packages
+    severity: error
+    source_ids:
+      - openjdk-jep-260
+      - openjdk-jep-396
+      - openjdk-jep-403
+      - oracle-jdk17-significant-changes
+    symbol_prefixes:
+      - jdk.internal
+      - com.sun.tools.javac
+      - sun.reflect
+      - sun.security
+      - sun.nio
+      - sun.net
+      - sun.awt
+      - sun.font
+      - sun.util
+      - sun.io
+    applies_when_target_java_at_least: 9
+    stronger_encapsulation_in_java: 17
+    reason: >
+      Most JDK internal APIs were encapsulated by the Java module system and are
+      strongly encapsulated by default from Java 17. Direct source references can
+      fail compilation; reflective access can fail at runtime.
+    guidance: >
+      Replace with supported Java SE APIs or maintained third-party libraries.
+      Use --add-exports or --add-opens only as temporary migration flags.
+
+  - id: general-sun-package
+    severity: warning
+    source_ids:
+      - openjdk-jep-260
+      - openjdk-jep-403
+      - oracle-jdeps
+    symbol_prefixes:
+      - sun
+    except_symbol_prefixes:
+      - sun.misc.Unsafe
+      - sun.misc.Signal
+      - sun.misc.SignalHandler
+    applies_when_target_java_at_least: 9
+    stronger_encapsulation_in_java: 17
+    reason: >
+      sun.* APIs are unsupported JDK implementation APIs. Some were kept as
+      critical internal APIs, but most should not be used by application code.
+    guidance: >
+      Run jdeps --jdk-internals and replace each usage with supported APIs.
+
+  - id: critical-internal-apis
+    severity: warning
+    source_ids:
+      - openjdk-jep-260
+      - openjdk-jep-396
+      - openjdk-jep-403
+    symbol_prefixes:
+      - sun.misc.Unsafe
+      - sun.misc.Signal
+      - sun.misc.SignalHandler
+    module: jdk.unsupported
+    applies_when_target_java_at_least: 9
+    reason: >
+      Critical internal APIs remain available through jdk.unsupported but are
+      still unsupported implementation APIs and can require explicit module
+      dependencies.
+    guidance: >
+      Avoid direct application usage. Prefer VarHandle, MethodHandles,
+      java.util.concurrent, java.lang.foreign, or maintained libraries that
+      isolate this access.
+
+  - id: general-com-sun-package
+    severity: warning
+    source_ids:
+      - openjdk-jep-260
+      - openjdk-jep-403
+      - oracle-jdeps
+    symbol_prefixes:
+      - com.sun
+    except_symbol_prefixes:
+      - com.sun.net.httpserver
+      - com.sun.source
+      - com.sun.javadoc
+    applies_when_target_java_at_least: 9
+    stronger_encapsulation_in_java: 17
+    reason: >
+      Many com.sun.* packages are JDK implementation details and are not stable
+      Java SE APIs. Some com.sun.* packages are supported or documented tool
+      APIs and need separate handling.
+    guidance: >
+      Do not flag allowlisted supported APIs as removed. For other com.sun.*
+      references, verify with jdeps and migrate to supported APIs where
+      possible.
+
+  - id: supported-com-sun-httpserver
+    severity: info
+    source_ids:
+      - openjdk-jep-260
+    symbol_prefixes:
+      - com.sun.net.httpserver
+    module: jdk.httpserver
+    applies_when_target_java_at_least: 9
+    reason: >
+      com.sun.net.httpserver is a supported JDK-specific API in the jdk.httpserver
+      module, despite using a com.sun package name.
+    guidance: >
+      Ensure module-aware projects declare dependency on jdk.httpserver when
+      needed.
+
+  - id: supported-compiler-tree-apis
+    severity: info
+    source_ids:
+      - openjdk-jep-260
+    symbol_prefixes:
+      - com.sun.source
+    modules:
+      - jdk.compiler
+    applies_when_target_java_at_least: 9
+    reason: >
+      com.sun.source APIs are supported compiler tree APIs in jdk.compiler.
+    guidance: >
+      Keep usage if compiler tooling is intentional, but verify module
+      declarations and javac plugin compatibility.
+
+  - id: legacy-com-sun-javadoc
+    severity: warning
+    source_ids:
+      - openjdk-jep-260
+      - oracle-jdk25-removed-apis
+    symbol_prefixes:
+      - com.sun.javadoc
+    applies_when_target_java_at_least: 9
+    reason: >
+      The old doclet API was superseded by the standard doclet API. It can break
+      during modern JDK migrations.
+    guidance: >
+      Migrate custom doclets to the standard jdk.javadoc.doclet API.
+
+reflective_access:
+  - id: reflective-jdk-internals
+    severity: error
+    source_ids:
+      - openjdk-jep-396
+      - openjdk-jep-403
+      - oracle-jdk17-significant-changes
+    patterns:
+      - "Class.forName(\"sun."
+      - "Class.forName(\"com.sun."
+      - "Class.forName(\"jdk.internal."
+      - "setAccessible(true)"
+      - "--add-opens"
+      - "--add-exports"
+    applies_when_target_java_at_least: 17
+    reason: >
+      Java 17 strongly encapsulates JDK internals. Reflection into non-open JDK
+      packages can fail with InaccessibleObjectException.
+    guidance: >
+      Replace reflective access. Keep --add-opens or --add-exports only as
+      temporary compatibility flags with explicit diagnostics.
