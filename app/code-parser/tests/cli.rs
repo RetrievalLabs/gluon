@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde_json::Value;
+
 #[test]
 fn parse_build_outputs_json_for_project_root() {
     let root = test_dir("cli-success");
@@ -82,6 +84,152 @@ fn parse_build_writes_report_to_output_dir() {
     assert!(String::from_utf8_lossy(&output.stderr).is_empty());
     let _ = fs::remove_dir_all(root);
     let _ = fs::remove_dir_all(output_root);
+}
+
+#[test]
+fn analyze_report_outputs_valid_json() {
+    let root = test_dir("analyze-project");
+    fs::create_dir_all(root.join("src/main/java/demo")).unwrap();
+    fs::write(
+        root.join("src/main/java/demo/Demo.java"),
+        "package demo; import javax.xml.bind.JAXBContext; class Demo {}",
+    )
+    .unwrap();
+    let report_path = write_build_report(
+        &root,
+        r#""resolved_dependencies":[{"group_id":"org.ow2.asm","artifact_id":"asm","version":"9.7","configuration":null,"scope":null,"file":null,"source":"maven:resolved"}]"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["analyze-report", "--report"])
+        .arg(&report_path)
+        .args(["--target-java", "25"])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["target_java"], 25);
+    assert_eq!(value["dependency_recommendations"][0]["id"], "asm-java25");
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn analyze_report_writes_report_to_output_dir() {
+    let root = test_dir("analyze-output-project");
+    let output_root = test_dir("analyze-output-root");
+    let report_path = write_build_report(&root, r#""resolved_dependencies":[]"#);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["analyze-report", "--report"])
+        .arg(&report_path)
+        .args(["--target-java", "25", "--output-dir"])
+        .arg(&output_root)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let compatibility_report = output_root
+        .join(root.file_name().unwrap())
+        .join("compatibility-report.json");
+    let value: Value =
+        serde_json::from_str(&fs::read_to_string(&compatibility_report).unwrap()).unwrap();
+    assert_eq!(value["target_java"], 25);
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains(&compatibility_report.display().to_string())
+    );
+    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_dir_all(output_root);
+}
+
+#[test]
+fn analyze_report_rejects_missing_report() {
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args([
+            "analyze-report",
+            "--report",
+            "/definitely/missing/gluon/build-report.json",
+            "--target-java",
+            "25",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("failed to read report"));
+}
+
+#[test]
+fn analyze_report_rejects_invalid_json() {
+    let root = test_dir("analyze-invalid");
+    let report_path = root.join("build-report.json");
+    fs::write(&report_path, "{not json").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["analyze-report", "--report"])
+        .arg(&report_path)
+        .args(["--target-java", "25"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("failed to parse report"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn analyze_report_warns_for_missing_source_path_and_keeps_dependency_analysis() {
+    let root = test_dir("analyze-missing-source");
+    let report_path = write_build_report(
+        &root,
+        r#""resolved_dependencies":[{"group_id":"org.example","artifact_id":"demo","version":"1.0.0","configuration":null,"scope":null,"file":null,"source":"maven:resolved"}]"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["analyze-report", "--report"])
+        .arg(&report_path)
+        .args([
+            "--target-java",
+            "25",
+            "--source-path",
+            "/definitely/missing/gluon/source",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["diagnostics"][0]["severity"], "warning");
+    assert_eq!(
+        value["unknown_dependencies"][0]["coordinates"],
+        "org.example:demo"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+fn write_build_report(root: &PathBuf, dependency_fragment: &str) -> PathBuf {
+    let report_path = root.join("build-report.json");
+    fs::write(
+        &report_path,
+        format!(
+            r#"{{
+              "project_root":"{}",
+              "build_tools":[],
+              "java_versions":[{{"version":"17","kind":"release","file":"pom.xml","source":"maven:property"}}],
+              "declared_dependencies":[],
+              {},
+              "declared_plugins":[],
+              "resolved_plugins":[],
+              "diagnostics":[]
+            }}"#,
+            root.display(),
+            dependency_fragment
+        ),
+    )
+    .unwrap();
+    report_path
 }
 
 fn test_dir(name: &str) -> PathBuf {

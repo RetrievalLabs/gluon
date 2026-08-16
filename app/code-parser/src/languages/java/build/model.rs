@@ -1,6 +1,6 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct BuildReport {
     pub project_root: String,
     pub build_tools: Vec<BuildToolInfo>,
@@ -25,7 +25,7 @@ impl BuildReport {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct BuildToolInfo {
     pub tool: String,
     pub version: Option<String>,
@@ -33,7 +33,7 @@ pub struct BuildToolInfo {
     pub source: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct JavaVersionInfo {
     pub version: String,
     pub kind: String,
@@ -41,7 +41,7 @@ pub struct JavaVersionInfo {
     pub source: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DependencyInfo {
     pub group_id: Option<String>,
     pub artifact_id: String,
@@ -52,7 +52,7 @@ pub struct DependencyInfo {
     pub source: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct PluginInfo {
     pub id: String,
     pub version: Option<String>,
@@ -60,7 +60,7 @@ pub struct PluginInfo {
     pub source: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Diagnostic {
     pub severity: String,
     pub category: String,

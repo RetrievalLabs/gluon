@@ -2,13 +2,30 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::languages::java::build::model::BuildReport;
 use crate::languages::java::build::parse_build;
+use crate::languages::java::compatibility::analyze_report;
 
 #[derive(Debug, PartialEq, Eq)]
-struct CliOptions {
+enum CliOptions {
+    ParseBuild(ParseBuildOptions),
+    AnalyzeReport(AnalyzeReportOptions),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ParseBuildOptions {
     path: PathBuf,
     resolve: bool,
     output_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct AnalyzeReportOptions {
+    report: PathBuf,
+    target_java: u32,
+    format: String,
+    output_dir: Option<PathBuf>,
+    source_path: Option<PathBuf>,
 }
 
 pub fn run_cli<I, S>(args: I) -> i32
@@ -17,11 +34,11 @@ where
     S: Into<OsString>,
 {
     match parse_args(args) {
-        Ok(options) => match parse_build(&options.path, options.resolve) {
+        Ok(CliOptions::ParseBuild(options)) => match parse_build(&options.path, options.resolve) {
             Ok(report) => match serde_json::to_string_pretty(&report) {
                 Ok(json) => {
                     if let Some(output_dir) = &options.output_dir {
-                        match write_report(&options.path, output_dir, &json) {
+                        match write_report(&options.path, output_dir, "build-report.json", &json) {
                             Ok(path) => println!("wrote {}", path.display()),
                             Err(error) => {
                                 eprintln!("{error}");
@@ -44,6 +61,7 @@ where
                 2
             }
         },
+        Ok(CliOptions::AnalyzeReport(options)) => run_analyze_report(options),
         Err(error) => {
             eprintln!("{error}");
             print_usage();
@@ -65,10 +83,16 @@ where
     if command == "--help" || command == "-h" {
         return Err("help requested".to_string());
     }
-    if command != "parse-build" {
-        return Err(format!("unsupported command: {command}"));
+    match command.as_str() {
+        "parse-build" => parse_parse_build_args(args).map(CliOptions::ParseBuild),
+        "analyze-report" => parse_analyze_report_args(args).map(CliOptions::AnalyzeReport),
+        _ => Err(format!("unsupported command: {command}")),
     }
+}
 
+fn parse_parse_build_args(
+    mut args: impl Iterator<Item = String>,
+) -> Result<ParseBuildOptions, String> {
     let mut path = None;
     let mut resolve = false;
     let mut format = "json".to_string();
@@ -99,20 +123,127 @@ where
         return Err(format!("unsupported format: {format}"));
     }
 
-    Ok(CliOptions {
+    Ok(ParseBuildOptions {
         path: path.ok_or("missing required --path")?,
         resolve,
         output_dir,
     })
 }
 
+fn parse_analyze_report_args(
+    mut args: impl Iterator<Item = String>,
+) -> Result<AnalyzeReportOptions, String> {
+    let mut report = None;
+    let mut target_java = None;
+    let mut format = "json".to_string();
+    let mut output_dir = None;
+    let mut source_path = None;
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--report" => {
+                let value = args.next().ok_or("--report requires a value")?;
+                report = Some(PathBuf::from(value));
+            }
+            "--target-java" => {
+                let value = args.next().ok_or("--target-java requires a value")?;
+                target_java = Some(
+                    value
+                        .parse::<u32>()
+                        .map_err(|_| format!("invalid --target-java: {value}"))?,
+                );
+            }
+            "--format" => {
+                format = args.next().ok_or("--format requires a value")?;
+            }
+            "--output-dir" => {
+                let value = args.next().ok_or("--output-dir requires a value")?;
+                output_dir = Some(PathBuf::from(value));
+            }
+            "--source-path" => {
+                let value = args.next().ok_or("--source-path requires a value")?;
+                source_path = Some(PathBuf::from(value));
+            }
+            "--help" | "-h" => return Err("help requested".to_string()),
+            other => return Err(format!("unsupported argument: {other}")),
+        }
+    }
+
+    if format != "json" {
+        return Err(format!("unsupported format: {format}"));
+    }
+
+    Ok(AnalyzeReportOptions {
+        report: report.ok_or("missing required --report")?,
+        target_java: target_java.ok_or("missing required --target-java")?,
+        format,
+        output_dir,
+        source_path,
+    })
+}
+
+fn run_analyze_report(options: AnalyzeReportOptions) -> i32 {
+    let build_report = match read_build_report(&options.report) {
+        Ok(report) => report,
+        Err(error) => {
+            eprintln!("{error}");
+            return 2;
+        }
+    };
+    let source_path = options
+        .source_path
+        .clone()
+        .unwrap_or_else(|| PathBuf::from(&build_report.project_root));
+
+    match analyze_report(&build_report, options.target_java, &source_path) {
+        Ok(report) => match serde_json::to_string_pretty(&report) {
+            Ok(json) => {
+                if let Some(output_dir) = &options.output_dir {
+                    match write_report(&source_path, output_dir, "compatibility-report.json", &json)
+                    {
+                        Ok(path) => println!("wrote {}", path.display()),
+                        Err(error) => {
+                            eprintln!("{error}");
+                            return 1;
+                        }
+                    }
+                } else {
+                    println!("{json}");
+                }
+
+                if has_error_diagnostics(&report) { 1 } else { 0 }
+            }
+            Err(error) => {
+                eprintln!("failed to serialize compatibility report: {error}");
+                1
+            }
+        },
+        Err(error) => {
+            eprintln!("{error}");
+            2
+        }
+    }
+}
+
 fn print_usage() {
     eprintln!(
-        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]"
+        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>]"
     );
 }
 
-fn write_report(project_path: &Path, output_dir: &Path, json: &str) -> Result<PathBuf, String> {
+fn read_build_report(path: &Path) -> Result<BuildReport, String> {
+    let data = fs::read_to_string(path)
+        .map_err(|error| format!("failed to read report {}: {error}", path.display()))?;
+    serde_json::from_str(&data)
+        .map_err(|error| format!("failed to parse report {}: {error}", path.display()))
+}
+
+fn write_report(
+    project_path: &Path,
+    output_dir: &Path,
+    file_name: &str,
+    json: &str,
+) -> Result<PathBuf, String> {
     let project_name = project_path
         .file_name()
         .and_then(|name| name.to_str())
@@ -132,7 +263,7 @@ fn write_report(project_path: &Path, output_dir: &Path, json: &str) -> Result<Pa
         )
     })?;
 
-    let report_path = project_output_dir.join("build-report.json");
+    let report_path = project_output_dir.join(file_name);
     fs::write(&report_path, json)
         .map_err(|error| format!("failed to write report {}: {error}", report_path.display()))?;
     Ok(report_path)
@@ -151,9 +282,25 @@ fn sanitize_path_segment(value: &str) -> String {
         .collect()
 }
 
-fn has_error_diagnostics(report: &crate::languages::java::build::model::BuildReport) -> bool {
+trait ReportDiagnostics {
+    fn diagnostics(&self) -> &[crate::languages::java::build::model::Diagnostic];
+}
+
+impl ReportDiagnostics for crate::languages::java::build::model::BuildReport {
+    fn diagnostics(&self) -> &[crate::languages::java::build::model::Diagnostic] {
+        &self.diagnostics
+    }
+}
+
+impl ReportDiagnostics for crate::languages::java::compatibility::model::CompatibilityReport {
+    fn diagnostics(&self) -> &[crate::languages::java::build::model::Diagnostic] {
+        &self.diagnostics
+    }
+}
+
+fn has_error_diagnostics(report: &impl ReportDiagnostics) -> bool {
     report
-        .diagnostics
+        .diagnostics()
         .iter()
         .any(|diagnostic| diagnostic.severity == "error")
 }
@@ -167,9 +314,14 @@ mod tests {
         let options = parse_args(["code-parser", "parse-build", "--path", ".", "--resolve"])
             .expect("valid arguments");
 
-        assert_eq!(options.path, PathBuf::from("."));
-        assert!(options.resolve);
-        assert_eq!(options.output_dir, None);
+        assert_eq!(
+            options,
+            CliOptions::ParseBuild(ParseBuildOptions {
+                path: PathBuf::from("."),
+                resolve: true,
+                output_dir: None,
+            })
+        );
     }
 
     #[test]
@@ -184,7 +336,14 @@ mod tests {
         ])
         .expect("valid arguments");
 
-        assert_eq!(options.output_dir, Some(PathBuf::from("data")));
+        assert_eq!(
+            options,
+            CliOptions::ParseBuild(ParseBuildOptions {
+                path: PathBuf::from("."),
+                resolve: false,
+                output_dir: Some(PathBuf::from("data")),
+            })
+        );
     }
 
     #[test]
@@ -200,5 +359,33 @@ mod tests {
         .expect_err("unsupported format");
 
         assert!(error.contains("unsupported format"));
+    }
+
+    #[test]
+    fn parses_analyze_report_arguments() {
+        let options = parse_args([
+            "code-parser",
+            "analyze-report",
+            "--report",
+            "build-report.json",
+            "--target-java",
+            "25",
+            "--source-path",
+            "project",
+            "--output-dir",
+            "data",
+        ])
+        .expect("valid arguments");
+
+        assert_eq!(
+            options,
+            CliOptions::AnalyzeReport(AnalyzeReportOptions {
+                report: PathBuf::from("build-report.json"),
+                target_java: 25,
+                format: "json".to_string(),
+                output_dir: Some(PathBuf::from("data")),
+                source_path: Some(PathBuf::from("project")),
+            })
+        );
     }
 }

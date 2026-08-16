@@ -13,6 +13,11 @@ A Rust-based CLI tool for parsing Java build metadata.
 - `src/languages/java/build/resolver/runner.rs` - command execution, executable checks, and command diagnostics.
 - `src/languages/java/build/resolver/maven.rs` - Maven resolution commands and output parsing.
 - `src/languages/java/build/resolver/gradle.rs` - Gradle resolution commands and output parsing.
+- `src/languages/java/compatibility/` - Java compatibility analysis from resolved build reports and curated KB files.
+- `src/languages/java/compatibility/model.rs` - compatibility report data model.
+- `src/languages/java/compatibility/knowledge_base.rs` - YAML knowledge base loading and loose rule structs.
+- `src/languages/java/compatibility/analyzer.rs` - dependency, plugin, and source-finding recommendation logic.
+- `src/languages/java/compatibility/source_scan.rs` - lightweight Java source text scanner for removed, deprecated, internal, and reflective API usage.
 - `data/java/` - curated Java migration compatibility knowledge base, including incremental migration guidance, removed APIs, deprecated-for-removal APIs, internal APIs, replacements, dependency compatibility, and plugin compatibility.
 
 ## Rules

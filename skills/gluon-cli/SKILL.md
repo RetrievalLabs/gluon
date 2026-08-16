@@ -59,3 +59,37 @@ gluon-cli code-parser parse-build --path /path/to/project --resolve --format jso
 ```bash
 gluon-cli code-parser parse-build --path /path/to/project --resolve --format json --output-dir /path/to/gluon/data
 ```
+
+### `code-parser analyze-report`
+
+Analyzes a resolved Java build report against the Java compatibility knowledge base and scans source for Java migration API risks.
+
+Required input:
+
+- `--report <build-report.json>`: resolved or declared build report produced by `code-parser parse-build`.
+- `--target-java <version>`: target Java release, such as `25`.
+
+Flags:
+
+- `--format json`: output JSON. This is the only supported format.
+- `--source-path <project-root>`: source tree to scan. Defaults to `project_root` from the build report.
+- `--output-dir <directory>`: write JSON to `<directory>/<project-directory-name>/compatibility-report.json` and print the written path.
+
+Outputs:
+
+- Source and target Java versions.
+- Dependency and plugin update recommendations from curated KB rules.
+- Removed, deprecated-for-removal, internal API, and reflective access findings from Java source text scanning.
+- Code-change recommendations derived from API findings, replacements, and incremental migration guidance.
+- Unknown dependencies and plugins that need official-source verification before automated upgrades.
+- Diagnostics for missing or unreadable source paths while preserving dependency and plugin analysis.
+
+Example:
+
+```bash
+gluon-cli code-parser analyze-report --report /path/to/gluon/data/project/build-report.json --target-java 25 --format json
+```
+
+```bash
+gluon-cli code-parser analyze-report --report /path/to/gluon/data/project/build-report.json --target-java 25 --format json --output-dir /path/to/gluon/data
+```
