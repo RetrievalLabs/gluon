@@ -41,15 +41,21 @@ Flags:
 
 - `--format json`: output JSON. This is the only supported format.
 - `--resolve`: run Maven or Gradle to collect effective dependency and plugin versions.
+- `--output-dir <directory>`: write JSON to `<directory>/<project-directory-name>/build-report.json` and print the written path.
 
 Outputs:
 
 - Declared Java versions, build tools, plugins, and dependencies from build files.
 - Resolved dependencies and plugins when `--resolve` succeeds.
 - Diagnostics for malformed files, missing tools, wrapper issues, and build resolution failures.
+- When `--output-dir` is set, report JSON is written to disk instead of printed to stdout.
 
 Example:
 
 ```bash
-cargo run -- parse-build --path /path/to/project --resolve --format json
+gluon-cli code-parser parse-build --path /path/to/project --resolve --format json
+```
+
+```bash
+gluon-cli code-parser parse-build --path /path/to/project --resolve --format json --output-dir /path/to/gluon/data
 ```
