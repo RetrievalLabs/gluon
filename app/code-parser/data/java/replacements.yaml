@@ -14,6 +14,15 @@ sources:
   - id: jakarta-ee-specifications
     url: "https://jakarta.ee/specifications/"
     trust: official
+  - id: oracle-jdk25-removed-apis
+    url: "https://docs.oracle.com/en/java/javase/25/migrate/removed-apis.html"
+    trust: official
+  - id: jep-193-variable-handles
+    url: "https://openjdk.org/jeps/193"
+    trust: official
+  - id: jep-259-stack-walking
+    url: "https://openjdk.org/jeps/259"
+    trust: official
 replacements:
   - id: jaxb-javaee-to-jakarta
     applies_when_target_java_at_least: 11
@@ -113,3 +122,94 @@ replacements:
       CORBA was removed from the JDK. Prefer replacing the integration with a
       supported protocol or vendor-maintained ORB if business constraints
       require it.
+
+  - id: sun-base64-to-java-util-base64
+    applies_when_target_java_at_least: 9
+    source_ids:
+      - oracle-jdk25-removed-apis
+    from_symbols:
+      - sun.misc.BASE64Encoder
+      - sun.misc.BASE64Decoder
+    to_symbols:
+      - java.util.Base64
+    to_dependencies: []
+    migration_kind: jdk_api_replacement
+    note: >
+      java.util.Base64 was added in Java 8 and replaces unsupported sun.misc
+      Base64 APIs removed in JDK 9.
+
+  - id: sun-reflect-get-caller-class-to-stackwalker
+    applies_when_target_java_at_least: 9
+    source_ids:
+      - oracle-jdk25-removed-apis
+      - jep-259-stack-walking
+    from_symbols:
+      - sun.reflect.Reflection.getCallerClass
+      - sun.reflect.Reflection::getCallerClass(int)
+    to_symbols:
+      - java.lang.StackWalker
+    to_dependencies: []
+    migration_kind: jdk_api_replacement
+    note: >
+      Use StackWalker instead of unsupported caller-class introspection.
+
+  - id: unsafe-to-variable-handles
+    applies_when_target_java_at_least: 9
+    source_ids:
+      - oracle-jdk25-removed-apis
+      - jep-193-variable-handles
+    from_symbols:
+      - sun.misc.Unsafe
+    to_symbols:
+      - java.lang.invoke.VarHandle
+      - java.lang.invoke.MethodHandles
+    to_dependencies: []
+    migration_kind: jdk_api_replacement
+    note: >
+      Many Unsafe field and array access patterns can move to VarHandle. Memory
+      management and off-heap use need case-specific redesign or supported
+      library upgrades.
+
+  - id: awt-peer-to-component-state
+    applies_when_target_java_at_least: 9
+    source_ids:
+      - oracle-jdk25-removed-apis
+    from_symbols:
+      - java.awt.peer
+      - java.awt.dnd.peer
+      - Component.getPeer
+      - LightweightPeer
+    to_symbols:
+      - java.awt.Component.isDisplayable
+      - java.awt.Component.isLightweight
+    to_dependencies: []
+    migration_kind: jdk_api_replacement
+    note: >
+      Replace peer checks with supported Component state APIs.
+
+  - id: com-sun-jpeg-to-imageio
+    applies_when_target_java_at_least: 9
+    source_ids:
+      - oracle-jdk25-removed-apis
+    from_symbols:
+      - com.sun.image.codec.jpeg
+    to_symbols:
+      - javax.imageio.ImageIO
+    to_dependencies: []
+    migration_kind: jdk_api_replacement
+    note: >
+      Use Java Image I/O instead of removed nonstandard JPEG codec APIs.
+
+  - id: pack200-removal
+    applies_when_target_java_at_least: 14
+    source_ids:
+      - oracle-jdk25-removed-apis
+    from_symbols:
+      - java.util.jar.Pack200
+      - java.util.jar.Pack200.Packer
+      - java.util.jar.Pack200.Unpacker
+    to_dependencies: []
+    migration_kind: no_direct_jdk_replacement
+    note: >
+      Remove Pack200 packaging from build/distribution flow. Use ordinary jar,
+      compression, container, or package manager distribution.

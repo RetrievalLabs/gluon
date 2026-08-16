@@ -30,6 +30,66 @@ sources:
   - id: openrewrite-java25
     url: "https://docs.openrewrite.org/recipes/java/migrate/upgradepluginsforjava25"
     trust: trusted_automation
+  - id: quarkus-java25
+    url: "https://quarkus.io/blog/quarkus-3-31-released/"
+    trust: official
+  - id: micronaut-java25
+    url: "https://micronaut.io/2026/05/20/micronaut-framework-5-0-0-released/"
+    trust: official
+  - id: tomcat-versions
+    url: "https://tomcat.apache.org/whichversion.html"
+    trust: official
+  - id: jetty-downloads
+    url: "https://jetty.org/download.html"
+    trust: official
+  - id: netty-java24-unsafe
+    url: "https://netty.io/wiki/java-24-and-sun.misc.unsafe.html"
+    trust: official
+  - id: kafka-java-version
+    url: "https://kafka.apache.org/42/operations/java-version/"
+    trust: official
+  - id: spark-docs
+    url: "https://spark.apache.org/docs/latest/"
+    trust: official
+  - id: hadoop-3-5
+    url: "https://hadoop.apache.org/docs/r3.5.0/"
+    trust: official
+  - id: liquibase-5-0-2
+    url: "https://docs.liquibase.com/community/release-notes/liquibase-community-5-0-2-release-notes"
+    trust: official
+  - id: flyway-release-notes
+    url: "https://documentation.red-gate.com/fd/release-notes-for-flyway-engine-179732572.html"
+    trust: official
+  - id: mapstruct-1-6
+    url: "https://mapstruct.org/news/2024-08-12-mapstruct-1_6_0-is-out/"
+    trust: official
+  - id: querydsl-releases
+    url: "https://querydsl.com/releases.html"
+    trust: official
+  - id: dagger-java25-issue
+    url: "https://github.com/google/dagger/issues/4966"
+    trust: official_issue_tracker
+  - id: error-prone-installation
+    url: "https://errorprone.info/docs/installation"
+    trust: official
+  - id: spotbugs-changelog
+    url: "https://github.com/spotbugs/spotbugs/blob/master/CHANGELOG.md"
+    trust: official
+  - id: checkstyle-home
+    url: "https://checkstyle.sourceforge.io/"
+    trust: official
+  - id: groovy-5-release-notes
+    url: "https://groovy-lang.org/releasenotes/groovy-5.0.html"
+    trust: official
+  - id: kotlin-2-3
+    url: "https://kotlinlang.org/docs/whatsnew23.html"
+    trust: official
+  - id: scala-jdk-compatibility
+    url: "https://docs.scala-lang.org/overviews/jdk-compatibility/overview.html"
+    trust: official
+  - id: protobuf-version-support
+    url: "https://protobuf.dev/support/version-support/"
+    trust: official
 dependencies:
   - id: asm-java25
     match:
@@ -37,8 +97,15 @@ dependencies:
       artifact_id_pattern: "asm*"
     risk: bytecode_parser
     severity: error
-    minimum_version_for_java:
-      "25": "9.8"
+    compatibility:
+      java:
+        "25":
+          min_version: "9.8"
+          recommended_version: "9.8+"
+          supported_versions:
+            - "9.8+"
+          unsupported_versions:
+            - "<9.8"
     source_ids:
       - asm-versions
     reason: >
@@ -53,8 +120,15 @@ dependencies:
       artifact_id_pattern: "byte-buddy*"
     risk: bytecode_generation
     severity: error
-    minimum_version_for_java:
-      "25": "1.17.5"
+    compatibility:
+      java:
+        "25":
+          min_version: "1.17.5"
+          recommended_version: "1.17.x"
+          supported_versions:
+            - "1.17.5+"
+          unsupported_versions:
+            - "<1.17.5"
     source_ids:
       - byte-buddy-release-notes
       - openrewrite-java25
@@ -70,8 +144,15 @@ dependencies:
       artifact_id: lombok
     risk: annotation_processor
     severity: error
-    minimum_version_for_java:
-      "25": "1.18.40"
+    compatibility:
+      java:
+        "25":
+          min_version: "1.18.40"
+          recommended_version: "1.18.40+"
+          supported_versions:
+            - "1.18.40+"
+          unsupported_versions:
+            - "<1.18.40"
     source_ids:
       - lombok-changelog
     reason: >
@@ -86,8 +167,15 @@ dependencies:
       artifact_id_pattern: "mockito-*"
     risk: test_bytecode_agent
     severity: warning
-    minimum_version_for_java:
-      "25": "5.17.x"
+    compatibility:
+      java:
+        "25":
+          min_version: "5.17.x"
+          recommended_version: "5.17.x"
+          supported_versions:
+            - "5.17.x"
+          unsupported_versions:
+            - "<5.17.x"
     source_ids:
       - openrewrite-java25
       - byte-buddy-release-notes
@@ -104,8 +192,15 @@ dependencies:
       artifact_id_pattern: "org.jacoco.*"
     risk: bytecode_coverage
     severity: warning
-    minimum_version_for_java:
-      "25": "TBD"
+    compatibility:
+      java:
+        "25":
+          min_version: "TBD"
+          recommended_version: "TBD"
+          supported_versions: []
+          unsupported_versions: []
+          notes:
+            - "Select version from JaCoCo release notes once official Java 25 support version is verified."
     source_ids:
       - jacoco-changes
     reason: >
@@ -122,8 +217,18 @@ dependencies:
       artifact_id_pattern: "spring-boot*"
     risk: framework_baseline
     severity: warning
-    minimum_version_for_java:
-      "25": "4.0.x"
+    compatibility:
+      java:
+        "25":
+          min_version: "4.0.x"
+          recommended_version: "4.1.x"
+          supported_versions:
+            - "4.0.x"
+            - "4.1.x"
+          unsupported_versions:
+            - "<3.5.x"
+          notes:
+            - "Spring Boot 3.5.x may support Java 25 but reached OSS end of life; prefer supported 4.x line when migration scope allows."
     source_ids:
       - spring-boot-system-requirements
       - spring-framework-versions
@@ -135,14 +240,55 @@ dependencies:
       Prefer upgrading the Spring Boot parent or BOM instead of individual
       Spring dependencies.
 
+  - id: spring-framework-java25
+    match:
+      group_id: org.springframework
+      artifact_id_pattern: "spring-*"
+    risk: framework_baseline
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "6.2.x"
+          recommended_version: "7.0.x"
+          supported_versions:
+            - "6.2.x"
+            - "7.x"
+          unsupported_versions:
+            - "5.3.x"
+            - "<5.3.x"
+          notes:
+            - "Spring Framework 5.3 supports JDK 8-21 only."
+            - "Spring Framework 7.x is recommended for Java 25 production use when Jakarta EE 11 migration is acceptable."
+    source_ids:
+      - spring-framework-versions
+    reason: >
+      Spring Framework documents JDK 25 support for 6.2 and 7.x. Spring
+      Framework 5.3 is limited to JDK 21 and remains on javax-based Java EE 8.
+    edit_strategy: >
+      If project uses Spring Boot, upgrade the Spring Boot parent or BOM. For
+      standalone Spring, upgrade Spring Framework consistently across all Spring
+      modules and account for Jakarta namespace changes when moving to 6.x or
+      7.x.
+
   - id: hibernate-orm-java25
     match:
       group_id: org.hibernate.orm
       artifact_id_pattern: "hibernate-*"
     risk: persistence_framework
     severity: warning
-    minimum_version_for_java:
-      "25": "6.6.40.Final"
+    compatibility:
+      java:
+        "25":
+          min_version: "6.6.40.Final"
+          recommended_version: "7.2.x"
+          supported_versions:
+            - "6.6.40.Final+"
+            - "7.2.x"
+            - "7.4.x"
+            - "8.x"
+          unsupported_versions:
+            - "<6.6.40.Final"
     source_ids:
       - hibernate-orm-6-6
     reason: >
@@ -150,3 +296,483 @@ dependencies:
     edit_strategy: >
       Prefer framework BOM or Spring Boot managed version. Verify Jakarta
       Persistence and application server compatibility before major upgrades.
+
+  - id: quarkus-java25
+    match:
+      group_id_pattern: "io.quarkus*"
+      artifact_id_pattern: "quarkus-*"
+    risk: framework_baseline
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "3.31.x"
+          recommended_version: "3.31.x+"
+          supported_versions:
+            - "3.31.x+"
+          unsupported_versions:
+            - "<3.31.x"
+    source_ids:
+      - quarkus-java25
+    reason: >
+      Quarkus 3.31 announced full Java 25 support.
+    edit_strategy: >
+      Upgrade Quarkus platform/BOM rather than individual extensions.
+
+  - id: micronaut-java25
+    match:
+      group_id_pattern: "io.micronaut*"
+      artifact_id_pattern: "micronaut-*"
+    risk: framework_baseline
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "5.0.x"
+          recommended_version: "5.0.x+"
+          supported_versions:
+            - "5.0.x+"
+          unsupported_versions:
+            - "<5.0.x"
+          notes:
+            - "Micronaut 4 CI ran against Java 25, but Micronaut 5 sets Java 25 baseline."
+    source_ids:
+      - micronaut-java25
+    reason: >
+      Micronaut 5 release notes set Java 25 as framework baseline.
+    edit_strategy: >
+      Upgrade Micronaut BOM/platform and annotation processors together.
+
+  - id: tomcat-java25
+    match:
+      group_id: org.apache.tomcat.embed
+      artifact_id_pattern: "tomcat-embed-*"
+    risk: servlet_container
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "10.1.x"
+          recommended_version: "11.x"
+          supported_versions:
+            - "10.1.x"
+            - "11.x"
+          unsupported_versions:
+            - "10.0.x"
+          notes:
+            - "Tomcat 10.0.x is end of life; Tomcat 11 aligns with Jakarta EE 11."
+    source_ids:
+      - tomcat-versions
+    reason: >
+      Tomcat supports stable Java releases that meet each Tomcat line's minimum
+      Java requirement; Java 25 migration should avoid EOL Tomcat lines.
+    edit_strategy: >
+      Upgrade through Spring Boot, Jakarta EE server BOM, or container image
+      rather than overriding individual embedded Tomcat jars.
+
+  - id: jetty-java25
+    match:
+      group_id_pattern: "org.eclipse.jetty*"
+      artifact_id_pattern: "jetty-*"
+    risk: servlet_container
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "12.x"
+          recommended_version: "12.x"
+          supported_versions:
+            - "12.x"
+          unsupported_versions:
+            - "9.x"
+            - "10.x"
+            - "11.x"
+    source_ids:
+      - jetty-downloads
+    reason: >
+      Jetty recommends Jetty 12 as current community-supported version; older
+      lines are legacy choices for specific Java/spec requirements.
+    edit_strategy: >
+      Upgrade through framework/server management and validate Servlet/Jakarta
+      namespace version.
+
+  - id: netty-java25
+    match:
+      group_id: io.netty
+      artifact_id_pattern: "netty-*"
+    risk: native_access_unsafe
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "4.2.2.Final"
+          recommended_version: "4.2.x"
+          supported_versions:
+            - "4.2.2.Final+"
+          unsupported_versions:
+            - "<4.2.2.Final"
+    source_ids:
+      - netty-java24-unsafe
+    reason: >
+      Netty 4.2.2 added MemorySegment support to reduce Unsafe reliance, with a
+      Java 25-specific fallback path.
+    edit_strategy: >
+      Prefer framework-managed Netty upgrades. Verify native transport and
+      restricted native access warnings under Java 25.
+
+  - id: kafka-java25
+    match:
+      group_id: org.apache.kafka
+      artifact_id_pattern: "kafka-*"
+    risk: messaging_platform
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "4.2.x"
+          recommended_version: "4.2.x+"
+          supported_versions:
+            - "4.2.x+"
+          unsupported_versions:
+            - "<4.2.x"
+    source_ids:
+      - kafka-java-version
+    reason: >
+      Kafka 4.2 documentation lists Java 17, 21, and 25 as fully supported.
+    edit_strategy: >
+      Align broker, clients, streams, connectors, and Scala version with Kafka
+      release documentation.
+
+  - id: spark-java25
+    match:
+      group_id: org.apache.spark
+      artifact_id_pattern: "spark-*"
+    risk: data_platform
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "4.2.x"
+          recommended_version: "4.2.x+"
+          supported_versions:
+            - "4.2.x+"
+          unsupported_versions:
+            - "<4.2.x"
+          notes:
+            - "Spark 4.2 deprecates Java 25 runtimes prior to 25.0.3."
+    source_ids:
+      - spark-docs
+    reason: >
+      Spark 4.2 documentation lists Java 17, 21, and 25 runtime support.
+    edit_strategy: >
+      Align Spark, Scala binary version, cluster runtime, and connector
+      ecosystem together.
+
+  - id: hadoop-java25
+    match:
+      group_id: org.apache.hadoop
+      artifact_id_pattern: "hadoop-*"
+    risk: data_platform_security_manager
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "TBD"
+          recommended_version: "TBD"
+          supported_versions: []
+          unsupported_versions:
+            - "3.5.x"
+          notes:
+            - "Hadoop 3.5 documents Java 17 server support and Java 17/21 client support, not Java 25."
+    source_ids:
+      - hadoop-3-5
+    reason: >
+      Hadoop Java 25 support is not documented in stable 3.5 docs; Security
+      Manager removal is a known migration risk for Hadoop-style integrations.
+    edit_strategy: >
+      Keep Hadoop-connected applications on supported Java matrix or isolate
+      Hadoop clients until official Java 25 support exists.
+
+  - id: liquibase-java25
+    match:
+      group_id: org.liquibase
+      artifact_id_pattern: "liquibase-*"
+    risk: database_migration_tool
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "5.0.2"
+          recommended_version: "5.x"
+          supported_versions:
+            - "5.0.2+"
+          unsupported_versions:
+            - "<5.0.2"
+    source_ids:
+      - liquibase-5-0-2
+    reason: >
+      Liquibase 5.0.2 release notes mention Java 25 class-loading compatibility
+      work.
+    edit_strategy: >
+      Upgrade Liquibase core and extensions together; validate changelog format
+      dependencies such as SnakeYAML and OpenCSV.
+
+  - id: flyway-java25
+    match:
+      group_id_pattern: "org.flywaydb"
+      artifact_id_pattern: "flyway-*"
+    risk: database_migration_tool
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "TBD"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+          notes:
+            - "Official Java 25-specific minimum not verified; Flyway release notes describe Java baseline evolution."
+    source_ids:
+      - flyway-release-notes
+    reason: >
+      Flyway runtime baseline changed across major releases; Java 25 migration
+      should verify Flyway engine and plugin support explicitly.
+    edit_strategy: >
+      Use Spring Boot/BOM managed Flyway where possible; otherwise verify
+      Flyway engine release notes before changing major versions.
+
+  - id: mapstruct-java25
+    match:
+      group_id: org.mapstruct
+      artifact_id_pattern: "mapstruct*"
+    risk: annotation_processor
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "1.6.x"
+          recommended_version: "1.6.x+"
+          supported_versions:
+            - "1.6.x+"
+          unsupported_versions:
+            - "<1.6.x"
+    source_ids:
+      - mapstruct-1-6
+    reason: >
+      MapStruct is an annotation processor; use modern 1.6+ line for recent
+      Java language and ecosystem support.
+    edit_strategy: >
+      Update both mapstruct and mapstruct-processor annotation processor path.
+
+  - id: querydsl-java25
+    match:
+      group_id_pattern: "com.querydsl"
+      artifact_id_pattern: "querydsl-*"
+    risk: annotation_processor_jakarta
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "5.1.x"
+          recommended_version: "latest-supported"
+          supported_versions:
+            - "5.1.x+"
+          unsupported_versions:
+            - "<5.x"
+    source_ids:
+      - querydsl-releases
+    reason: >
+      QueryDSL 5 targets Java 8 minimally and modernizes dependencies; Jakarta
+      classifiers/modules must match framework generation.
+    edit_strategy: >
+      Align querydsl-apt classifier with javax or jakarta persistence stack.
+
+  - id: dagger-java25
+    match:
+      group_id: com.google.dagger
+      artifact_id_pattern: "dagger*"
+    risk: annotation_processor_bytecode
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "TBD"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+          notes:
+            - "Dagger Java 25 issue tracks ASM 9.8 requirement; exact fixed release must be verified per Dagger changelog."
+    source_ids:
+      - dagger-java25-issue
+      - asm-versions
+    reason: >
+      Dagger compiler can fail on Java 25 class files when its ASM dependency is
+      too old.
+    edit_strategy: >
+      Update Dagger compiler/Hilt processor together and verify generated code.
+
+  - id: error-prone-java25
+    match:
+      group_id: com.google.errorprone
+      artifact_id_pattern: "error_prone*"
+    risk: javac_plugin
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "TBD"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+          notes:
+            - "Error Prone must run on JDK 21 or newer; exact Java 25 feature support varies by release."
+    source_ids:
+      - error-prone-installation
+    reason: >
+      Error Prone is a javac plugin and must match the JDK used to compile.
+    edit_strategy: >
+      Update Error Prone plugin/dependency and javac export flags together.
+
+  - id: spotbugs-java25
+    match:
+      group_id: com.github.spotbugs
+      artifact_id_pattern: "spotbugs*"
+    risk: bytecode_static_analysis
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "TBD"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+          notes:
+            - "SpotBugs changelog includes Java 25 fixes; exact minimum release must be verified from release tags."
+    source_ids:
+      - spotbugs-changelog
+    reason: >
+      SpotBugs parses bytecode and needs Java 25 class file support in both ASM
+      and BCEL dependencies.
+    edit_strategy: >
+      Upgrade SpotBugs engine and Maven/Gradle plugin together.
+
+  - id: checkstyle-java25
+    match:
+      group_id: com.puppycrawl.tools
+      artifact_id: checkstyle
+    risk: source_static_analysis
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "13.x"
+          recommended_version: "13.x+"
+          supported_versions:
+            - "13.x+"
+          unsupported_versions:
+            - "<13.x"
+    source_ids:
+      - checkstyle-home
+    reason: >
+      Checkstyle 13.x runs on JDK 21+ and is confirmed buildable through JDK 25.
+    edit_strategy: >
+      Update Checkstyle tool and Maven/Gradle plugin wrapper together; validate
+      rules against Java 25 syntax.
+
+  - id: groovy-java25
+    match:
+      group_id: org.apache.groovy
+      artifact_id_pattern: "groovy*"
+    risk: language_runtime_compiler
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "5.0.x"
+          recommended_version: "5.0.x+"
+          supported_versions:
+            - "5.0.x+"
+          unsupported_versions:
+            - "<5.0.x"
+    source_ids:
+      - groovy-5-release-notes
+    reason: >
+      Groovy 5 release notes say Groovy 5 is tested on JDK 11 through 25.
+    edit_strategy: >
+      Align Groovy with Gradle, Spock, gmavenplus, and framework versions.
+
+  - id: kotlin-java25
+    match:
+      group_id: org.jetbrains.kotlin
+      artifact_id_pattern: "kotlin-*"
+    risk: language_compiler_gradle_plugin
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "2.3.0"
+          recommended_version: "2.3.x+"
+          supported_versions:
+            - "2.3.x+"
+          unsupported_versions:
+            - "<2.3.0"
+          notes:
+            - "Kotlin 2.3.0 Gradle compatibility must be checked against project Gradle version."
+    source_ids:
+      - kotlin-2-3
+      - gradle-compatibility
+    reason: >
+      Kotlin 2.3.0 can generate Java 25 bytecode and has documented Gradle
+      compatibility limits.
+    edit_strategy: >
+      Align Kotlin compiler, Kotlin Gradle plugin, KSP, AGP, and Gradle wrapper.
+
+  - id: scala-java25
+    match:
+      group_id: org.scala-lang
+      artifact_id_pattern: "scala-*"
+    risk: language_compiler_runtime
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "2.13.17"
+          recommended_version: "2.13.17+"
+          supported_versions:
+            - "2.12.21+"
+            - "2.13.17+"
+            - "3.3.6+"
+            - "3.7.1+"
+          unsupported_versions:
+            - "<2.12.21"
+            - "2.13.0-2.13.16"
+            - "3.0.0-3.3.5"
+    source_ids:
+      - scala-jdk-compatibility
+    reason: >
+      Scala JDK compatibility docs list Scala versions that support JDK 25.
+    edit_strategy: >
+      Align Scala binary version with Spark/Kafka/sbt/plugin ecosystem.
+
+  - id: protobuf-java25
+    match:
+      group_id: com.google.protobuf
+      artifact_id_pattern: "protobuf-java*"
+    risk: code_generation_runtime
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "TBD"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+          notes:
+            - "No Java 25-specific minimum verified; keep protoc and protobuf-java runtime from compatible release family."
+    source_ids:
+      - protobuf-version-support
+    reason: >
+      Protobuf Java generated code and runtime must stay compatible; Java 25
+      migration should not mix incompatible generator/runtime major versions.
+    edit_strategy: >
+      Upgrade protoc, protobuf-java, and generated sources together.

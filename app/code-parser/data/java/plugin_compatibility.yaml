@@ -23,6 +23,21 @@ sources:
   - id: openrewrite-java25
     url: "https://docs.openrewrite.org/recipes/java/migrate/upgradepluginsforjava25"
     trust: trusted_automation
+  - id: maven-shade-java25-issue
+    url: "https://github.com/apache/maven-shade-plugin/issues/791"
+    trust: official_issue_tracker
+  - id: maven-javadoc-plugin
+    url: "https://maven.apache.org/plugins/maven-javadoc-plugin/"
+    trust: official
+  - id: gradle-91-release-notes
+    url: "https://docs.gradle.org/9.1.0/release-notes.html"
+    trust: official
+  - id: android-gradle-plugin-9
+    url: "https://developer.android.com/build/releases/agp-9-0-0-release-notes"
+    trust: official
+  - id: kotlin-2-3
+    url: "https://kotlinlang.org/docs/whatsnew23.html"
+    trust: official
 plugins:
   - id: gradle-wrapper-java25
     ecosystem: gradle
@@ -30,8 +45,15 @@ plugins:
       tool: gradle
     risk: build_tool_runtime
     severity: error
-    minimum_version_for_java:
-      "25": "9.1.0"
+    compatibility:
+      java:
+        "25":
+          min_version: "9.1.0"
+          recommended_version: "9.1.0+"
+          supported_versions:
+            - "9.1.0+"
+          unsupported_versions:
+            - "<9.1.0"
     source_ids:
       - gradle-compatibility
       - openrewrite-java25
@@ -50,8 +72,18 @@ plugins:
       plugin_id: maven-compiler-plugin
     risk: javac_invocation
     severity: error
-    minimum_version_for_java:
-      "25": "3.15.x"
+    compatibility:
+      java:
+        "25":
+          min_version: "3.15.x"
+          recommended_version: "3.15.x"
+          supported_versions:
+            - "3.15.x"
+            - "4.0.0-beta-3+"
+          unsupported_versions:
+            - "<3.15.x"
+          notes:
+            - "4.x Maven Compiler Plugin line requires Maven 4; use 3.15.x for Maven 3 projects."
     source_ids:
       - maven-compiler-plugin
       - maven-compiler-release-option
@@ -72,8 +104,15 @@ plugins:
       plugin_id_pattern: "maven-surefire-*"
     risk: test_runtime
     severity: warning
-    minimum_version_for_java:
-      "25": "3.5.x"
+    compatibility:
+      java:
+        "25":
+          min_version: "3.5.x"
+          recommended_version: "3.5.x"
+          supported_versions:
+            - "3.5.x"
+          unsupported_versions:
+            - "<3.5.x"
     source_ids:
       - maven-surefire-plugin
       - openrewrite-java25
@@ -92,8 +131,15 @@ plugins:
       plugin_id: maven-failsafe-plugin
     risk: integration_test_runtime
     severity: warning
-    minimum_version_for_java:
-      "25": "3.5.x"
+    compatibility:
+      java:
+        "25":
+          min_version: "3.5.x"
+          recommended_version: "3.5.x"
+          supported_versions:
+            - "3.5.x"
+          unsupported_versions:
+            - "<3.5.x"
     source_ids:
       - maven-failsafe-plugin
       - openrewrite-java25
@@ -111,8 +157,15 @@ plugins:
       plugin_id: maven-pmd-plugin
     risk: static_analysis_parser
     severity: warning
-    minimum_version_for_java:
-      "25": "3.28.x"
+    compatibility:
+      java:
+        "25":
+          min_version: "3.28.x"
+          recommended_version: "3.28.x"
+          supported_versions:
+            - "3.28.x"
+          unsupported_versions:
+            - "<3.28.x"
     source_ids:
       - openrewrite-java25
     reason: >
@@ -121,3 +174,202 @@ plugins:
       upgrade Maven PMD plugin to 3.28.x.
     edit_strategy: >
       Update plugin version and verify configured PMD rulesets still work.
+
+  - id: maven-shade-plugin-java25
+    ecosystem: maven
+    match:
+      group_id: org.apache.maven.plugins
+      artifact_id: maven-shade-plugin
+      plugin_id: maven-shade-plugin
+    risk: bytecode_packaging
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "TBD"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+          notes:
+            - "Java 25 class-file support issue exists for shade plugin versions up to 3.6.1; verify fixed release before recommending exact minimum."
+    source_ids:
+      - maven-shade-java25-issue
+    reason: >
+      Shade processes class files and can fail with unsupported Java 25 class
+      file version when its bytecode libraries are old.
+    edit_strategy: >
+      Update Maven Shade Plugin and verify relocation/minimization output.
+
+  - id: maven-javadoc-plugin-java25
+    ecosystem: maven
+    match:
+      group_id: org.apache.maven.plugins
+      artifact_id: maven-javadoc-plugin
+      plugin_id: maven-javadoc-plugin
+    risk: javadoc_generation
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "latest-supported"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+    source_ids:
+      - maven-javadoc-plugin
+    reason: >
+      Javadoc plugin delegates to current JDK javadoc and often needs updates
+      for modern options, doclint behavior, and source syntax.
+    edit_strategy: >
+      Update plugin through pluginManagement and validate generated docs.
+
+  - id: maven-war-plugin-java25
+    ecosystem: maven
+    match:
+      group_id: org.apache.maven.plugins
+      artifact_id: maven-war-plugin
+      plugin_id: maven-war-plugin
+    risk: packaging_plugin
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "latest-supported"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+    source_ids:
+      - openrewrite-java25
+    reason: >
+      WAR packaging can interact with Jakarta namespace migration and old
+      plugin dependencies even when Java 25 itself is not the direct issue.
+    edit_strategy: >
+      Keep plugin current; verify Servlet/Jakarta EE dependency family.
+
+  - id: maven-enforcer-plugin-java25
+    ecosystem: maven
+    match:
+      group_id: org.apache.maven.plugins
+      artifact_id: maven-enforcer-plugin
+      plugin_id: maven-enforcer-plugin
+    risk: build_policy_plugin
+    severity: info
+    compatibility:
+      java:
+        "25":
+          min_version: "latest-supported"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+    source_ids:
+      - openrewrite-java25
+    reason: >
+      Enforcer rules often pin Java, Maven, bytecode, or dependency convergence
+      policy and must be reviewed during Java 25 migration.
+    edit_strategy: >
+      Update rules for Java 25 and Maven/Gradle versions before changing plugin
+      major versions.
+
+  - id: spotbugs-maven-plugin-java25
+    ecosystem: maven
+    match:
+      group_id: com.github.spotbugs
+      artifact_id: spotbugs-maven-plugin
+      plugin_id: spotbugs-maven-plugin
+    risk: bytecode_static_analysis
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "TBD"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+    source_ids:
+      - openrewrite-java25
+    reason: >
+      SpotBugs analyzes bytecode and must include Java 25-capable bytecode
+      libraries.
+    edit_strategy: >
+      Upgrade plugin and SpotBugs engine together.
+
+  - id: checkstyle-maven-plugin-java25
+    ecosystem: maven
+    match:
+      group_id: org.apache.maven.plugins
+      artifact_id: maven-checkstyle-plugin
+      plugin_id: maven-checkstyle-plugin
+    risk: source_static_analysis
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "latest-supported"
+          recommended_version: "latest-supported"
+          supported_versions: []
+          unsupported_versions: []
+    source_ids:
+      - openrewrite-java25
+    reason: >
+      Maven Checkstyle Plugin wraps Checkstyle; Java 25 syntax support depends
+      on the embedded Checkstyle version.
+    edit_strategy: >
+      Update plugin and configure a Java 25-capable Checkstyle dependency when
+      needed.
+
+  - id: kotlin-gradle-plugin-java25
+    ecosystem: gradle
+    match:
+      group_id: org.jetbrains.kotlin
+      artifact_id: kotlin-gradle-plugin
+      plugin_id_pattern: "org.jetbrains.kotlin*"
+    risk: language_compiler_gradle_plugin
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "2.3.0"
+          recommended_version: "2.3.x+"
+          supported_versions:
+            - "2.3.x+"
+          unsupported_versions:
+            - "<2.3.0"
+          notes:
+            - "Kotlin 2.3.0 documents Gradle compatibility through 9.0.0; using newer Gradle may produce warnings."
+    source_ids:
+      - kotlin-2-3
+      - gradle-compatibility
+    reason: >
+      Kotlin compiler/Gradle plugin must support Java 25 target and the chosen
+      Gradle version.
+    edit_strategy: >
+      Align Kotlin Gradle plugin, KSP, Android Gradle Plugin, and Gradle wrapper.
+
+  - id: android-gradle-plugin-java25
+    ecosystem: gradle
+    match:
+      group_id: com.android.tools.build
+      artifact_id: gradle
+      plugin_id_pattern: "com.android.*"
+    risk: android_build_toolchain
+    severity: warning
+    compatibility:
+      java:
+        "25":
+          min_version: "9.0.x"
+          recommended_version: "9.x"
+          supported_versions:
+            - "9.x"
+          unsupported_versions:
+            - "<9.0.x"
+          notes:
+            - "AGP 9.0 has breaking DSL and built-in Kotlin changes; AGP 9.3 still lists JDK 17 as plugin runtime."
+    source_ids:
+      - android-gradle-plugin-9
+      - gradle-compatibility
+    reason: >
+      Android Gradle Plugin compatibility must be coordinated with Gradle,
+      Kotlin, Android Studio, compile SDK, and JDK runtime.
+    edit_strategy: >
+      Treat Android migration as separate plan; use AGP Upgrade Assistant and
+      update custom Gradle plugins before moving AGP major versions.

@@ -117,3 +117,246 @@ removed_apis:
       This Swing Synth look-and-feel load overload was removed in Java 25.
     guidance: >
       Use supported SynthLookAndFeel APIs available in Java 25.
+
+  - id: jdk25-basic-slider-ui-constructor-removal
+    removed_in_java: 25
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbols:
+      - javax.swing.plaf.basic.BasicSliderUI.BasicSliderUI.<init>()
+    reason: >
+      This BasicSliderUI constructor was removed in Java 25.
+    guidance: >
+      Use supported BasicSliderUI construction or subclassing APIs available in
+      Java 25.
+
+  - id: jmx-mlet-removals
+    removed_in_java: 23
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbols:
+      - javax.management.loading.MLet
+      - javax.management.loading.MLetContent
+      - javax.management.loading.MLetMBean
+      - javax.management.loading.PrivateMLet
+    reason: >
+      JMX MLet loading APIs were removed in Java 23.
+    guidance: >
+      Replace dynamic MLet loading with explicit class loading, service loading,
+      or deployment-specific plugin loading.
+
+  - id: thread-count-stack-frames-removal
+    removed_in_java: 22
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbols:
+      - java.lang.Thread.countStackFrames
+    reason: >
+      Deprecated Thread stack counting API was removed in Java 22.
+    guidance: >
+      Use StackWalker or Thread.getStackTrace where stack inspection is still
+      needed.
+
+  - id: finalizer-method-removals
+    removed_in_java: 18
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbols:
+      - java.awt.color.ICC_Profile.finalize()
+      - java.awt.image.ColorModel.finalize()
+      - java.awt.image.IndexColorModel.finalize()
+      - java.io.FileInputStream.finalize()
+      - java.io.FileOutputStream.finalize()
+      - java.util.zip.Deflater.finalize()
+      - java.util.zip.Inflater.finalize()
+      - java.util.zip.ZipFile.finalize()
+    reason: >
+      Several finalize methods were removed across Java 12 and Java 18 as part
+      of finalization cleanup.
+    guidance: >
+      Replace direct finalizer calls or overrides with explicit close/release
+      logic, try-with-resources, Cleaner, or lifecycle hooks.
+
+  - id: rmi-activation-removal
+    removed_in_java: 17
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbol_prefixes:
+      - java.rmi.activation
+    symbols:
+      - java.rmi.activation.Activatable
+      - java.rmi.activation.ActivationDesc
+      - java.rmi.activation.ActivationGroup
+      - java.rmi.activation.ActivationGroup_Stub
+      - java.rmi.activation.ActivationGroupDesc
+      - java.rmi.activation.ActivationGroupID
+      - java.rmi.activation.ActivationID
+      - java.rmi.activation.ActivationInstantiator
+      - java.rmi.activation.ActivationMonitor
+      - java.rmi.activation.ActivationSystem
+      - java.rmi.activation.Activator
+    reason: >
+      RMI Activation was removed in Java 17.
+    guidance: >
+      Replace activation with explicit service startup, dependency injection, or
+      deployment orchestration.
+
+  - id: tool-provider-constructor-removal
+    removed_in_java: 16
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbols:
+      - javax.tools.ToolProvider.<init>()
+    reason: >
+      Public constructor for ToolProvider was removed in Java 16.
+    guidance: >
+      Use ToolProvider static factory methods.
+
+  - id: jdk15-constructor-and-field-removals
+    removed_in_java: 15
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbols:
+      - java.management.rmi.RMIConnectorServer.CREDENTIAL_TYPES
+      - java.lang.invoke.ConstantBootstraps.<init>
+      - java.lang.reflect.Modifier.<init>
+    reason: >
+      Obsolete field and constructors were removed in Java 15.
+    guidance: >
+      Remove direct constructor calls and use supported static APIs or constants.
+
+  - id: security-acl-and-pack200-removals
+    removed_in_java: 14
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbol_prefixes:
+      - java.security.acl
+    symbols:
+      - java.security.acl.Acl
+      - java.security.acl.AclEntry
+      - java.security.acl.Group
+      - java.security.acl.Owner
+      - java.security.acl.Permission
+      - java.util.jar.Pack200
+      - java.util.jar.Pack200.Packer
+      - java.util.jar.Pack200.Unpacker
+    reason: >
+      Legacy ACL APIs and Pack200 were removed in Java 14.
+    guidance: >
+      Replace ACL usage with java.security.Policy or application authorization.
+      Remove Pack200 compression from build and distribution flows.
+
+  - id: runtime-tracing-removals
+    removed_in_java: 13
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbols:
+      - java.lang.Runtime.traceInstructions(boolean)
+      - java.lang.Runtime.traceMethodCalls(boolean)
+    reason: >
+      Runtime tracing APIs were removed in Java 13.
+    guidance: >
+      Use JVM TI, JFR, profilers, or logging/tracing instrumentation.
+
+  - id: jdk11-security-and-finalizer-removals
+    removed_in_java: 11
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbols:
+      - javax.security.auth.Policy
+      - java.lang.Runtime.runFinalizersOnExit(boolean)
+      - java.lang.SecurityManager.checkAwtEventQueueAccess()
+      - java.lang.SecurityManager.checkMemberAccess(java.lang.Class,int)
+      - java.lang.SecurityManager.checkSystemClipboardAccess()
+      - java.lang.SecurityManager.checkTopLevelWindow(java.lang.Object)
+      - java.lang.System.runFinalizersOnExit(boolean)
+      - java.lang.Thread.destroy()
+      - java.lang.Thread.stop(java.lang.Throwable)
+    reason: >
+      Obsolete security manager, finalization, and thread control APIs were
+      removed in JDK 11.
+    guidance: >
+      Replace finalization/thread control with explicit lifecycle management and
+      supported concurrency primitives. Replace JAAS policy usage with supported
+      security configuration.
+
+  - id: browser-plugin-dom-removals
+    removed_in_java: 10
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbols:
+      - com.sun.java.browser.plugin2.DOM
+      - sun.plugin.dom.DOMObject
+    reason: >
+      Browser plugin DOM APIs were removed with obsolete browser plugin support.
+    guidance: >
+      Remove browser plugin integration.
+
+  - id: jdk9-logging-pack200-listener-removals
+    removed_in_java: 9
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbols:
+      - java.util.logging.LogManager.addPropertyChangeListener
+      - java.util.logging.LogManager.removePropertyChangeListener
+      - java.util.jar.Pack200.Packer.addPropertyChangeListener
+      - java.util.jar.Pack200.Packer.removePropertyChangeListener
+      - java.util.jar.Pack200.Unpacker.addPropertyChangeListener
+      - java.util.jar.Pack200.Unpacker.removePropertyChangeListener
+    reason: >
+      Deprecated property change listener APIs were removed in JDK 9.
+    guidance: >
+      Remove listener usage or replace with application-level configuration
+      reload hooks.
+
+  - id: sun-base64-removal
+    removed_in_java: 9
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbols:
+      - sun.misc.BASE64Encoder
+      - sun.misc.BASE64Decoder
+    reason: >
+      Unsupported sun.misc Base64 APIs were removed in JDK 9.
+    guidance: >
+      Use java.util.Base64.
+
+  - id: inaccessible-awt-peer-packages
+    removed_in_java: 9
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbol_prefixes:
+      - java.awt.peer
+      - java.awt.dnd.peer
+    reason: >
+      AWT peer packages became inaccessible in JDK 9 and were never supported
+      Java SE APIs.
+    guidance: >
+      Use Component.isDisplayable and Component.isLightweight instead of peer
+      checks.
+
+  - id: com-sun-image-codec-jpeg-removal
+    removed_in_java: 9
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbol_prefixes:
+      - com.sun.image.codec.jpeg
+    reason: >
+      Nonstandard JPEG codec package was removed.
+    guidance: >
+      Use javax.imageio Image I/O APIs.

@@ -1,0 +1,161 @@
+schema_version: 1
+target_java: 25
+verified_on: "2026-08-16"
+description: >
+  Java SE 25 deprecated-for-removal API families. This file is intentionally
+  family-oriented because Oracle's deprecated-list page contains many individual
+  overloads; analyzers should prefer running jdeprscan from a JDK 25 toolchain
+  for exact symbol-level findings.
+sources:
+  - id: oracle-jdk25-deprecated-list
+    url: "https://docs.oracle.com/en/java/javase/25/docs/api/deprecated-list.html"
+    trust: official
+  - id: oracle-jdeprscan
+    url: "https://docs.oracle.com/en/java/javase/17/docs/specs/man/jdeprscan.html"
+    trust: official
+deprecated_for_removal:
+  - id: applet-api
+    deprecated_since_java: 9
+    severity: warning
+    source_ids:
+      - oracle-jdk25-deprecated-list
+    symbol_prefixes:
+      - java.applet
+      - javax.swing.JApplet
+      - java.beans.AppletInitializer
+    reason: >
+      Applet API is deprecated for removal with no replacement.
+    guidance: >
+      Remove applet integration and replace with desktop, web, or service entry
+      points.
+
+  - id: finalization
+    deprecated_since_java: 9
+    severity: warning
+    source_ids:
+      - oracle-jdk25-deprecated-list
+    symbol_patterns:
+      - "*.finalize()"
+    symbols:
+      - java.lang.Object.finalize()
+      - java.awt.Graphics.finalize()
+      - java.awt.PrintJob.finalize()
+    reason: >
+      Finalization is deprecated for removal and has been progressively removed
+      from concrete JDK classes.
+    guidance: >
+      Replace finalizers with explicit close methods, try-with-resources,
+      Cleaner, or framework lifecycle hooks.
+
+  - id: security-manager
+    deprecated_since_java: 17
+    severity: warning
+    source_ids:
+      - oracle-jdk25-deprecated-list
+    symbol_prefixes:
+      - java.lang.SecurityManager
+      - java.security.Policy
+    symbols:
+      - java.lang.System.getSecurityManager()
+      - java.lang.System.setSecurityManager(java.lang.SecurityManager)
+    reason: >
+      Security Manager is deprecated for removal and is no longer a viable
+      sandboxing mechanism for modern Java.
+    guidance: >
+      Replace with process/container isolation, OS permissions, custom policy
+      checks, or framework-specific authorization.
+
+  - id: java-security-identity
+    deprecated_since_java: 1
+    severity: warning
+    source_ids:
+      - oracle-jdk25-deprecated-list
+    symbols:
+      - java.security.Certificate
+      - java.security.Identity
+      - java.security.IdentityScope
+      - java.security.Signer
+    reason: >
+      Legacy identity APIs are deprecated for removal.
+    guidance: >
+      Use java.security.KeyStore, java.security.Principal, and
+      java.security.cert APIs.
+
+  - id: java-beans-beancontext
+    deprecated_since_java: 23
+    severity: warning
+    source_ids:
+      - oracle-jdk25-deprecated-list
+    symbol_prefixes:
+      - java.beans.beancontext
+    reason: >
+      BeanContext APIs are deprecated for removal in the Java 25 API docs.
+    guidance: >
+      Replace with application framework lifecycle/context APIs.
+
+  - id: awt-warning-and-permission
+    deprecated_since_java: 24
+    severity: warning
+    source_ids:
+      - oracle-jdk25-deprecated-list
+    symbols:
+      - java.awt.AWTPermission
+      - java.awt.Window.getWarningString()
+    reason: >
+      AWT permission and warning string APIs are deprecated for removal.
+    guidance: >
+      Remove applet/security-manager-era UI trust checks.
+
+  - id: primitive-wrapper-constructors
+    deprecated_since_java: 9
+    severity: warning
+    source_ids:
+      - oracle-jdk25-deprecated-list
+    symbols:
+      - java.lang.Boolean.Boolean(boolean)
+      - java.lang.Boolean.Boolean(java.lang.String)
+      - java.lang.Byte.Byte(byte)
+      - java.lang.Byte.Byte(java.lang.String)
+      - java.lang.Character.Character(char)
+      - java.lang.Double.Double(double)
+      - java.lang.Double.Double(java.lang.String)
+      - java.lang.Float.Float(float)
+      - java.lang.Float.Float(double)
+      - java.lang.Float.Float(java.lang.String)
+      - java.lang.Integer.Integer(int)
+      - java.lang.Integer.Integer(java.lang.String)
+      - java.lang.Long.Long(long)
+      - java.lang.Long.Long(java.lang.String)
+      - java.lang.Short.Short(short)
+      - java.lang.Short.Short(java.lang.String)
+    reason: >
+      Primitive wrapper constructors are deprecated for removal.
+    guidance: >
+      Use valueOf factory methods or autoboxing.
+
+  - id: thread-stop-suspend-resume
+    deprecated_since_java: 1
+    severity: warning
+    source_ids:
+      - oracle-jdk25-deprecated-list
+    symbols:
+      - java.lang.Thread.stop()
+      - java.lang.Thread.suspend()
+      - java.lang.Thread.resume()
+      - java.lang.ThreadGroup.stop()
+      - java.lang.ThreadGroup.suspend()
+      - java.lang.ThreadGroup.resume()
+    reason: >
+      Unsafe thread control APIs are deprecated for removal; several overloads
+      are already removed.
+    guidance: >
+      Replace with interrupts, cooperative cancellation, executors, futures, or
+      structured concurrency patterns.
+
+analysis_guidance:
+  preferred_tool: "jdeprscan"
+  required_release: 25
+  command: "jdeprscan --release 25 --for-removal --class-path <classpath> <classes-or-jar>"
+  note: >
+    The local development JDK may not support --release 25. Use a JDK 25
+    toolchain inside migration VM for exact deprecated-for-removal findings.
