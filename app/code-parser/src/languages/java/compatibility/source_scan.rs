@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use std::collections::HashSet;
 use tree_sitter::{Node, Parser, TreeCursor};
 use walkdir::{DirEntry, WalkDir};
 
@@ -81,6 +82,7 @@ fn scan_file(
             Some(file.display().to_string()),
         )
     })?;
+    let mut seen = HashSet::new();
 
     for candidate in candidates {
         for (category, rules) in kb_rules {
@@ -91,6 +93,13 @@ fn scan_file(
                     }
                 }
                 for matched_text in matched_terms(rule, &candidate.values) {
+                    let key = format!(
+                        "{}\0{}\0{}\0{}\0{}",
+                        rule.id, category, display_path, candidate.line, matched_text
+                    );
+                    if !seen.insert(key) {
+                        continue;
+                    }
                     findings.push(ApiFinding {
                         rule_id: rule.id.clone(),
                         category: (*category).to_string(),

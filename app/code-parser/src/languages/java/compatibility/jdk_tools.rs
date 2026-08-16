@@ -2,6 +2,8 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use walkdir::{DirEntry, WalkDir};
+
 use crate::languages::java::build::model::Diagnostic;
 use crate::languages::java::compatibility::model::JdkToolFinding;
 
@@ -205,16 +207,44 @@ where
 }
 
 fn discover_classes_paths(project_root: &Path) -> Vec<PathBuf> {
-    [
-        "target/classes",
-        "target/test-classes",
-        "build/classes/java/main",
-        "build/classes/java/test",
-    ]
-    .into_iter()
-    .map(|relative| project_root.join(relative))
-    .filter(|path| path.exists())
-    .collect()
+    let mut paths = Vec::new();
+    for entry in WalkDir::new(project_root)
+        .into_iter()
+        .filter_entry(|entry| !is_ignored_dir(entry))
+        .filter_map(Result::ok)
+    {
+        if !entry.file_type().is_dir() {
+            continue;
+        }
+        let path = entry.path();
+        if matches_class_dir(project_root, path) {
+            paths.push(path.to_path_buf());
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+fn matches_class_dir(project_root: &Path, path: &Path) -> bool {
+    let relative = path.strip_prefix(project_root).unwrap_or(path);
+    let normalized = relative
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/");
+    normalized.ends_with("target/classes")
+        || normalized.ends_with("target/test-classes")
+        || normalized.ends_with("build/classes/java/main")
+        || normalized.ends_with("build/classes/java/test")
+}
+
+fn is_ignored_dir(entry: &DirEntry) -> bool {
+    entry.file_type().is_dir()
+        && matches!(
+            entry.file_name().to_string_lossy().as_ref(),
+            ".git" | ".gradle" | ".idea" | ".mvn" | "node_modules"
+        )
 }
 
 fn run_jdeps(jdeps: &Path, classes_paths: &[PathBuf]) -> Result<String, Diagnostic> {
@@ -386,6 +416,9 @@ fn executable_name(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use super::*;
 
     #[test]
@@ -408,5 +441,49 @@ mod tests {
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].tool, "jdeprscan");
         assert_eq!(findings[0].class_name.as_deref(), Some("demo.App"));
+    }
+
+    #[test]
+    fn discovers_multimodule_class_directories() {
+        let root = test_dir("jdk-tools-discover");
+        fs::create_dir_all(root.join("app/build/classes/java/main")).unwrap();
+        fs::create_dir_all(root.join("lib/build/classes/java/test")).unwrap();
+        fs::create_dir_all(root.join("service/target/classes")).unwrap();
+        fs::create_dir_all(root.join(".gradle/ignored/build/classes/java/main")).unwrap();
+
+        let paths = discover_classes_paths(&root);
+        let relative: Vec<_> = paths
+            .iter()
+            .map(|path| {
+                path.strip_prefix(&root)
+                    .unwrap()
+                    .components()
+                    .map(|component| component.as_os_str().to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/")
+            })
+            .collect();
+
+        assert_eq!(
+            relative,
+            vec![
+                "app/build/classes/java/main",
+                "lib/build/classes/java/test",
+                "service/target/classes"
+            ]
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn test_dir(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "code-parser-{name}-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
     }
 }
