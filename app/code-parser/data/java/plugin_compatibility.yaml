@@ -1,0 +1,123 @@
+schema_version: 1
+target_java: 25
+verified_on: "2026-08-16"
+description: >
+  Build plugin and build tool compatibility rules for Java 8 to Java 25
+  migrations.
+sources:
+  - id: gradle-compatibility
+    url: "https://docs.gradle.org/current/userguide/compatibility.html"
+    trust: official
+  - id: maven-compiler-plugin
+    url: "https://maven.apache.org/plugins/maven-compiler-plugin/"
+    trust: official
+  - id: maven-compiler-release-option
+    url: "https://maven.apache.org/plugins/maven-compiler-plugin/examples/set-compiler-release.html"
+    trust: official
+  - id: maven-surefire-plugin
+    url: "https://maven.apache.org/surefire/maven-surefire-plugin/"
+    trust: official
+  - id: maven-failsafe-plugin
+    url: "https://maven.apache.org/surefire/maven-failsafe-plugin/"
+    trust: official
+  - id: openrewrite-java25
+    url: "https://docs.openrewrite.org/recipes/java/migrate/upgradepluginsforjava25"
+    trust: trusted_automation
+plugins:
+  - id: gradle-wrapper-java25
+    ecosystem: gradle
+    match:
+      tool: gradle
+    risk: build_tool_runtime
+    severity: error
+    minimum_version_for_java:
+      "25": "9.1.0"
+    source_ids:
+      - gradle-compatibility
+      - openrewrite-java25
+    reason: >
+      Gradle compatibility matrix lists Java 25 support for toolchains and
+      running Gradle starting at Gradle 9.1.0.
+    edit_strategy: >
+      Update gradle/wrapper/gradle-wrapper.properties. Do not add wrapper if
+      project deliberately avoids one unless migration policy allows it.
+
+  - id: maven-compiler-plugin-java25
+    ecosystem: maven
+    match:
+      group_id: org.apache.maven.plugins
+      artifact_id: maven-compiler-plugin
+      plugin_id: maven-compiler-plugin
+    risk: javac_invocation
+    severity: error
+    minimum_version_for_java:
+      "25": "3.15.x"
+    source_ids:
+      - maven-compiler-plugin
+      - maven-compiler-release-option
+      - openrewrite-java25
+    reason: >
+      Maven Compiler Plugin controls javac source, target, and release. Java 25
+      migration recipes upgrade it to 3.15.x and Maven docs recommend release
+      configuration.
+    edit_strategy: >
+      Set maven.compiler.release to 25 or plugin release configuration. Prefer
+      pluginManagement when project uses a parent or multi-module build.
+
+  - id: maven-surefire-plugin-java25
+    ecosystem: maven
+    match:
+      group_id: org.apache.maven.plugins
+      artifact_id_pattern: "maven-surefire-*"
+      plugin_id_pattern: "maven-surefire-*"
+    risk: test_runtime
+    severity: warning
+    minimum_version_for_java:
+      "25": "3.5.x"
+    source_ids:
+      - maven-surefire-plugin
+      - openrewrite-java25
+    reason: >
+      Surefire launches unit tests and interacts with modern JVM test runtime
+      behavior. Java 25 migration recipes upgrade Surefire to 3.5.x.
+    edit_strategy: >
+      Update direct plugin declaration or pluginManagement. Coordinate with
+      Mockito agent configuration when inline mocking is used.
+
+  - id: maven-failsafe-plugin-java25
+    ecosystem: maven
+    match:
+      group_id: org.apache.maven.plugins
+      artifact_id: maven-failsafe-plugin
+      plugin_id: maven-failsafe-plugin
+    risk: integration_test_runtime
+    severity: warning
+    minimum_version_for_java:
+      "25": "3.5.x"
+    source_ids:
+      - maven-failsafe-plugin
+      - openrewrite-java25
+    reason: >
+      Failsafe launches integration tests and should align with Surefire during
+      Java 25 migration.
+    edit_strategy: >
+      Update direct plugin declaration or pluginManagement with Surefire.
+
+  - id: maven-pmd-plugin-java25
+    ecosystem: maven
+    match:
+      group_id: org.apache.maven.plugins
+      artifact_id: maven-pmd-plugin
+      plugin_id: maven-pmd-plugin
+    risk: static_analysis_parser
+    severity: warning
+    minimum_version_for_java:
+      "25": "3.28.x"
+    source_ids:
+      - openrewrite-java25
+    reason: >
+      Static analysis plugins parse Java syntax and often require explicit
+      upgrades for new language/class-file releases. Java 25 migration recipes
+      upgrade Maven PMD plugin to 3.28.x.
+    edit_strategy: >
+      Update plugin version and verify configured PMD rulesets still work.

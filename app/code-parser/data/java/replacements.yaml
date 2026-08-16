@@ -1,0 +1,115 @@
+schema_version: 1
+target_java: 25
+verified_on: "2026-08-16"
+description: >
+  Dependency replacement hints for APIs that were bundled with Java 8 but are
+  absent from modern JDKs, plus Jakarta migration alternatives.
+sources:
+  - id: openjdk-jep-320
+    url: "https://openjdk.org/jeps/320"
+    trust: official
+  - id: oracle-jdk11-migration
+    url: "https://docs.oracle.com/en/java/javase/11/migrate/"
+    trust: official
+  - id: jakarta-ee-specifications
+    url: "https://jakarta.ee/specifications/"
+    trust: official
+replacements:
+  - id: jaxb-javaee-to-jakarta
+    applies_when_target_java_at_least: 11
+    source_ids:
+      - openjdk-jep-320
+      - oracle-jdk11-migration
+      - jakarta-ee-specifications
+    from_symbols:
+      - javax.xml.bind
+    from_dependencies:
+      - group_id: javax.xml.bind
+        artifact_id: jaxb-api
+      - group_id: com.sun.xml.bind
+        artifact_id: jaxb-impl
+    to_dependencies:
+      - group_id: jakarta.xml.bind
+        artifact_id: jakarta.xml.bind-api
+      - group_id: org.glassfish.jaxb
+        artifact_id: jaxb-runtime
+    migration_kind: jakarta_package_change
+    note: >
+      Jakarta JAXB uses jakarta.xml.bind packages. If source still imports
+      javax.xml.bind, use a javax-compatible standalone JAXB stack instead of
+      this Jakarta replacement until source migration is planned.
+
+  - id: activation-javaee-to-jakarta
+    applies_when_target_java_at_least: 11
+    source_ids:
+      - openjdk-jep-320
+      - oracle-jdk11-migration
+      - jakarta-ee-specifications
+    from_symbols:
+      - javax.activation
+    from_dependencies:
+      - group_id: javax.activation
+        artifact_id: activation
+      - group_id: javax.activation
+        artifact_id: javax.activation-api
+    to_dependencies:
+      - group_id: jakarta.activation
+        artifact_id: jakarta.activation-api
+    migration_kind: jakarta_package_change
+    note: >
+      Jakarta Activation uses jakarta.activation packages. Keep javax-compatible
+      artifacts if source is not migrating packages yet.
+
+  - id: annotation-javaee-to-jakarta
+    applies_when_target_java_at_least: 11
+    source_ids:
+      - openjdk-jep-320
+      - oracle-jdk11-migration
+      - jakarta-ee-specifications
+    from_symbols:
+      - javax.annotation
+    from_dependencies:
+      - group_id: javax.annotation
+        artifact_id: javax.annotation-api
+    to_dependencies:
+      - group_id: jakarta.annotation
+        artifact_id: jakarta.annotation-api
+    migration_kind: jakarta_package_change
+    note: >
+      Common annotations moved to jakarta.annotation in Jakarta EE. Source
+      imports must match chosen dependency family.
+
+  - id: jaxws-javaee-to-jakarta
+    applies_when_target_java_at_least: 11
+    source_ids:
+      - openjdk-jep-320
+      - oracle-jdk11-migration
+      - jakarta-ee-specifications
+    from_symbols:
+      - javax.xml.ws
+      - javax.jws
+    from_dependencies:
+      - group_id: javax.xml.ws
+        artifact_id: jaxws-api
+    to_dependencies:
+      - group_id: jakarta.xml.ws
+        artifact_id: jakarta.xml.ws-api
+    migration_kind: jakarta_package_change
+    note: >
+      Add a compatible runtime implementation when application still hosts or
+      calls SOAP endpoints.
+
+  - id: corba-removal
+    applies_when_target_java_at_least: 11
+    source_ids:
+      - openjdk-jep-320
+      - oracle-jdk11-migration
+    from_symbols:
+      - org.omg
+      - javax.rmi.CORBA
+    to_dependencies: []
+    migration_kind: no_direct_jdk_replacement
+    note: >
+      CORBA was removed from the JDK. Prefer replacing the integration with a
+      supported protocol or vendor-maintained ORB if business constraints
+      require it.

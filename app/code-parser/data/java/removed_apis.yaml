@@ -1,0 +1,119 @@
+schema_version: 1
+target_java: 25
+verified_on: "2026-08-16"
+description: >
+  Java APIs and modules removed between Java 8 and Java 25 that can affect
+  source compilation or runtime class loading during migration.
+sources:
+  - id: oracle-jdk25-removed-apis
+    url: "https://docs.oracle.com/en/java/javase/25/migrate/removed-apis.html"
+    trust: official
+  - id: openjdk-jep-320
+    url: "https://openjdk.org/jeps/320"
+    trust: official
+  - id: oracle-jdk11-migration
+    url: "https://docs.oracle.com/en/java/javase/11/migrate/"
+    trust: official
+removed_apis:
+  - id: java-ee-corba-modules
+    removed_in_java: 11
+    severity: error
+    source_ids:
+      - openjdk-jep-320
+      - oracle-jdk11-migration
+    modules:
+      - java.xml.bind
+      - java.xml.ws
+      - java.activation
+      - java.xml.ws.annotation
+      - java.corba
+      - java.transaction
+      - java.se.ee
+      - jdk.xml.bind
+      - jdk.xml.ws
+    symbol_prefixes:
+      - javax.xml.bind
+      - javax.xml.ws
+      - javax.activation
+      - javax.annotation
+      - javax.jws
+      - javax.rmi.CORBA
+      - org.omg
+    reason: >
+      Java EE and CORBA modules bundled in JDK 8 were deprecated for removal in
+      Java 9 and removed in Java 11. Code can fail to compile or load classes
+      unless standalone dependencies are added or APIs are migrated.
+    guidance: >
+      Add explicit external dependencies for APIs still needed, or migrate to
+      Jakarta packages when framework version requires Jakarta EE.
+
+  - id: applet-api-removals
+    removed_in_java: 24
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbol_prefixes:
+      - java.applet
+      - javax.swing.JApplet
+      - javax.naming.Context.APPLET
+    reason: >
+      Applet-related APIs and fields were removed after long deprecation.
+    guidance: >
+      Remove applet integration or replace with standalone desktop/web entry
+      points.
+
+  - id: rmi-iiop-management-removals
+    removed_in_java: 21
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbol_prefixes:
+      - javax.management.remote.rmi.RMIIIOPServerImpl
+    reason: >
+      RMI-IIOP management API was removed as part of long-running CORBA/IIOP
+      removal.
+    guidance: >
+      Replace IIOP integration with supported RMI/JMX or service-specific
+      remoting.
+
+  - id: thread-suspend-resume-removals
+    removed_in_java: 23
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbols:
+      - java.lang.Thread.resume
+      - java.lang.Thread.suspend
+      - java.lang.ThreadGroup.resume
+      - java.lang.ThreadGroup.stop
+      - java.lang.ThreadGroup.suspend
+    reason: >
+      Unsafe thread control APIs were removed after long deprecation.
+    guidance: >
+      Replace with cooperative cancellation, interrupts, executors, or higher
+      level concurrency primitives.
+
+  - id: java-lang-compiler-removal
+    removed_in_java: 21
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbols:
+      - java.lang.Compiler
+    reason: >
+      The old JIT compiler control API was removed in Java 21.
+    guidance: >
+      Remove calls; modern JVMs do not support this API as a useful tuning
+      surface.
+
+  - id: jdk25-synth-look-and-feel-load-removal
+    removed_in_java: 25
+    severity: error
+    source_ids:
+      - oracle-jdk25-removed-apis
+    symbols:
+      - javax.swing.plaf.synth.SynthLookAndFeel.load
+    reason: >
+      This Swing Synth look-and-feel load overload was removed in Java 25.
+    guidance: >
+      Use supported SynthLookAndFeel APIs available in Java 25.

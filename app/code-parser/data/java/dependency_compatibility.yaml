@@ -1,0 +1,152 @@
+schema_version: 1
+target_java: 25
+verified_on: "2026-08-16"
+description: >
+  Dependency compatibility rules for Java 8 to Java 25 migrations. Rules are
+  intentionally conservative and focus on dependencies known to inspect,
+  generate, or deeply integrate with bytecode, javac, or major frameworks.
+sources:
+  - id: asm-versions
+    url: "https://asm.ow2.io/versions.html"
+    trust: official
+  - id: byte-buddy-release-notes
+    url: "https://github.com/raphw/byte-buddy/blob/master/release-notes.md"
+    trust: official
+  - id: lombok-changelog
+    url: "https://projectlombok.org/changelog"
+    trust: official
+  - id: spring-boot-system-requirements
+    url: "https://docs.spring.io/spring-boot/system-requirements.html"
+    trust: official
+  - id: spring-framework-versions
+    url: "https://github.com/spring-projects/spring-framework/wiki/Spring-Framework-Versions"
+    trust: official
+  - id: hibernate-orm-6-6
+    url: "https://hibernate.org/orm/releases/6.6/"
+    trust: official
+  - id: jacoco-changes
+    url: "https://www.jacoco.org/jacoco/trunk/doc/changes.html"
+    trust: official
+  - id: openrewrite-java25
+    url: "https://docs.openrewrite.org/recipes/java/migrate/upgradepluginsforjava25"
+    trust: trusted_automation
+dependencies:
+  - id: asm-java25
+    match:
+      group_id: org.ow2.asm
+      artifact_id_pattern: "asm*"
+    risk: bytecode_parser
+    severity: error
+    minimum_version_for_java:
+      "25": "9.8"
+    source_ids:
+      - asm-versions
+    reason: >
+      ASM 9.8 added Opcodes.V25 for Java 25 class files.
+    edit_strategy: >
+      Prefer updating the direct framework/plugin/BOM that brings ASM. Override
+      ASM directly only when dependency management cannot update the owner.
+
+  - id: byte-buddy-java25
+    match:
+      group_id: net.bytebuddy
+      artifact_id_pattern: "byte-buddy*"
+    risk: bytecode_generation
+    severity: error
+    minimum_version_for_java:
+      "25": "1.17.5"
+    source_ids:
+      - byte-buddy-release-notes
+      - openrewrite-java25
+    reason: >
+      Byte Buddy 1.17.5 updated ASM to 9.8 for Java 25 reader/writer support.
+    edit_strategy: >
+      Update Byte Buddy directly only if it is directly declared. Otherwise
+      update Mockito, test tooling, agent, or framework dependency that owns it.
+
+  - id: lombok-java25
+    match:
+      group_id: org.projectlombok
+      artifact_id: lombok
+    risk: annotation_processor
+    severity: error
+    minimum_version_for_java:
+      "25": "1.18.40"
+    source_ids:
+      - lombok-changelog
+    reason: >
+      Lombok 1.18.40 added JDK 25 support. Older Lombok versions often fail
+      against new javac internals.
+    edit_strategy: >
+      Update direct Lombok dependency and annotation processor path together.
+
+  - id: mockito-java25
+    match:
+      group_id: org.mockito
+      artifact_id_pattern: "mockito-*"
+    risk: test_bytecode_agent
+    severity: warning
+    minimum_version_for_java:
+      "25": "5.17.x"
+    source_ids:
+      - openrewrite-java25
+      - byte-buddy-release-notes
+    reason: >
+      Mockito relies on Byte Buddy for runtime bytecode work. Java 25 migration
+      recipes upgrade Mockito to 5.17.x and Byte Buddy to 1.17.x.
+    edit_strategy: >
+      Update Mockito direct dependencies and configure a Mockito Java agent for
+      tests when inline mocking is used.
+
+  - id: jacoco-java25
+    match:
+      group_id: org.jacoco
+      artifact_id_pattern: "org.jacoco.*"
+    risk: bytecode_coverage
+    severity: warning
+    minimum_version_for_java:
+      "25": "TBD"
+    source_ids:
+      - jacoco-changes
+    reason: >
+      Coverage tools parse class files and must support Java 25 class file
+      version 69. Use JaCoCo release notes to select a version with official
+      Java 25 support.
+    edit_strategy: >
+      Update the JaCoCo Maven/Gradle plugin or dependency through the build
+      plugin configuration, not as an application runtime dependency.
+
+  - id: spring-boot-java25
+    match:
+      group_id: org.springframework.boot
+      artifact_id_pattern: "spring-boot*"
+    risk: framework_baseline
+    severity: warning
+    minimum_version_for_java:
+      "25": "4.0.x"
+    source_ids:
+      - spring-boot-system-requirements
+      - spring-framework-versions
+    reason: >
+      Spring Boot 4.x is documented as compatible with Java 25-era Spring
+      Framework 7.x. Boot 3.x may work for many applications but should be
+      verified against project requirements.
+    edit_strategy: >
+      Prefer upgrading the Spring Boot parent or BOM instead of individual
+      Spring dependencies.
+
+  - id: hibernate-orm-java25
+    match:
+      group_id: org.hibernate.orm
+      artifact_id_pattern: "hibernate-*"
+    risk: persistence_framework
+    severity: warning
+    minimum_version_for_java:
+      "25": "6.6.40.Final"
+    source_ids:
+      - hibernate-orm-6-6
+    reason: >
+      Hibernate ORM 6.6 documents Java 25 compatibility starting at 6.6.40.
+    edit_strategy: >
+      Prefer framework BOM or Spring Boot managed version. Verify Jakarta
+      Persistence and application server compatibility before major upgrades.

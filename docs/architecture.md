@@ -22,3 +22,5 @@
 - Maven resolution prefers `./mvnw` when present and falls back to `mvn`.
 - Gradle resolution prefers `./gradlew` when present and falls back to `gradle`.
 - Build resolution failures are returned as diagnostics while preserving offline parse results.
+- Java migration compatibility knowledge is stored as curated YAML under `app/code-parser/data/java`.
+- Compatibility data tracks removed APIs, replacement dependencies, dependency compatibility, and build plugin compatibility separately from parser logic.
