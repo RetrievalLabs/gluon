@@ -44,9 +44,10 @@ The extraction pipeline should separate:
 2. **Semantic analysis** — understand what classes, methods, types, and references mean.
 3. **Entry-point detection** — identify where application execution can begin or be triggered.
 4. **Business-logic detection** — identify methods/classes that are likely to contain meaningful business behavior.
-5. **Context construction** — collect the relevant code, tests, configuration, and history.
-6. **LLM extraction** — convert implementation details into explicit business rules, workflows, invariants, and state transitions.
-7. **Knowledge graph construction** — connect business concepts to their implementation and evidence.
+5. **SQLite storage** — persist the Code Model, relationships, candidates, context packets, and diagnostics in a queryable local database.
+6. **Context construction** — collect the relevant code, tests, configuration, and history.
+7. **LLM extraction** — convert implementation details into explicit business rules, workflows, invariants, and state transitions.
+8. **Knowledge graph construction** — connect business concepts to their implementation and evidence.
 
 ---
 
@@ -129,6 +130,9 @@ JDTLS answers:
                   Source       Tests       Git/Docs
                     │           │           │
                     └───────────┼───────────┘
+                                ▼
+                       SQLite Extraction DB
+                                │
                                 ▼
                                LLM
                                 │
@@ -243,6 +247,8 @@ Code Model
     └── WRITES
 ```
 
+The Code Model is persisted in SQLite as the v1 system of record. Tree-sitter creates complete structural records first. JDTLS then enriches those records with resolved symbols, definitions, references, implementations, inheritance, and call targets when available.
+
 Example:
 
 ```json
@@ -307,6 +313,8 @@ orderService.approve()
         ↓
 OrderService.approve(Order)
 ```
+
+If JDTLS is unavailable, misconfigured, or unable to resolve a project, extraction should preserve Tree-sitter results and store diagnostics describing the semantic enrichment failure.
 
 ---
 
@@ -375,6 +383,21 @@ caller_count      = 7
 
 This method becomes a **high-priority business-logic candidate**.
 
+Candidate scoring must be deterministic. The LLM does not assign v1 candidate scores.
+
+Each candidate stores:
+
+```text
+method_id
+score
+priority
+raw signal counts
+weighted score breakdown
+evidence ranges
+```
+
+The raw signals and weighted breakdown are stored so agents can explain why a method ranked high and recompute scores after scoring rules change.
+
 ---
 
 ### Context Construction
@@ -415,9 +438,47 @@ The context builder is responsible for deciding what information is relevant.
 
 ---
 
+### SQLite Storage
+
+Business extraction v1 writes a SQLite database as the primary artifact.
+
+```text
+business-extraction.db
+```
+
+The CLI should print a short summary to stdout, including database path, class and method counts, relationship counts, candidate counts by priority, and diagnostic count. It should not write a duplicate JSON report in v1.
+
+The schema groups are:
+
+```text
+classes
+methods
+relationships
+entry_points
+candidate_scores
+candidate_signals
+evidence_ranges
+context_packets
+diagnostics
+```
+
+Graph-like relationships are stored as edges:
+
+```text
+source_id
+target_id
+kind        // CALLS, EXTENDS, IMPLEMENTS, REFERENCES, READS, WRITES, TESTED_BY
+confidence
+source      // tree_sitter, jdtls, heuristic
+```
+
+SQLite is the stable interface for agents that need to query extraction results. A JSON export command can be added later if an external interchange format becomes necessary.
+
+---
+
 ### Business Logic Extraction
 
-The LLM converts the implementation into a structured representation.
+The LLM converts implementation context from SQLite into a structured representation.
 
 Example source:
 
@@ -474,11 +535,13 @@ Every extracted rule should contain evidence.
 }
 ```
 
+LLM-generated business rules, workflows, invariants, and state transitions are downstream of deterministic extraction in v1. They should reference SQLite method IDs and evidence ranges rather than duplicating source content as the primary record.
+
 ---
 
 ### Knowledge Graph
 
-The final business knowledge can be represented as a graph.
+The final business knowledge can be represented as a graph after LLM extraction.
 
 ```text
                  BusinessRule
@@ -532,15 +595,19 @@ The knowledge graph should focus on **meaningful semantic entities and relations
        ↓
 7. Build Call / Reference Graph
        ↓
-8. Score Business Logic Candidates
+8. Write Code Model, Entry Points, and Relationships to SQLite
        ↓
-9. Build Context Packets
+9. Score Business Logic Candidates
        ↓
-10. LLM extracts Business Logic IR
+10. Write Candidate Scores and Signals to SQLite
        ↓
-11. Validate extracted logic against evidence
+11. Build and Store Context Packets
        ↓
-12. Store Business Knowledge in Knowledge Graph
+12. LLM extracts Business Logic IR from SQLite context
+       ↓
+13. Validate extracted logic against evidence
+       ↓
+14. Store Business Knowledge in Knowledge Graph
 ```
 
 The key principle is:
