@@ -6,5 +6,6 @@ This directory contains project documentation for Gluon architecture, runtime en
 
 ## Structure
 
-- `architecture.md` - describes Gluon architecture and migration flow.
+- `architecture.md` - index for architecture documentation.
+- `architecture/` - subsystem architecture docs for system flow, build parsing, and business extraction.
 - `vm-setup.md` - describes VM setup required to run code migration on client files.

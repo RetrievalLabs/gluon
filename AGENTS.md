@@ -15,7 +15,7 @@ A Java modernization platform that migrates applications from Java 9 to Java 25 
 - Create and review a plan before editing files.
 - Make only required changes.
 - Preserve existing behavior unless explicitly required otherwise.
-- Update `docs/architecture.md` when architecture changes.
+- Update `docs/` when architecture changes.
 
 ### Comments
 
