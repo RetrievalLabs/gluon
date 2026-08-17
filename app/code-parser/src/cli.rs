@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::languages::java::build::model::BuildReport;
 use crate::languages::java::build::parse_build;
+use crate::languages::java::business::{BusinessExtractionOptions, extract_business};
 use crate::languages::java::compatibility::analyzer::analyze_report_with_options;
 use crate::languages::java::compatibility::jdk_tools::{DEFAULT_JDK_ROOT, JdkToolOptions};
 
@@ -11,6 +12,7 @@ use crate::languages::java::compatibility::jdk_tools::{DEFAULT_JDK_ROOT, JdkTool
 enum CliOptions {
     ParseBuild(ParseBuildOptions),
     AnalyzeReport(AnalyzeReportOptions),
+    ExtractBusiness(ExtractBusinessOptions),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -30,6 +32,15 @@ struct AnalyzeReportOptions {
     enable_jdk_tools: bool,
     jdk_root: PathBuf,
     classes_paths: Vec<PathBuf>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ExtractBusinessOptions {
+    path: PathBuf,
+    output_dir: PathBuf,
+    database: Option<PathBuf>,
+    jdtls_command: String,
+    jdtls_workspace: Option<PathBuf>,
 }
 
 pub fn run_cli<I, S>(args: I) -> i32
@@ -69,6 +80,7 @@ where
             }
         },
         Ok(CliOptions::AnalyzeReport(options)) => run_analyze_report(options),
+        Ok(CliOptions::ExtractBusiness(options)) => run_extract_business(options),
         Err(error) => {
             command_failed("arguments", &error);
             print_usage();
@@ -93,6 +105,7 @@ where
     match command.as_str() {
         "parse-build" => parse_parse_build_args(args).map(CliOptions::ParseBuild),
         "analyze-report" => parse_analyze_report_args(args).map(CliOptions::AnalyzeReport),
+        "extract-business" => parse_extract_business_args(args).map(CliOptions::ExtractBusiness),
         _ => Err(format!("unsupported command: {command}")),
     }
 }
@@ -206,6 +219,50 @@ fn parse_analyze_report_args(
     })
 }
 
+fn parse_extract_business_args(
+    mut args: impl Iterator<Item = String>,
+) -> Result<ExtractBusinessOptions, String> {
+    let mut path = None;
+    let mut output_dir = None;
+    let mut database = None;
+    let mut jdtls_command = "jdtls".to_string();
+    let mut jdtls_workspace = None;
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--path" => {
+                let value = args.next().ok_or("--path requires a value")?;
+                path = Some(PathBuf::from(value));
+            }
+            "--output-dir" => {
+                let value = args.next().ok_or("--output-dir requires a value")?;
+                output_dir = Some(PathBuf::from(value));
+            }
+            "--database" => {
+                let value = args.next().ok_or("--database requires a value")?;
+                database = Some(PathBuf::from(value));
+            }
+            "--jdtls-command" => {
+                jdtls_command = args.next().ok_or("--jdtls-command requires a value")?;
+            }
+            "--jdtls-workspace" => {
+                let value = args.next().ok_or("--jdtls-workspace requires a value")?;
+                jdtls_workspace = Some(PathBuf::from(value));
+            }
+            "--help" | "-h" => return Err("help requested".to_string()),
+            other => return Err(format!("unsupported argument: {other}")),
+        }
+    }
+
+    Ok(ExtractBusinessOptions {
+        path: path.ok_or("missing required --path")?,
+        output_dir: output_dir.ok_or("missing required --output-dir")?,
+        database,
+        jdtls_command,
+        jdtls_workspace,
+    })
+}
+
 fn run_analyze_report(options: AnalyzeReportOptions) -> i32 {
     let build_report = match read_build_report(&options.report) {
         Ok(report) => report,
@@ -263,9 +320,45 @@ fn run_analyze_report(options: AnalyzeReportOptions) -> i32 {
     }
 }
 
+fn run_extract_business(options: ExtractBusinessOptions) -> i32 {
+    let extraction_options = BusinessExtractionOptions {
+        path: options.path,
+        output_dir: options.output_dir,
+        database: options.database,
+        jdtls_command: options.jdtls_command,
+        jdtls_workspace: options.jdtls_workspace,
+    };
+
+    match extract_business(&extraction_options) {
+        Ok(summary) => {
+            println!("database: {}", summary.database_path);
+            println!("modules: {}", summary.module_count);
+            println!("classes: {}", summary.class_count);
+            println!("methods: {}", summary.method_count);
+            println!("relationships: {}", summary.relationship_count);
+            println!(
+                "candidates: high={} medium={} low={}",
+                summary.high_priority_candidates,
+                summary.medium_priority_candidates,
+                summary.low_priority_candidates
+            );
+            println!("diagnostics: {}", summary.diagnostic_count);
+            0
+        }
+        Err(error) => {
+            command_failed("extract-business", &error);
+            if is_usage_or_jdtls_startup_error(&error) {
+                2
+            } else {
+                1
+            }
+        }
+    }
+}
+
 fn print_usage() {
     eprintln!(
-        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]"
+        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>]"
     );
 }
 
@@ -320,6 +413,14 @@ fn report_written(path: &Path) {
 
 fn command_failed(command: &str, error: &str) {
     eprintln!("code-parser {command} failed: {error}");
+}
+
+fn is_usage_or_jdtls_startup_error(error: &str) -> bool {
+    error.contains("path does not exist")
+        || error.contains("JDTLS executable not found")
+        || error.contains("failed to start JDTLS")
+        || error.contains("JDTLS initialize request failed")
+        || error.contains("JDTLS initialized notification failed")
 }
 
 fn sanitize_path_segment(value: &str) -> String {
@@ -504,5 +605,43 @@ mod tests {
                 ],
             })
         );
+    }
+
+    #[test]
+    fn parses_extract_business_arguments() {
+        let options = parse_args([
+            "code-parser",
+            "extract-business",
+            "--path",
+            "project",
+            "--output-dir",
+            "data",
+            "--database",
+            "business.db",
+            "--jdtls-command",
+            "/bin/jdtls",
+            "--jdtls-workspace",
+            "workspace",
+        ])
+        .expect("valid arguments");
+
+        assert_eq!(
+            options,
+            CliOptions::ExtractBusiness(ExtractBusinessOptions {
+                path: PathBuf::from("project"),
+                output_dir: PathBuf::from("data"),
+                database: Some(PathBuf::from("business.db")),
+                jdtls_command: "/bin/jdtls".to_string(),
+                jdtls_workspace: Some(PathBuf::from("workspace")),
+            })
+        );
+    }
+
+    #[test]
+    fn extract_business_requires_output_dir() {
+        let error = parse_args(["code-parser", "extract-business", "--path", "project"])
+            .expect_err("missing output dir");
+
+        assert!(error.contains("missing required --output-dir"));
     }
 }

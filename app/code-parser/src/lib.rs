@@ -9,4 +9,7 @@ pub use languages::java::build::model::{
 };
 pub use languages::java::build::resolver::{CommandOutput, CommandRunner, SystemCommandRunner};
 pub use languages::java::build::{BuildSystemParser, parse_build, parse_build_with_runner};
+pub use languages::java::business::{
+    BusinessExtractionOptions, ExtractionSummary, extract_business,
+};
 pub use languages::{LanguageParser, ParseOptions};

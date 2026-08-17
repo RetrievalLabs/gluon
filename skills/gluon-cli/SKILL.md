@@ -105,3 +105,36 @@ gluon-cli code-parser analyze-report --report /path/to/gluon/data/project/build-
 ```bash
 gluon-cli code-parser analyze-report --report /path/to/gluon/data/project/build-report.json --target-java 25 --source-path /path/to/project --enable-jdk-tools
 ```
+
+### `code-parser extract-business`
+
+Extracts Java business logic structure into a SQLite database.
+
+Required input:
+
+- `--path <project-root>`: Java project root or Java source file.
+- `--output-dir <directory>`: base output directory. Default database path is `<directory>/<project-directory-name>/business-extraction.db`.
+
+Flags:
+
+- `--database <path>`: write SQLite database to an explicit path instead of the default output path.
+- `--jdtls-command <command>`: JDTLS executable. Defaults to `jdtls`.
+- `--jdtls-workspace <directory>`: JDTLS workspace directory. Defaults beside the database path.
+
+Outputs:
+
+- SQLite `business-extraction.db` with modules, classes, methods, relationships, entry points, candidate scores, signals, evidence ranges, context packets, and diagnostics.
+- Stdout summary with database path, module count, class count, method count, relationship count, candidate counts by priority, and diagnostic count.
+- Multi-module Maven and Gradle projects are stored as one database with `modules` rows and `module_id` on classes and methods.
+- No JSON report in v1.
+- JDTLS is required. Missing executable, startup failure, initialization failure, or semantic request failure blocks extraction and prints verbose stderr with command, path, phase, and available failure details.
+
+Example:
+
+```bash
+gluon-cli code-parser extract-business --path /path/to/project --output-dir /path/to/gluon/data
+```
+
+```bash
+gluon-cli code-parser extract-business --path /path/to/project --output-dir /path/to/gluon/data --jdtls-command /opt/jdtls/bin/jdtls
+```

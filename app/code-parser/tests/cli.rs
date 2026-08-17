@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rusqlite::Connection;
 use serde_json::Value;
 
 #[test]
@@ -254,6 +255,165 @@ fn analyze_report_jdk_tools_missing_root_emits_warnings() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[test]
+fn extract_business_rejects_missing_jdtls_with_verbose_error() {
+    let root = test_dir("extract-missing-jdtls");
+    fs::create_dir_all(root.join("src/main/java/demo")).unwrap();
+    fs::write(
+        root.join("src/main/java/demo/Demo.java"),
+        "package demo; class Demo { void run() {} }",
+    )
+    .unwrap();
+    let output_root = test_dir("extract-missing-jdtls-output");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["extract-business", "--path"])
+        .arg(&root)
+        .args(["--output-dir"])
+        .arg(&output_root)
+        .args(["--jdtls-command", "definitely-missing-jdtls-for-gluon-test"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("JDTLS executable not found"));
+    assert!(stderr.contains("PATH:"));
+    assert!(stderr.contains("--jdtls-command"));
+    let default_db = output_root
+        .join(root.file_name().unwrap())
+        .join("business-extraction.db");
+    assert!(!default_db.exists());
+    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_dir_all(output_root);
+}
+
+#[test]
+fn extract_business_writes_sqlite_database_and_summary() {
+    let root = test_dir("extract-success");
+    fs::create_dir_all(root.join("src/main/java/demo")).unwrap();
+    fs::write(
+        root.join("src/main/java/demo/OrderService.java"),
+        r#"
+        package demo;
+        class OrderService {
+          @PostMapping("/orders/{id}/approve")
+          public void approve(Long id) {
+            if (id == null) throw new IllegalArgumentException();
+            repository.save(id);
+          }
+        }
+        "#,
+    )
+    .unwrap();
+    let output_root = test_dir("extract-success-output");
+    let fake_jdtls = write_fake_jdtls(&root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["extract-business", "--path"])
+        .arg(&root)
+        .args(["--output-dir"])
+        .arg(&output_root)
+        .args(["--jdtls-command"])
+        .arg(&fake_jdtls)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let db = output_root
+        .join(root.file_name().unwrap())
+        .join("business-extraction.db");
+    assert!(db.exists());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(&format!("database: {}", db.display())));
+    assert!(stdout.contains("modules: 1"));
+    assert!(stdout.contains("classes: 1"));
+    assert!(stdout.contains("methods: 1"));
+
+    let connection = Connection::open(&db).unwrap();
+    let method_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM methods", [], |row| row.get(0))
+        .unwrap();
+    let module_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM modules", [], |row| row.get(0))
+        .unwrap();
+    let entry_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM entry_points", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(module_count, 1);
+    assert_eq!(method_count, 1);
+    assert_eq!(entry_count, 1);
+    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_dir_all(output_root);
+}
+
+#[test]
+fn extract_business_persists_multi_module_ownership() {
+    let root = test_dir("extract-multi-module");
+    fs::write(
+        root.join("pom.xml"),
+        r#"<project><modules><module>api</module><module>service</module></modules></project>"#,
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("api/src/main/java/demo")).unwrap();
+    fs::create_dir_all(root.join("service/src/main/java/demo")).unwrap();
+    fs::write(root.join("api/pom.xml"), "<project/>").unwrap();
+    fs::write(root.join("service/pom.xml"), "<project/>").unwrap();
+    fs::write(
+        root.join("api/src/main/java/demo/Order.java"),
+        "package demo; class Order { Long id() { return 1L; } }",
+    )
+    .unwrap();
+    fs::write(
+        root.join("service/src/main/java/demo/OrderService.java"),
+        "package demo; class OrderService { void approve() {} }",
+    )
+    .unwrap();
+    let output_root = test_dir("extract-multi-module-output");
+    let fake_jdtls = write_fake_jdtls(&root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["extract-business", "--path"])
+        .arg(&root)
+        .args(["--output-dir"])
+        .arg(&output_root)
+        .args(["--jdtls-command"])
+        .arg(&fake_jdtls)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let db = output_root
+        .join(root.file_name().unwrap())
+        .join("business-extraction.db");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("modules: 3"));
+
+    let connection = Connection::open(&db).unwrap();
+    let module_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM modules", [], |row| row.get(0))
+        .unwrap();
+    let service_class_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM classes WHERE module_id = 'module:service'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let api_method_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM methods WHERE module_id = 'module:api'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(module_count, 3);
+    assert_eq!(service_class_count, 1);
+    assert_eq!(api_method_count, 1);
+    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_dir_all(output_root);
+}
+
 fn write_build_report(root: &PathBuf, dependency_fragment: &str) -> PathBuf {
     let report_path = root.join("build-report.json");
     fs::write(
@@ -275,6 +435,65 @@ fn write_build_report(root: &PathBuf, dependency_fragment: &str) -> PathBuf {
     )
     .unwrap();
     report_path
+}
+
+fn write_fake_jdtls(root: &PathBuf) -> PathBuf {
+    let script = root.join("fake-jdtls.py");
+    fs::write(
+        &script,
+        r#"#!/usr/bin/env python3
+import json
+import sys
+
+def read_message():
+    length = None
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return None
+        line = line.decode("utf-8").strip()
+        if not line:
+            break
+        if line.lower().startswith("content-length:"):
+            length = int(line.split(":", 1)[1].strip())
+    if length is None:
+        return None
+    return json.loads(sys.stdin.buffer.read(length).decode("utf-8"))
+
+def write_message(value):
+    body = json.dumps(value).encode("utf-8")
+    sys.stdout.buffer.write(b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body)
+    sys.stdout.buffer.flush()
+
+while True:
+    message = read_message()
+    if message is None:
+        break
+    method = message.get("method")
+    if "id" not in message:
+        if method == "exit":
+            break
+        continue
+    if method == "initialize":
+        result = {"capabilities": {"definitionProvider": True, "referencesProvider": True, "documentSymbolProvider": True}}
+    elif method == "shutdown":
+        result = None
+    elif method in ("textDocument/documentSymbol", "textDocument/definition", "textDocument/references", "textDocument/implementation"):
+        result = []
+    else:
+        result = None
+    write_message({"jsonrpc": "2.0", "id": message["id"], "result": result})
+"#,
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(&script).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script, permissions).unwrap();
+    }
+    script
 }
 
 fn test_dir(name: &str) -> PathBuf {

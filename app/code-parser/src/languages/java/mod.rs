@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::languages::{LanguageParser, ParseOptions};
 
 pub mod build;
+pub mod business;
 pub mod compatibility;
 
 pub struct JavaLanguageParser;

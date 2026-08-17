@@ -59,6 +59,10 @@ JDTLS answers:
 
 > **"What does this piece of code actually refer to?"**
 
+Business extraction v1 requires JDTLS. If the executable is missing, the
+language server cannot start, initialization fails, or semantic requests fail,
+the CLI blocks extraction and prints verbose failure details.
+
 ---
 
 ## Architecture
@@ -280,7 +284,7 @@ orderService.approve()
 OrderService.approve(Order)
 ```
 
-If JDTLS is unavailable, misconfigured, or unable to resolve a project, extraction should preserve Tree-sitter results and store diagnostics describing the semantic enrichment failure.
+If JDTLS is unavailable, misconfigured, or unable to resolve a project, extraction fails before writing `business-extraction.db`. Tree-sitter diagnostics are persisted only after JDTLS has initialized and semantic enrichment has completed.
 
 ---
 
@@ -412,11 +416,20 @@ Business extraction v1 writes a SQLite database as the primary artifact.
 business-extraction.db
 ```
 
-The CLI should print a short summary to stdout, including database path, class and method counts, relationship counts, candidate counts by priority, and diagnostic count. It should not write a duplicate JSON report in v1.
+The CLI should print a short summary to stdout, including database path, module count, class and method counts, relationship counts, candidate counts by priority, and diagnostic count. It should not write a duplicate JSON report in v1.
+
+The CLI command is:
+
+```bash
+code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>]
+```
+
+`--jdtls-command` defaults to `jdtls`. The command is mandatory for v1 extraction.
 
 The schema groups are:
 
 ```text
+modules
 classes
 methods
 relationships
@@ -427,6 +440,8 @@ evidence_ranges
 context_packets
 diagnostics
 ```
+
+For multi-module Maven and Gradle repositories, module ownership is persisted directly. The `modules` table records root and discovered modules, and classes and methods store `module_id` so agents can query boundaries without inferring them from paths.
 
 Graph-like relationships are stored as edges:
 
