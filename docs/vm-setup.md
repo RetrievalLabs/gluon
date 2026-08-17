@@ -16,3 +16,5 @@
 - Gradle 9.7.0
 - Gradle wrapper support enabled; prefer project `./gradlew` when present
 - Network access for dependency resolution during project build validation
+- Eclipse JDTLS.
+
