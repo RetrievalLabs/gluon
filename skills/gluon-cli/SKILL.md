@@ -128,6 +128,7 @@ Outputs:
 - SQLite `business-extraction.db` with modules, classes, methods, relationships, entry points, candidate scores, signals, evidence ranges, context packets, and diagnostics.
 - Stdout summary with database path, module count, class count, method count, relationship count, candidate counts by priority, and diagnostic count.
 - Multi-module Maven and Gradle projects are stored as one database with `modules` rows and `module_id` on classes and methods.
+- Unit tests, integration tests, acceptance tests, common test-suffixed files, and generated Java sources are skipped.
 - No JSON report in v1.
 - JDTLS is required. Missing executable, startup failure, initialization failure, or semantic request failure blocks extraction and prints verbose stderr with command, path, phase, and available failure details.
 - JDTLS enrichment uses bounded pipelined LSP requests and writes progress to stderr for long phases.
