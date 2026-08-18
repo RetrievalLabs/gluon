@@ -63,6 +63,13 @@ Business extraction v1 requires JDTLS. If the executable is missing, the
 language server cannot start, initialization fails, or semantic requests fail,
 the CLI blocks extraction and prints verbose failure details.
 
+Semantic enrichment sends bounded pipelined LSP requests within each phase
+rather than waiting for every request before sending the next one. The default
+window is 32 in-flight requests. Default extraction resolves document symbols
+and call definitions. Deep enrichment is opt-in and additionally resolves
+project-wide references and implementations; those heavier phases are capped
+lower to avoid overwhelming JDTLS on large repositories.
+
 ---
 
 ## Architecture
@@ -184,6 +191,9 @@ EntryPoint
 The first major output of the parser and semantic analyzer is the **Code Model**.
 
 Every class and method should initially be represented, even if it later turns out not to contain business logic.
+Class and method IDs include source location so duplicate simple or qualified
+names across modules, source sets, or generated/test helpers do not collide in
+SQLite.
 
 ```text
 Code Model
@@ -217,7 +227,7 @@ Code Model
     └── WRITES
 ```
 
-The Code Model is persisted in SQLite as the v1 system of record. Tree-sitter creates complete structural records first. JDTLS then enriches those records with resolved symbols, definitions, references, implementations, inheritance, and call targets when available.
+The Code Model is persisted in SQLite as the v1 system of record. Tree-sitter creates complete structural records first. JDTLS then enriches those records with resolved symbols and call targets in default mode. Deep enrichment additionally resolves references and implementations when requested.
 
 Example:
 
@@ -421,7 +431,7 @@ The CLI should print a short summary to stdout, including database path, module 
 The CLI command is:
 
 ```bash
-code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>]
+code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--jdtls-deep]
 ```
 
 `--jdtls-command` defaults to `jdtls`. The command is mandatory for v1 extraction.

@@ -11,6 +11,12 @@ use crate::languages::java::business::model::{
 };
 use crate::languages::java::business::modules::{discover_modules, module_id_for_file};
 
+#[derive(Debug, Clone)]
+struct ClassScope {
+    id: String,
+    qualified_name: String,
+}
+
 pub fn extract_structure(project_root: &Path) -> Result<CodeModel, String> {
     if !project_root.exists() {
         return Err(format!("path does not exist: {}", project_root.display()));
@@ -113,7 +119,7 @@ fn collect_nodes(
     module_id: &str,
     package_name: Option<&str>,
     cursor: &mut TreeCursor<'_>,
-    class_stack: &mut Vec<String>,
+    class_stack: &mut Vec<ClassScope>,
     model: &mut CodeModel,
 ) {
     let node = cursor.node();
@@ -124,7 +130,9 @@ fn collect_nodes(
             file,
             module_id,
             package_name,
-            class_stack.last(),
+            class_stack
+                .last()
+                .map(|scope| scope.qualified_name.as_str()),
         );
         for interface in &class.interfaces {
             model.relationships.push(RelationshipInfo {
@@ -144,11 +152,20 @@ fn collect_nodes(
                 source: "tree_sitter".to_string(),
             });
         }
-        class_stack.push(class.id.clone());
+        class_stack.push(ClassScope {
+            id: class.id.clone(),
+            qualified_name: class.qualified_name.clone(),
+        });
         model.classes.push(class);
     } else if is_method_node(node.kind()) {
-        if let Some(class_id) = class_stack.last() {
-            let method = method_info(node, contents, file, class_id);
+        if let Some(class_scope) = class_stack.last() {
+            let method = method_info(
+                node,
+                contents,
+                file,
+                &class_scope.id,
+                &class_scope.qualified_name,
+            );
             let method = MethodInfo {
                 module_id: module_id.to_string(),
                 ..method
@@ -188,17 +205,19 @@ fn class_info(
     file: &str,
     module_id: &str,
     package_name: Option<&str>,
-    parent_class_id: Option<&String>,
+    parent_qualified_name: Option<&str>,
 ) -> ClassInfo {
     let name = node_text(child_by_field(node, "name"), contents).unwrap_or("Anonymous");
-    let qualified_name = match (package_name, parent_class_id) {
-        (_, Some(parent)) => format!("{parent}.{name}")
-            .trim_start_matches("class:")
-            .to_string(),
+    let qualified_name = match (package_name, parent_qualified_name) {
+        (_, Some(parent)) => format!("{parent}.{name}"),
         (Some(package_name), None) if !package_name.is_empty() => format!("{package_name}.{name}"),
         _ => name.to_string(),
     };
-    let id = format!("class:{qualified_name}");
+    let id = format!(
+        "class:{qualified_name}@{}:{}",
+        file,
+        node.start_position().row + 1
+    );
     let superclass = child_by_field(node, "superclass")
         .and_then(|child| first_type_text(child, contents))
         .map(|value| value.to_string());
@@ -222,7 +241,13 @@ fn class_info(
     }
 }
 
-fn method_info(node: Node<'_>, contents: &str, file: &str, class_id: &str) -> MethodInfo {
+fn method_info(
+    node: Node<'_>,
+    contents: &str,
+    file: &str,
+    class_id: &str,
+    class_qualified_name: &str,
+) -> MethodInfo {
     let name_node = child_by_field(node, "name");
     let name = node_text(name_node, contents).unwrap_or("<anonymous>");
     let return_type = child_by_field(node, "type")
@@ -242,9 +267,9 @@ fn method_info(node: Node<'_>, contents: &str, file: &str, class_id: &str) -> Me
     let body_text = child_by_field(node, "body")
         .and_then(|body| node_text(Some(body), contents).map(str::to_string))
         .unwrap_or_default();
-    let class_part = class_id.trim_start_matches("class:");
     let id = format!(
-        "method:{class_part}#{signature}@{}",
+        "method:{class_qualified_name}#{signature}@{}:{}",
+        file,
         node.start_position().row + 1
     );
     let name_position = name_node

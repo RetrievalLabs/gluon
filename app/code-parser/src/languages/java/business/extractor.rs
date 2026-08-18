@@ -15,6 +15,8 @@ pub struct BusinessExtractionOptions {
     pub database: Option<PathBuf>,
     pub jdtls_command: String,
     pub jdtls_workspace: Option<PathBuf>,
+    pub jdtls_max_in_flight: usize,
+    pub jdtls_deep: bool,
 }
 
 pub fn extract_business(options: &BusinessExtractionOptions) -> Result<ExtractionSummary, String> {
@@ -48,6 +50,8 @@ pub fn extract_business(options: &BusinessExtractionOptions) -> Result<Extractio
         &JdtlsOptions {
             command: options.jdtls_command.clone(),
             workspace,
+            max_in_flight: options.jdtls_max_in_flight,
+            deep_enrichment: options.jdtls_deep,
         },
         &mut model,
     )?;

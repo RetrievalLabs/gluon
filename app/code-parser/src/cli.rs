@@ -41,6 +41,8 @@ struct ExtractBusinessOptions {
     database: Option<PathBuf>,
     jdtls_command: String,
     jdtls_workspace: Option<PathBuf>,
+    jdtls_max_in_flight: usize,
+    jdtls_deep: bool,
 }
 
 pub fn run_cli<I, S>(args: I) -> i32
@@ -227,6 +229,8 @@ fn parse_extract_business_args(
     let mut database = None;
     let mut jdtls_command = "jdtls".to_string();
     let mut jdtls_workspace = None;
+    let mut jdtls_max_in_flight = 32;
+    let mut jdtls_deep = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -249,6 +253,20 @@ fn parse_extract_business_args(
                 let value = args.next().ok_or("--jdtls-workspace requires a value")?;
                 jdtls_workspace = Some(PathBuf::from(value));
             }
+            "--jdtls-max-in-flight" => {
+                let value = args
+                    .next()
+                    .ok_or("--jdtls-max-in-flight requires a value")?;
+                jdtls_max_in_flight = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid --jdtls-max-in-flight: {value}"))?;
+                if jdtls_max_in_flight == 0 {
+                    return Err("--jdtls-max-in-flight must be greater than 0".to_string());
+                }
+            }
+            "--jdtls-deep" => {
+                jdtls_deep = true;
+            }
             "--help" | "-h" => return Err("help requested".to_string()),
             other => return Err(format!("unsupported argument: {other}")),
         }
@@ -260,6 +278,8 @@ fn parse_extract_business_args(
         database,
         jdtls_command,
         jdtls_workspace,
+        jdtls_max_in_flight,
+        jdtls_deep,
     })
 }
 
@@ -327,6 +347,8 @@ fn run_extract_business(options: ExtractBusinessOptions) -> i32 {
         database: options.database,
         jdtls_command: options.jdtls_command,
         jdtls_workspace: options.jdtls_workspace,
+        jdtls_max_in_flight: options.jdtls_max_in_flight,
+        jdtls_deep: options.jdtls_deep,
     };
 
     match extract_business(&extraction_options) {
@@ -358,7 +380,7 @@ fn run_extract_business(options: ExtractBusinessOptions) -> i32 {
 
 fn print_usage() {
     eprintln!(
-        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>]"
+        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--jdtls-deep]"
     );
 }
 
@@ -622,6 +644,9 @@ mod tests {
             "/bin/jdtls",
             "--jdtls-workspace",
             "workspace",
+            "--jdtls-max-in-flight",
+            "24",
+            "--jdtls-deep",
         ])
         .expect("valid arguments");
 
@@ -633,6 +658,8 @@ mod tests {
                 database: Some(PathBuf::from("business.db")),
                 jdtls_command: "/bin/jdtls".to_string(),
                 jdtls_workspace: Some(PathBuf::from("workspace")),
+                jdtls_max_in_flight: 24,
+                jdtls_deep: true,
             })
         );
     }

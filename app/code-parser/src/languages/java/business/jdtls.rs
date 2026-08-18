@@ -1,19 +1,24 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
+use std::time::Instant;
 
 use serde_json::{Value, json};
 
 use crate::languages::java::build::model::Diagnostic;
-use crate::languages::java::business::model::{CodeModel, RelationshipInfo};
+use crate::languages::java::business::model::{
+    CodeModel, InvocationInfo, MethodInfo, RelationshipInfo,
+};
 use crate::languages::java::business::modules::module_id_for_file;
 
 pub struct JdtlsOptions {
     pub command: String,
     pub workspace: PathBuf,
+    pub max_in_flight: usize,
+    pub deep_enrichment: bool,
 }
 
 pub fn enrich_with_jdtls(
@@ -36,13 +41,20 @@ pub fn enrich_with_jdtls(
         )
     })?;
 
+    let max_in_flight = options.max_in_flight.max(1);
     let mut client = LspClient::start(&options.command, project_root, &options.workspace)?;
     client.initialize(project_root)?;
     client.open_java_files(project_root, model)?;
-    client.require_document_symbols(project_root, model)?;
-    client.resolve_invocations(project_root, model)?;
-    client.resolve_references(project_root, model)?;
-    client.resolve_implementations(project_root, model)?;
+    client.require_document_symbols(project_root, model, max_in_flight)?;
+    client.resolve_invocations(project_root, model, max_in_flight)?;
+    if options.deep_enrichment {
+        client.resolve_references(project_root, model, max_in_flight.min(16))?;
+        client.resolve_implementations(project_root, model, max_in_flight.min(16))?;
+    } else {
+        eprintln!(
+            "jdtls deep enrichment skipped; pass --jdtls-deep to resolve references and implementations"
+        );
+    }
     client.shutdown();
     Ok(())
 }
@@ -64,6 +76,11 @@ struct LspClient {
     stdout: BufReader<ChildStdout>,
     stderr: Option<ChildStderr>,
     next_id: i64,
+}
+
+struct LspResponse {
+    id: i64,
+    result: Result<Value, String>,
 }
 
 impl LspClient {
@@ -179,25 +196,55 @@ impl LspClient {
         &mut self,
         project_root: &Path,
         model: &mut CodeModel,
+        max_in_flight: usize,
     ) -> Result<(), String> {
-        for file in java_files(model) {
-            let path = project_root.join(&file);
-            let module_id = module_id_for_file(&file, &model.modules);
-            let result = self
-                .request(
-                    "textDocument/documentSymbol",
-                    json!({ "textDocument": { "uri": file_uri(&path) } }),
-                )
-                .map_err(|error| {
-                    self.verbose_error(
+        let files = java_files(model);
+        let total = files.len();
+        let started_at = Instant::now();
+        let mut next = 0;
+        let mut complete = 0;
+        let mut pending: BTreeMap<i64, String> = BTreeMap::new();
+        log_phase_start("document symbols", total, max_in_flight);
+
+        while next < total || !pending.is_empty() {
+            while pending.len() < max_in_flight && next < total {
+                let file = files[next].clone();
+                next += 1;
+                let path = project_root.join(&file);
+                let id = self
+                    .send_request(
                         "textDocument/documentSymbol",
-                        project_root,
-                        Some(&file),
-                        &format!(
-                            "JDTLS document symbols request failed.\nmodule: {module_id}\nerror: {error}"
-                        ),
+                        json!({ "textDocument": { "uri": file_uri(&path) } }),
                     )
-                })?;
+                    .map_err(|error| {
+                        let module_id = module_id_for_file(&file, &model.modules);
+                        self.verbose_error(
+                            "textDocument/documentSymbol",
+                            project_root,
+                            Some(&file),
+                            &format!(
+                                "JDTLS document symbols request failed.\nmodule: {module_id}\nerror: {error}"
+                            ),
+                        )
+                    })?;
+                pending.insert(id, file);
+            }
+
+            let response = self.read_response()?;
+            let Some(file) = pending.remove(&response.id) else {
+                continue;
+            };
+            let result = response.result.map_err(|error| {
+                let module_id = module_id_for_file(&file, &model.modules);
+                self.verbose_error(
+                    "textDocument/documentSymbol",
+                    project_root,
+                    Some(&file),
+                    &format!(
+                        "JDTLS document symbols request failed.\nmodule: {module_id}\nerror: {error}"
+                    ),
+                )
+            })?;
             if result.is_null() {
                 model.diagnostics.push(Diagnostic::warning(
                     "jdtls",
@@ -205,6 +252,14 @@ impl LspClient {
                     Some(file),
                 ));
             }
+            complete += 1;
+            log_phase_progress(
+                "document symbols",
+                complete,
+                total,
+                pending.len(),
+                started_at,
+            );
         }
         Ok(())
     }
@@ -213,33 +268,45 @@ impl LspClient {
         &mut self,
         project_root: &Path,
         model: &mut CodeModel,
+        max_in_flight: usize,
     ) -> Result<(), String> {
         let invocations = model.invocations.clone();
-        for invocation in invocations {
-            let path = project_root.join(&invocation.file);
-            let module_id = module_id_for_file(&invocation.file, &model.modules);
-            let result = self
-                .request(
-                    "textDocument/definition",
-                    json!({
-                        "textDocument": { "uri": file_uri(&path) },
-                        "position": {
-                            "line": invocation.line.saturating_sub(1),
-                            "character": invocation.column
-                        }
-                    }),
-                )
-                .map_err(|error| {
-                    self.verbose_error(
+        let total = invocations.len();
+        let started_at = Instant::now();
+        let mut next = 0;
+        let mut complete = 0;
+        let mut pending = BTreeMap::new();
+        log_phase_start("definitions", total, max_in_flight);
+
+        while next < total || !pending.is_empty() {
+            while pending.len() < max_in_flight && next < total {
+                let invocation = invocations[next].clone();
+                next += 1;
+                let path = project_root.join(&invocation.file);
+                let id = self
+                    .send_request(
                         "textDocument/definition",
-                        project_root,
-                        Some(&invocation.file),
-                        &format!(
-                            "JDTLS definition request failed for call {} at {}:{}:{}.\nmodule: {module_id}\nerror: {error}",
-                            invocation.name, invocation.file, invocation.line, invocation.column
-                        ),
+                        json!({
+                            "textDocument": { "uri": file_uri(&path) },
+                            "position": {
+                                "line": invocation.line.saturating_sub(1),
+                                "character": invocation.column
+                            }
+                        }),
                     )
-                })?;
+                    .map_err(|error| {
+                        definition_error(self, project_root, model, &invocation, &error)
+                    })?;
+                pending.insert(id, invocation);
+            }
+
+            let response = self.read_response()?;
+            let Some(invocation) = pending.remove(&response.id) else {
+                continue;
+            };
+            let result = response.result.map_err(|error| {
+                definition_error(self, project_root, model, &invocation, &error)
+            })?;
             for location in locations_from_value(&result) {
                 if let Some(target_id) = method_id_for_location(project_root, model, &location) {
                     model.relationships.push(RelationshipInfo {
@@ -251,6 +318,8 @@ impl LspClient {
                     });
                 }
             }
+            complete += 1;
+            log_phase_progress("definitions", complete, total, pending.len(), started_at);
         }
         Ok(())
     }
@@ -259,34 +328,44 @@ impl LspClient {
         &mut self,
         project_root: &Path,
         model: &mut CodeModel,
+        max_in_flight: usize,
     ) -> Result<(), String> {
         let methods = model.methods.clone();
-        for method in methods {
-            let path = project_root.join(&method.file);
-            let module_id = method.module_id.clone();
-            let result = self
-                .request(
-                    "textDocument/references",
-                    json!({
-                        "textDocument": { "uri": file_uri(&path) },
-                        "position": {
-                            "line": method.name_line.saturating_sub(1),
-                            "character": method.name_column
-                        },
-                        "context": { "includeDeclaration": false }
-                    }),
-                )
-                .map_err(|error| {
-                    self.verbose_error(
+        let total = methods.len();
+        let started_at = Instant::now();
+        let mut next = 0;
+        let mut complete = 0;
+        let mut pending = BTreeMap::new();
+        log_phase_start("references", total, max_in_flight);
+
+        while next < total || !pending.is_empty() {
+            while pending.len() < max_in_flight && next < total {
+                let method = methods[next].clone();
+                next += 1;
+                let path = project_root.join(&method.file);
+                let id = self
+                    .send_request(
                         "textDocument/references",
-                        project_root,
-                        Some(&method.file),
-                        &format!(
-                            "JDTLS references request failed for method {} at {}:{}:{}.\nmodule: {module_id}\nerror: {error}",
-                            method.id, method.file, method.name_line, method.name_column
-                        ),
+                        json!({
+                            "textDocument": { "uri": file_uri(&path) },
+                            "position": {
+                                "line": method.name_line.saturating_sub(1),
+                                "character": method.name_column
+                            },
+                            "context": { "includeDeclaration": false }
+                        }),
                     )
-                })?;
+                    .map_err(|error| references_error(self, project_root, &method, &error))?;
+                pending.insert(id, method);
+            }
+
+            let response = self.read_response()?;
+            let Some(method) = pending.remove(&response.id) else {
+                continue;
+            };
+            let result = response
+                .result
+                .map_err(|error| references_error(self, project_root, &method, &error))?;
             for location in locations_from_value(&result) {
                 let Some(source_id) = method_id_for_location(project_root, model, &location) else {
                     continue;
@@ -301,6 +380,8 @@ impl LspClient {
                     });
                 }
             }
+            complete += 1;
+            log_phase_progress("references", complete, total, pending.len(), started_at);
         }
         Ok(())
     }
@@ -309,33 +390,43 @@ impl LspClient {
         &mut self,
         project_root: &Path,
         model: &mut CodeModel,
+        max_in_flight: usize,
     ) -> Result<(), String> {
         let methods = model.methods.clone();
-        for method in methods {
-            let path = project_root.join(&method.file);
-            let module_id = method.module_id.clone();
-            let result = self
-                .request(
-                    "textDocument/implementation",
-                    json!({
-                        "textDocument": { "uri": file_uri(&path) },
-                        "position": {
-                            "line": method.name_line.saturating_sub(1),
-                            "character": method.name_column
-                        }
-                    }),
-                )
-                .map_err(|error| {
-                    self.verbose_error(
+        let total = methods.len();
+        let started_at = Instant::now();
+        let mut next = 0;
+        let mut complete = 0;
+        let mut pending = BTreeMap::new();
+        log_phase_start("implementations", total, max_in_flight);
+
+        while next < total || !pending.is_empty() {
+            while pending.len() < max_in_flight && next < total {
+                let method = methods[next].clone();
+                next += 1;
+                let path = project_root.join(&method.file);
+                let id = self
+                    .send_request(
                         "textDocument/implementation",
-                        project_root,
-                        Some(&method.file),
-                        &format!(
-                            "JDTLS implementation request failed for method {} at {}:{}:{}.\nmodule: {module_id}\nerror: {error}",
-                            method.id, method.file, method.name_line, method.name_column
-                        ),
+                        json!({
+                            "textDocument": { "uri": file_uri(&path) },
+                            "position": {
+                                "line": method.name_line.saturating_sub(1),
+                                "character": method.name_column
+                            }
+                        }),
                     )
-                })?;
+                    .map_err(|error| implementations_error(self, project_root, &method, &error))?;
+                pending.insert(id, method);
+            }
+
+            let response = self.read_response()?;
+            let Some(method) = pending.remove(&response.id) else {
+                continue;
+            };
+            let result = response
+                .result
+                .map_err(|error| implementations_error(self, project_root, &method, &error))?;
             for location in locations_from_value(&result) {
                 let Some(target_id) = method_id_for_location(project_root, model, &location) else {
                     continue;
@@ -350,11 +441,30 @@ impl LspClient {
                     });
                 }
             }
+            complete += 1;
+            log_phase_progress(
+                "implementations",
+                complete,
+                total,
+                pending.len(),
+                started_at,
+            );
         }
         Ok(())
     }
 
     fn request(&mut self, method: &str, params: Value) -> Result<Value, String> {
+        let id = self.send_request(method, params)?;
+        loop {
+            let response = self.read_response()?;
+            if response.id != id {
+                continue;
+            }
+            return response.result;
+        }
+    }
+
+    fn send_request(&mut self, method: &str, params: Value) -> Result<i64, String> {
         let id = self.next_id;
         self.next_id += 1;
         self.write_message(&json!({
@@ -363,16 +473,28 @@ impl LspClient {
             "method": method,
             "params": params
         }))?;
+        Ok(id)
+    }
 
+    fn read_response(&mut self) -> Result<LspResponse, String> {
         loop {
             let message = self.read_message()?;
-            if message.get("id").and_then(Value::as_i64) != Some(id) {
+            if message.get("method").is_some() {
                 continue;
             }
+            let Some(id) = message.get("id").and_then(Value::as_i64) else {
+                continue;
+            };
             if let Some(error) = message.get("error") {
-                return Err(error.to_string());
+                return Ok(LspResponse {
+                    id,
+                    result: Err(error.to_string()),
+                });
             }
-            return Ok(message.get("result").cloned().unwrap_or(Value::Null));
+            return Ok(LspResponse {
+                id,
+                result: Ok(message.get("result").cloned().unwrap_or(Value::Null)),
+            });
         }
     }
 
@@ -476,6 +598,80 @@ fn java_files(model: &CodeModel) -> Vec<String> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+fn definition_error(
+    client: &mut LspClient,
+    project_root: &Path,
+    model: &CodeModel,
+    invocation: &InvocationInfo,
+    error: &str,
+) -> String {
+    let module_id = module_id_for_file(&invocation.file, &model.modules);
+    client.verbose_error(
+        "textDocument/definition",
+        project_root,
+        Some(&invocation.file),
+        &format!(
+            "JDTLS definition request failed for call {} at {}:{}:{}.\nmodule: {module_id}\nerror: {error}",
+            invocation.name, invocation.file, invocation.line, invocation.column
+        ),
+    )
+}
+
+fn references_error(
+    client: &mut LspClient,
+    project_root: &Path,
+    method: &MethodInfo,
+    error: &str,
+) -> String {
+    let module_id = &method.module_id;
+    client.verbose_error(
+        "textDocument/references",
+        project_root,
+        Some(&method.file),
+        &format!(
+            "JDTLS references request failed for method {} at {}:{}:{}.\nmodule: {module_id}\nerror: {error}",
+            method.id, method.file, method.name_line, method.name_column
+        ),
+    )
+}
+
+fn implementations_error(
+    client: &mut LspClient,
+    project_root: &Path,
+    method: &MethodInfo,
+    error: &str,
+) -> String {
+    let module_id = &method.module_id;
+    client.verbose_error(
+        "textDocument/implementation",
+        project_root,
+        Some(&method.file),
+        &format!(
+            "JDTLS implementation request failed for method {} at {}:{}:{}.\nmodule: {module_id}\nerror: {error}",
+            method.id, method.file, method.name_line, method.name_column
+        ),
+    )
+}
+
+fn log_phase_start(phase: &str, total: usize, max_in_flight: usize) {
+    eprintln!("jdtls {phase}: total={total} max_in_flight={max_in_flight}");
+}
+
+fn log_phase_progress(
+    phase: &str,
+    complete: usize,
+    total: usize,
+    in_flight: usize,
+    started_at: Instant,
+) {
+    if complete == total || complete % 250 == 0 {
+        eprintln!(
+            "jdtls {phase}: {complete}/{total} complete in_flight={in_flight} elapsed_ms={}",
+            started_at.elapsed().as_millis()
+        );
+    }
 }
 
 #[derive(Debug)]

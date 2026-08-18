@@ -120,6 +120,8 @@ Flags:
 - `--database <path>`: write SQLite database to an explicit path instead of the default output path.
 - `--jdtls-command <command>`: JDTLS executable. Defaults to `jdtls`.
 - `--jdtls-workspace <directory>`: JDTLS workspace directory. Defaults beside the database path.
+- `--jdtls-max-in-flight <count>`: maximum concurrent JDTLS requests within an enrichment phase. Defaults to `32`; references and implementations are capped at `16`.
+- `--jdtls-deep`: also resolve project-wide method references and interface implementations. Default mode resolves call definitions only, which is faster for large repositories.
 
 Outputs:
 
@@ -128,6 +130,8 @@ Outputs:
 - Multi-module Maven and Gradle projects are stored as one database with `modules` rows and `module_id` on classes and methods.
 - No JSON report in v1.
 - JDTLS is required. Missing executable, startup failure, initialization failure, or semantic request failure blocks extraction and prints verbose stderr with command, path, phase, and available failure details.
+- JDTLS enrichment uses bounded pipelined LSP requests and writes progress to stderr for long phases.
+- Default enrichment is fast mode: document symbols and call definitions. Deep mode adds references and implementations.
 
 Example:
 
