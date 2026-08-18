@@ -127,6 +127,7 @@ Outputs:
 
 - SQLite `business-extraction.db` with modules, classes, methods, relationships, entry points, candidate scores, signals, evidence ranges, context packets, and diagnostics.
 - Stdout summary with database path, module count, class count, method count, relationship count, candidate counts by priority, and diagnostic count.
+- Stderr phase status for tree-sitter scan, skipped source counts, JDTLS progress, scoring, database write, and total elapsed time.
 - Multi-module Maven and Gradle projects are stored as one database with `modules` rows and `module_id` on classes and methods.
 - Unit tests, integration tests, acceptance tests, common test-suffixed files, and generated Java sources are skipped.
 - No JSON report in v1.

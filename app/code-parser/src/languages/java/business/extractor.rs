@@ -1,12 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use crate::languages::java::business::default_database_path;
 use crate::languages::java::business::jdtls::{JdtlsOptions, enrich_with_jdtls};
 use crate::languages::java::business::model::{CodeModel, ExtractionSummary};
 use crate::languages::java::business::scoring::score_candidates;
 use crate::languages::java::business::store::write_database;
-use crate::languages::java::business::tree_sitter::extract_structure;
+use crate::languages::java::business::tree_sitter::extract_structure_with_stats;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BusinessExtractionOptions {
@@ -20,6 +21,7 @@ pub struct BusinessExtractionOptions {
 }
 
 pub fn extract_business(options: &BusinessExtractionOptions) -> Result<ExtractionSummary, String> {
+    let total_started_at = Instant::now();
     if !options.path.exists() {
         return Err(format!("path does not exist: {}", options.path.display()));
     }
@@ -44,7 +46,31 @@ pub fn extract_business(options: &BusinessExtractionOptions) -> Result<Extractio
             .join(".jdtls-workspace")
     });
 
-    let mut model = extract_structure(&project_root)?;
+    eprintln!(
+        "extract-business tree-sitter: start path={}",
+        project_root.display()
+    );
+    let phase_started_at = Instant::now();
+    let extraction = extract_structure_with_stats(&project_root)?;
+    let mut model = extraction.model;
+    eprintln!(
+        "extract-business tree-sitter: done java_seen={} parsed={} skipped_path={} skipped_generated={} modules={} classes={} methods={} invocations={} elapsed_ms={}",
+        extraction.stats.java_files_seen,
+        extraction.stats.java_files_parsed,
+        extraction.stats.skipped_test_or_generated_path,
+        extraction.stats.skipped_generated_content,
+        model.modules.len(),
+        model.classes.len(),
+        model.methods.len(),
+        model.invocations.len(),
+        phase_started_at.elapsed().as_millis()
+    );
+
+    eprintln!(
+        "extract-business jdtls: start command={} max_in_flight={} deep={}",
+        options.jdtls_command, options.jdtls_max_in_flight, options.jdtls_deep
+    );
+    let phase_started_at = Instant::now();
     enrich_with_jdtls(
         &project_root,
         &JdtlsOptions {
@@ -55,10 +81,44 @@ pub fn extract_business(options: &BusinessExtractionOptions) -> Result<Extractio
         },
         &mut model,
     )?;
+    eprintln!(
+        "extract-business jdtls: done relationships={} diagnostics={} elapsed_ms={}",
+        model.relationships.len(),
+        model.diagnostics.len(),
+        phase_started_at.elapsed().as_millis()
+    );
+
+    eprintln!("extract-business relationships: deduplicate start");
+    let phase_started_at = Instant::now();
+    let relationships_before = model.relationships.len();
     deduplicate_relationships(&mut model);
+    eprintln!(
+        "extract-business relationships: deduplicate done before={} after={} elapsed_ms={}",
+        relationships_before,
+        model.relationships.len(),
+        phase_started_at.elapsed().as_millis()
+    );
+
+    eprintln!(
+        "extract-business scoring: start methods={}",
+        model.methods.len()
+    );
+    let phase_started_at = Instant::now();
     score_candidates(&mut model);
+    eprintln!(
+        "extract-business scoring: done candidates={} signals={} elapsed_ms={}",
+        model.candidate_scores.len(),
+        model.candidate_signals.len(),
+        phase_started_at.elapsed().as_millis()
+    );
 
     let temp_database = temp_database_path(&database);
+    eprintln!(
+        "extract-business database: start path={} temp={}",
+        database.display(),
+        temp_database.display()
+    );
+    let phase_started_at = Instant::now();
     if temp_database.exists() {
         fs::remove_file(&temp_database).map_err(|error| {
             format!(
@@ -83,6 +143,15 @@ pub fn extract_business(options: &BusinessExtractionOptions) -> Result<Extractio
             database.display()
         )
     })?;
+    eprintln!(
+        "extract-business database: done path={} elapsed_ms={}",
+        database.display(),
+        phase_started_at.elapsed().as_millis()
+    );
+    eprintln!(
+        "extract-business done: total_elapsed_ms={}",
+        total_started_at.elapsed().as_millis()
+    );
 
     Ok(summary(&database, &model))
 }

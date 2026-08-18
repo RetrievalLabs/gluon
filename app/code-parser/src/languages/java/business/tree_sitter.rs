@@ -18,6 +18,26 @@ struct ClassScope {
 }
 
 pub fn extract_structure(project_root: &Path) -> Result<CodeModel, String> {
+    extract_structure_with_stats(project_root).map(|result| result.model)
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct StructureExtractionStats {
+    pub java_files_seen: usize,
+    pub java_files_parsed: usize,
+    pub skipped_test_or_generated_path: usize,
+    pub skipped_generated_content: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructureExtractionResult {
+    pub model: CodeModel,
+    pub stats: StructureExtractionStats,
+}
+
+pub fn extract_structure_with_stats(
+    project_root: &Path,
+) -> Result<StructureExtractionResult, String> {
     if !project_root.exists() {
         return Err(format!("path does not exist: {}", project_root.display()));
     }
@@ -27,6 +47,7 @@ pub fn extract_structure(project_root: &Path) -> Result<CodeModel, String> {
         ..CodeModel::default()
     };
     model.modules = discover_modules(project_root);
+    let mut stats = StructureExtractionStats::default();
 
     for entry in WalkDir::new(project_root)
         .into_iter()
@@ -49,16 +70,20 @@ pub fn extract_structure(project_root: &Path) -> Result<CodeModel, String> {
             continue;
         }
 
+        stats.java_files_seen += 1;
         let display_path = relative_path(project_root, entry.path());
         if is_excluded_source_file(&display_path) {
+            stats.skipped_test_or_generated_path += 1;
             continue;
         }
 
         match fs::read_to_string(entry.path()) {
             Ok(contents) => {
                 if is_generated_source(&contents) {
+                    stats.skipped_generated_content += 1;
                     continue;
                 }
+                stats.java_files_parsed += 1;
                 parse_file(project_root, entry.path(), &contents, &mut model);
             }
             Err(error) => model.diagnostics.push(Diagnostic::warning(
@@ -77,7 +102,7 @@ pub fn extract_structure(project_root: &Path) -> Result<CodeModel, String> {
     model
         .entry_points
         .sort_by(|left, right| left.id.cmp(&right.id));
-    Ok(model)
+    Ok(StructureExtractionResult { model, stats })
 }
 
 fn parse_file(project_root: &Path, file: &Path, contents: &str, model: &mut CodeModel) {
