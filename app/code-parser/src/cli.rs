@@ -48,6 +48,7 @@ struct ExtractBusinessOptions {
     jdtls_workspace: Option<PathBuf>,
     jdtls_max_in_flight: usize,
     jdtls_deep: bool,
+    resume: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -261,6 +262,7 @@ fn parse_extract_business_args(
     let mut jdtls_workspace = None;
     let mut jdtls_max_in_flight = 32;
     let mut jdtls_deep = false;
+    let mut resume = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -297,6 +299,9 @@ fn parse_extract_business_args(
             "--jdtls-deep" => {
                 jdtls_deep = true;
             }
+            "--continue" => {
+                resume = true;
+            }
             "--help" | "-h" => return Err("help requested".to_string()),
             other => return Err(format!("unsupported argument: {other}")),
         }
@@ -310,6 +315,7 @@ fn parse_extract_business_args(
         jdtls_workspace,
         jdtls_max_in_flight,
         jdtls_deep,
+        resume,
     })
 }
 
@@ -498,6 +504,7 @@ fn run_analyze_report(options: AnalyzeReportOptions) -> i32 {
 }
 
 fn run_extract_business(options: ExtractBusinessOptions) -> i32 {
+    let continue_command = extract_business_continue_command(&options);
     let extraction_options = BusinessExtractionOptions {
         path: options.path,
         output_dir: options.output_dir,
@@ -506,6 +513,7 @@ fn run_extract_business(options: ExtractBusinessOptions) -> i32 {
         jdtls_workspace: options.jdtls_workspace,
         jdtls_max_in_flight: options.jdtls_max_in_flight,
         jdtls_deep: options.jdtls_deep,
+        resume: options.resume,
     };
 
     match extract_business(&extraction_options) {
@@ -526,12 +534,58 @@ fn run_extract_business(options: ExtractBusinessOptions) -> i32 {
         }
         Err(error) => {
             command_failed("extract-business", &error);
+            eprintln!("  continue: {continue_command}");
             if is_usage_or_jdtls_startup_error(&error) {
                 2
             } else {
                 1
             }
         }
+    }
+}
+
+fn extract_business_continue_command(options: &ExtractBusinessOptions) -> String {
+    let mut parts = vec![
+        "code-parser".to_string(),
+        "extract-business".to_string(),
+        "--path".to_string(),
+        shell_arg(&options.path),
+        "--output-dir".to_string(),
+        shell_arg(&options.output_dir),
+    ];
+    if let Some(database) = &options.database {
+        parts.push("--database".to_string());
+        parts.push(shell_arg(database));
+    }
+    parts.push("--jdtls-command".to_string());
+    parts.push(shell_string(&options.jdtls_command));
+    if let Some(workspace) = &options.jdtls_workspace {
+        parts.push("--jdtls-workspace".to_string());
+        parts.push(shell_arg(workspace));
+    }
+    parts.push("--jdtls-max-in-flight".to_string());
+    parts.push(options.jdtls_max_in_flight.to_string());
+    if options.jdtls_deep {
+        parts.push("--jdtls-deep".to_string());
+    }
+    if !options.resume {
+        parts.push("--continue".to_string());
+    }
+    parts.join(" ")
+}
+
+fn shell_arg(path: &Path) -> String {
+    shell_string(&path.display().to_string())
+}
+
+fn shell_string(value: &str) -> String {
+    if value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '/' | '.' | '-' | '_' | ':' | '='))
+    {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
     }
 }
 
@@ -626,7 +680,7 @@ fn run_build_business_kg(options: BuildBusinessKgCliOptions) -> i32 {
 
 fn print_usage() {
     eprintln!(
-        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--jdtls-deep]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]"
+        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--jdtls-deep] [--continue]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]"
     );
 }
 
@@ -680,7 +734,8 @@ fn report_written(path: &Path) {
 }
 
 fn command_failed(command: &str, error: &str) {
-    eprintln!("code-parser {command} failed: {error}");
+    eprintln!("code-parser {command} failed");
+    eprintln!("  error: {error}");
 }
 
 fn is_usage_or_jdtls_startup_error(error: &str) -> bool {
@@ -735,11 +790,8 @@ fn exit_code_for_report(command: &str, report: &impl ReportDiagnostics) -> i32 {
         "code-parser {command} completed with {} error diagnostic(s)",
         errors.len()
     );
-    for diagnostic in errors.iter().take(5) {
-        eprintln!("- [{}] {}", diagnostic.category, diagnostic.message);
-        if let Some(command) = &diagnostic.command {
-            eprintln!("  command: {}", command.join(" "));
-        }
+    for (index, diagnostic) in errors.iter().take(5).enumerate() {
+        print_diagnostic(index + 1, diagnostic);
     }
     if errors.len() > 5 {
         eprintln!(
@@ -749,6 +801,26 @@ fn exit_code_for_report(command: &str, report: &impl ReportDiagnostics) -> i32 {
     }
 
     1
+}
+
+fn print_diagnostic(index: usize, diagnostic: &crate::languages::java::build::model::Diagnostic) {
+    eprintln!(
+        "- diagnostic {index}: [{}] {}",
+        diagnostic.category, diagnostic.message
+    );
+    eprintln!("  severity: {}", diagnostic.severity);
+    if let Some(file) = &diagnostic.file {
+        eprintln!("  file: {file}");
+    }
+    if let Some(command) = &diagnostic.command {
+        eprintln!("  command: {}", command.join(" "));
+    }
+    if let Some(exit_code) = diagnostic.exit_code {
+        eprintln!("  exit_code: {exit_code}");
+    }
+    if let Some(stderr) = &diagnostic.stderr {
+        eprintln!("  stderr: {stderr}");
+    }
 }
 
 #[cfg(test)]
@@ -893,6 +965,7 @@ mod tests {
             "--jdtls-max-in-flight",
             "24",
             "--jdtls-deep",
+            "--continue",
         ])
         .expect("valid arguments");
 
@@ -906,6 +979,7 @@ mod tests {
                 jdtls_workspace: Some(PathBuf::from("workspace")),
                 jdtls_max_in_flight: 24,
                 jdtls_deep: true,
+                resume: true,
             })
         );
     }

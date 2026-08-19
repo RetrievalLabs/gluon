@@ -2,6 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use serde::{Deserialize, Serialize};
+
 use crate::languages::business::model::{CodeModel, ExtractionSummary};
 use crate::languages::business::{
     BusinessDatabasePath, BusinessExtractionOptions, BusinessExtractor,
@@ -13,6 +15,24 @@ use crate::languages::java::business::store::write_database;
 use crate::languages::java::business::tree_sitter::extract_structure_with_stats;
 
 pub struct JavaBusinessExtractor;
+
+const CHECKPOINT_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ExtractionCheckpoint {
+    version: u32,
+    project_root: String,
+    phase: CheckpointPhase,
+    model: CodeModel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum CheckpointPhase {
+    Structure,
+    Jdtls,
+    Scored,
+}
 
 impl BusinessExtractor for JavaBusinessExtractor {
     fn language(&self) -> &'static str {
@@ -62,72 +82,118 @@ pub fn extract_business(options: &BusinessExtractionOptions) -> Result<Extractio
             .unwrap_or_else(|| Path::new("."))
             .join(".jdtls-workspace")
     });
+    let checkpoint_path = checkpoint_path(&database);
 
-    eprintln!(
-        "extract-business tree-sitter: start path={}",
-        project_root.display()
-    );
-    let phase_started_at = Instant::now();
-    let extraction = extract_structure_with_stats(&project_root)?;
-    let mut model = extraction.model;
-    eprintln!(
-        "extract-business tree-sitter: done java_seen={} parsed={} skipped_path={} skipped_generated={} modules={} classes={} methods={} invocations={} elapsed_ms={}",
-        extraction.stats.java_files_seen,
-        extraction.stats.java_files_parsed,
-        extraction.stats.skipped_test_or_generated_path,
-        extraction.stats.skipped_generated_content,
-        model.modules.len(),
-        model.classes.len(),
-        model.methods.len(),
-        model.invocations.len(),
-        phase_started_at.elapsed().as_millis()
-    );
+    let mut checkpoint = if options.resume {
+        load_checkpoint(&checkpoint_path, &project_root)?
+    } else {
+        remove_checkpoint_if_present(&checkpoint_path)?;
+        None
+    };
 
-    eprintln!(
-        "extract-business jdtls: start command={} max_in_flight={} deep={}",
-        options.jdtls_command, options.jdtls_max_in_flight, options.jdtls_deep
-    );
-    let phase_started_at = Instant::now();
-    enrich_with_jdtls(
-        &project_root,
-        &JdtlsOptions {
-            command: options.jdtls_command.clone(),
-            workspace,
-            max_in_flight: options.jdtls_max_in_flight,
-            deep_enrichment: options.jdtls_deep,
-        },
-        &mut model,
-    )?;
-    eprintln!(
-        "extract-business jdtls: done relationships={} diagnostics={} elapsed_ms={}",
-        model.relationships.len(),
-        model.diagnostics.len(),
-        phase_started_at.elapsed().as_millis()
-    );
+    let mut model = if let Some(checkpoint) = checkpoint.take() {
+        eprintln!(
+            "extract-business resume: loaded checkpoint phase={:?} path={}",
+            checkpoint.phase,
+            checkpoint_path.display()
+        );
+        checkpoint.model
+    } else {
+        eprintln!(
+            "extract-business tree-sitter: start path={}",
+            project_root.display()
+        );
+        let phase_started_at = Instant::now();
+        let extraction = extract_structure_with_stats(&project_root)?;
+        let model = extraction.model;
+        eprintln!(
+            "extract-business tree-sitter: done java_seen={} parsed={} skipped_path={} skipped_generated={} modules={} classes={} methods={} invocations={} elapsed_ms={}",
+            extraction.stats.java_files_seen,
+            extraction.stats.java_files_parsed,
+            extraction.stats.skipped_test_or_generated_path,
+            extraction.stats.skipped_generated_content,
+            model.modules.len(),
+            model.classes.len(),
+            model.methods.len(),
+            model.invocations.len(),
+            phase_started_at.elapsed().as_millis()
+        );
+        save_checkpoint(
+            &checkpoint_path,
+            &project_root,
+            CheckpointPhase::Structure,
+            &model,
+        )?;
+        model
+    };
 
-    eprintln!("extract-business relationships: deduplicate start");
-    let phase_started_at = Instant::now();
-    let relationships_before = model.relationships.len();
-    deduplicate_relationships(&mut model);
-    eprintln!(
-        "extract-business relationships: deduplicate done before={} after={} elapsed_ms={}",
-        relationships_before,
-        model.relationships.len(),
-        phase_started_at.elapsed().as_millis()
-    );
+    let phase = checkpoint_phase(&checkpoint_path).unwrap_or(CheckpointPhase::Structure);
+    if phase == CheckpointPhase::Structure {
+        eprintln!(
+            "extract-business jdtls: start command={} max_in_flight={} deep={}",
+            options.jdtls_command, options.jdtls_max_in_flight, options.jdtls_deep
+        );
+        let phase_started_at = Instant::now();
+        enrich_with_jdtls(
+            &project_root,
+            &JdtlsOptions {
+                command: options.jdtls_command.clone(),
+                workspace,
+                max_in_flight: options.jdtls_max_in_flight,
+                deep_enrichment: options.jdtls_deep,
+            },
+            &mut model,
+        )?;
+        eprintln!(
+            "extract-business jdtls: done relationships={} diagnostics={} elapsed_ms={}",
+            model.relationships.len(),
+            model.diagnostics.len(),
+            phase_started_at.elapsed().as_millis()
+        );
+        save_checkpoint(
+            &checkpoint_path,
+            &project_root,
+            CheckpointPhase::Jdtls,
+            &model,
+        )?;
+    } else {
+        eprintln!("extract-business jdtls: skipped from checkpoint phase={phase:?}");
+    }
 
-    eprintln!(
-        "extract-business scoring: start methods={}",
-        model.methods.len()
-    );
-    let phase_started_at = Instant::now();
-    score_candidates(&mut model);
-    eprintln!(
-        "extract-business scoring: done candidates={} signals={} elapsed_ms={}",
-        model.candidate_scores.len(),
-        model.candidate_signals.len(),
-        phase_started_at.elapsed().as_millis()
-    );
+    let phase = checkpoint_phase(&checkpoint_path).unwrap_or(CheckpointPhase::Jdtls);
+    if phase != CheckpointPhase::Scored {
+        eprintln!("extract-business relationships: deduplicate start");
+        let phase_started_at = Instant::now();
+        let relationships_before = model.relationships.len();
+        deduplicate_relationships(&mut model);
+        eprintln!(
+            "extract-business relationships: deduplicate done before={} after={} elapsed_ms={}",
+            relationships_before,
+            model.relationships.len(),
+            phase_started_at.elapsed().as_millis()
+        );
+
+        eprintln!(
+            "extract-business scoring: start methods={}",
+            model.methods.len()
+        );
+        let phase_started_at = Instant::now();
+        score_candidates(&mut model);
+        eprintln!(
+            "extract-business scoring: done candidates={} signals={} elapsed_ms={}",
+            model.candidate_scores.len(),
+            model.candidate_signals.len(),
+            phase_started_at.elapsed().as_millis()
+        );
+        save_checkpoint(
+            &checkpoint_path,
+            &project_root,
+            CheckpointPhase::Scored,
+            &model,
+        )?;
+    } else {
+        eprintln!("extract-business scoring: skipped from checkpoint phase={phase:?}");
+    }
 
     let temp_database = temp_database_path(&database);
     eprintln!(
@@ -160,6 +226,7 @@ pub fn extract_business(options: &BusinessExtractionOptions) -> Result<Extractio
             database.display()
         )
     })?;
+    remove_checkpoint_if_present(&checkpoint_path)?;
     eprintln!(
         "extract-business database: done path={} elapsed_ms={}",
         database.display(),
@@ -221,4 +288,90 @@ fn temp_database_path(database: &Path) -> PathBuf {
         .and_then(|name| name.to_str())
         .unwrap_or("business-extraction.db");
     database.with_file_name(format!(".{file_name}.tmp"))
+}
+
+fn checkpoint_path(database: &Path) -> PathBuf {
+    let file_name = database
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("business-extraction.db");
+    database.with_file_name(format!(".{file_name}.extract-business-checkpoint.json"))
+}
+
+fn save_checkpoint(
+    path: &Path,
+    project_root: &Path,
+    phase: CheckpointPhase,
+    model: &CodeModel,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create checkpoint directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+    let checkpoint = ExtractionCheckpoint {
+        version: CHECKPOINT_VERSION,
+        project_root: project_root.display().to_string(),
+        phase,
+        model: model.clone(),
+    };
+    let json = serde_json::to_string(&checkpoint)
+        .map_err(|error| format!("failed to serialize extraction checkpoint: {error}"))?;
+    fs::write(path, json)
+        .map_err(|error| format!("failed to write checkpoint {}: {error}", path.display()))?;
+    eprintln!(
+        "extract-business checkpoint: saved phase={phase:?} path={}",
+        path.display()
+    );
+    Ok(())
+}
+
+fn load_checkpoint(
+    path: &Path,
+    project_root: &Path,
+) -> Result<Option<ExtractionCheckpoint>, String> {
+    if !path.exists() {
+        eprintln!(
+            "extract-business resume: no checkpoint found at {}; starting from beginning",
+            path.display()
+        );
+        return Ok(None);
+    }
+    let json = fs::read_to_string(path)
+        .map_err(|error| format!("failed to read checkpoint {}: {error}", path.display()))?;
+    let checkpoint: ExtractionCheckpoint = serde_json::from_str(&json)
+        .map_err(|error| format!("failed to parse checkpoint {}: {error}", path.display()))?;
+    if checkpoint.version != CHECKPOINT_VERSION {
+        return Err(format!(
+            "unsupported checkpoint version {} at {}",
+            checkpoint.version,
+            path.display()
+        ));
+    }
+    if checkpoint.project_root != project_root.display().to_string() {
+        return Err(format!(
+            "checkpoint project root mismatch.\ncheckpoint: {}\ncurrent: {}",
+            checkpoint.project_root,
+            project_root.display()
+        ));
+    }
+    Ok(Some(checkpoint))
+}
+
+fn checkpoint_phase(path: &Path) -> Option<CheckpointPhase> {
+    let json = fs::read_to_string(path).ok()?;
+    serde_json::from_str::<ExtractionCheckpoint>(&json)
+        .ok()
+        .map(|checkpoint| checkpoint.phase)
+}
+
+fn remove_checkpoint_if_present(path: &Path) -> Result<(), String> {
+    if path.exists() {
+        fs::remove_file(path)
+            .map_err(|error| format!("failed to remove checkpoint {}: {error}", path.display()))?;
+    }
+    Ok(())
 }

@@ -280,10 +280,17 @@ fn extract_business_rejects_missing_jdtls_with_verbose_error() {
     assert!(stderr.contains("JDTLS executable not found"));
     assert!(stderr.contains("PATH:"));
     assert!(stderr.contains("--jdtls-command"));
+    assert!(stderr.contains("continue: code-parser extract-business"));
+    assert!(stderr.contains("--continue"));
     let default_db = output_root
         .join(root.file_name().unwrap())
         .join("business-extraction.db");
     assert!(!default_db.exists());
+    assert!(
+        default_db
+            .with_file_name(".business-extraction.db.extract-business-checkpoint.json")
+            .exists()
+    );
     let _ = fs::remove_dir_all(root);
     let _ = fs::remove_dir_all(output_root);
 }
@@ -324,6 +331,10 @@ fn extract_business_writes_sqlite_database_and_summary() {
         .join(root.file_name().unwrap())
         .join("business-extraction.db");
     assert!(db.exists());
+    assert!(
+        !db.with_file_name(".business-extraction.db.extract-business-checkpoint.json")
+            .exists()
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains(&format!("database: {}", db.display())));
     assert!(stdout.contains("modules: 1"));
