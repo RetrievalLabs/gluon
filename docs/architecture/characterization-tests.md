@@ -384,6 +384,32 @@ get_tests_for_method(method_id, limit)
 get_test_case(test_case_id)
 ```
 
+Expose LSP/JDTLS through bounded tools when source context is not enough to
+choose a correct invocation path, fixture, fake, or observation point:
+
+```text
+lsp_definition(file, line, column)
+lsp_references(symbol_id, limit)
+lsp_implementations(symbol_id, limit)
+lsp_document_symbols(file, limit)
+lsp_call_hierarchy(method_id, direction, limit)
+```
+
+LSP tool inputs must be anchored to files, methods, call sites, or symbols that
+Rust already selected from KG evidence, extraction tables, or prior bounded tool
+results. Do not expose broad workspace symbol search, raw arbitrary LSP
+requests, or unbounded reference scans to the LLM.
+
+LSP tool results must be normalized before returning to the LLM:
+
+- stable symbol ID where available
+- symbol kind
+- qualified name where available
+- file
+- start and end lines
+- short source excerpt when needed
+- relationship to the selected behavior context
+
 The LLM produces structured scenario and input proposals. Rust validates the
 proposal, renders owned files, runs approved build commands, and stores
 snapshots.
