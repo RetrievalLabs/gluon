@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 
 use crate::languages::java::build::model::BuildReport;
 use crate::languages::java::build::parse_build;
-use crate::languages::java::business::{BusinessExtractionOptions, extract_business};
+use crate::languages::java::business::{
+    BuildBusinessKgOptions, BusinessExtractionOptions, Priority, build_business_kg,
+    extract_business,
+};
 use crate::languages::java::compatibility::analyzer::analyze_report_with_options;
 use crate::languages::java::compatibility::jdk_tools::{DEFAULT_JDK_ROOT, JdkToolOptions};
 
@@ -13,6 +16,7 @@ enum CliOptions {
     ParseBuild(ParseBuildOptions),
     AnalyzeReport(AnalyzeReportOptions),
     ExtractBusiness(ExtractBusinessOptions),
+    BuildBusinessKg(BuildBusinessKgCliOptions),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -43,6 +47,16 @@ struct ExtractBusinessOptions {
     jdtls_workspace: Option<PathBuf>,
     jdtls_max_in_flight: usize,
     jdtls_deep: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct BuildBusinessKgCliOptions {
+    database: PathBuf,
+    output: Option<PathBuf>,
+    source_path: PathBuf,
+    min_priority: Priority,
+    max_methods: Option<usize>,
+    force: bool,
 }
 
 pub fn run_cli<I, S>(args: I) -> i32
@@ -83,6 +97,7 @@ where
         },
         Ok(CliOptions::AnalyzeReport(options)) => run_analyze_report(options),
         Ok(CliOptions::ExtractBusiness(options)) => run_extract_business(options),
+        Ok(CliOptions::BuildBusinessKg(options)) => run_build_business_kg(options),
         Err(error) => {
             command_failed("arguments", &error);
             print_usage();
@@ -108,6 +123,7 @@ where
         "parse-build" => parse_parse_build_args(args).map(CliOptions::ParseBuild),
         "analyze-report" => parse_analyze_report_args(args).map(CliOptions::AnalyzeReport),
         "extract-business" => parse_extract_business_args(args).map(CliOptions::ExtractBusiness),
+        "build-business-kg" => parse_build_business_kg_args(args).map(CliOptions::BuildBusinessKg),
         _ => Err(format!("unsupported command: {command}")),
     }
 }
@@ -283,6 +299,62 @@ fn parse_extract_business_args(
     })
 }
 
+fn parse_build_business_kg_args(
+    mut args: impl Iterator<Item = String>,
+) -> Result<BuildBusinessKgCliOptions, String> {
+    let mut database = None;
+    let mut output = None;
+    let mut source_path = None;
+    let mut min_priority = Priority::High;
+    let mut max_methods = None;
+    let mut force = false;
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--database" => {
+                let value = args.next().ok_or("--database requires a value")?;
+                database = Some(PathBuf::from(value));
+            }
+            "--output" => {
+                let value = args.next().ok_or("--output requires a value")?;
+                output = Some(PathBuf::from(value));
+            }
+            "--source-path" => {
+                let value = args.next().ok_or("--source-path requires a value")?;
+                source_path = Some(PathBuf::from(value));
+            }
+            "--min-priority" => {
+                let value = args.next().ok_or("--min-priority requires a value")?;
+                min_priority = Priority::parse(&value)?;
+            }
+            "--max-methods" => {
+                let value = args.next().ok_or("--max-methods requires a value")?;
+                let parsed = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid --max-methods: {value}"))?;
+                if parsed == 0 {
+                    return Err("--max-methods must be greater than 0".to_string());
+                }
+                max_methods = Some(parsed);
+            }
+            "--force" => {
+                force = true;
+            }
+            "--help" | "-h" => return Err("help requested".to_string()),
+            other => return Err(format!("unsupported argument: {other}")),
+        }
+    }
+
+    Ok(BuildBusinessKgCliOptions {
+        database: database.ok_or("missing required --database")?,
+        output,
+        source_path: source_path.ok_or("missing required --source-path")?,
+        min_priority,
+        max_methods,
+        force,
+    })
+}
+
 fn run_analyze_report(options: AnalyzeReportOptions) -> i32 {
     let build_report = match read_build_report(&options.report) {
         Ok(report) => report,
@@ -378,9 +450,53 @@ fn run_extract_business(options: ExtractBusinessOptions) -> i32 {
     }
 }
 
+fn run_build_business_kg(options: BuildBusinessKgCliOptions) -> i32 {
+    let kg_options = BuildBusinessKgOptions {
+        database: options.database,
+        output: options.output,
+        source_path: options.source_path,
+        min_priority: options.min_priority,
+        max_methods: options.max_methods,
+        force: options.force,
+    };
+
+    match build_business_kg(&kg_options) {
+        Ok(summary) => {
+            println!("build-business-kg select:");
+            println!("  candidates={}", summary.candidates);
+            println!("  high_priority={}", summary.high_priority_candidates);
+            println!("  selected={}", summary.selected);
+            println!("build-business-kg llm:");
+            println!(
+                "  {}/{} complete",
+                summary.methods_processed, summary.selected
+            );
+            println!("  tool_calls={}", summary.tool_calls);
+            println!("  failed={}", summary.failed);
+            println!("build-business-kg database:");
+            println!("  path={}", summary.output_path);
+            println!("  nodes={}", summary.nodes);
+            println!("  edges={}", summary.edges);
+            println!("  evidence={}", summary.evidence);
+            if summary.failed == 0 { 0 } else { 1 }
+        }
+        Err(error) => {
+            command_failed("build-business-kg", &error);
+            if error.contains("missing ANTHROPIC_API_KEY")
+                || error.contains("invalid extraction DB")
+                || error.contains("does not exist")
+            {
+                2
+            } else {
+                1
+            }
+        }
+    }
+}
+
 fn print_usage() {
     eprintln!(
-        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--jdtls-deep]"
+        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--jdtls-deep]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--force]"
     );
 }
 
@@ -670,5 +786,67 @@ mod tests {
             .expect_err("missing output dir");
 
         assert!(error.contains("missing required --output-dir"));
+    }
+
+    #[test]
+    fn parses_build_business_kg_arguments() {
+        let options = parse_args([
+            "code-parser",
+            "build-business-kg",
+            "--database",
+            "business-extraction.db",
+            "--output",
+            "business-kg.db",
+            "--source-path",
+            "project",
+            "--min-priority",
+            "medium",
+            "--max-methods",
+            "5",
+            "--force",
+        ])
+        .expect("valid arguments");
+
+        assert_eq!(
+            options,
+            CliOptions::BuildBusinessKg(BuildBusinessKgCliOptions {
+                database: PathBuf::from("business-extraction.db"),
+                output: Some(PathBuf::from("business-kg.db")),
+                source_path: PathBuf::from("project"),
+                min_priority: Priority::Medium,
+                max_methods: Some(5),
+                force: true,
+            })
+        );
+    }
+
+    #[test]
+    fn build_business_kg_rejects_invalid_priority() {
+        let error = parse_args([
+            "code-parser",
+            "build-business-kg",
+            "--database",
+            "business-extraction.db",
+            "--source-path",
+            "project",
+            "--min-priority",
+            "urgent",
+        ])
+        .expect_err("invalid priority");
+
+        assert!(error.contains("invalid --min-priority"));
+    }
+
+    #[test]
+    fn build_business_kg_requires_database() {
+        let error = parse_args([
+            "code-parser",
+            "build-business-kg",
+            "--source-path",
+            "project",
+        ])
+        .expect_err("missing database");
+
+        assert!(error.contains("missing required --database"));
     }
 }

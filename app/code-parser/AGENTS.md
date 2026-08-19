@@ -13,13 +13,14 @@ A Rust-based CLI tool for parsing Java build metadata.
 - `src/languages/java/build/resolver/runner.rs` - command execution, executable checks, and command diagnostics.
 - `src/languages/java/build/resolver/maven.rs` - Maven resolution commands and output parsing.
 - `src/languages/java/build/resolver/gradle.rs` - Gradle resolution commands and output parsing.
-- `src/languages/java/business/` - Java business logic extraction, JDTLS semantic enrichment, candidate scoring, and SQLite storage.
+- `src/languages/java/business/` - Java business logic extraction, JDTLS semantic enrichment, candidate scoring, SQLite storage, and Business KG construction.
 - `src/languages/java/business/model.rs` - business extraction code model, relationships, candidates, context packet, and summary data structures.
 - `src/languages/java/business/tree_sitter.rs` - tree-sitter Java structural extraction for classes, methods, annotations, entry points, and call sites.
 - `src/languages/java/business/jdtls.rs` - required Eclipse JDTLS LSP client for semantic definitions and references.
 - `src/languages/java/business/modules.rs` - Maven and Gradle multi-module discovery and source-file module ownership mapping.
 - `src/languages/java/business/scoring.rs` - deterministic business-logic candidate scoring.
 - `src/languages/java/business/store.rs` - SQLite schema creation and persistence for `business-extraction.db`.
+- `src/languages/java/business/kg.rs` - Business KG builder, Anthropic LLM integration, KG SQLite schema, validation, evidence, and candidate selection.
 - `src/languages/java/compatibility/` - Java compatibility analysis from resolved build reports and curated KB files.
 - `src/languages/java/compatibility/model.rs` - compatibility report data model.
 - `src/languages/java/compatibility/knowledge_base.rs` - YAML knowledge base loading and loose rule structs.

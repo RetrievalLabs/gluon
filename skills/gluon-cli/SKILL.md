@@ -144,3 +144,41 @@ gluon-cli code-parser extract-business --path /path/to/project --output-dir /pat
 ```bash
 gluon-cli code-parser extract-business --path /path/to/project --output-dir /path/to/gluon/data --jdtls-command /opt/jdtls/bin/jdtls
 ```
+
+### `code-parser build-business-kg`
+
+Builds `business-kg.db` from high-value methods in `business-extraction.db`.
+
+Required input:
+
+- `--database <business-extraction.db>`: SQLite database produced by `code-parser extract-business`.
+- `--source-path <project-root>`: source tree used to read method source ranges.
+
+Flags:
+
+- `--output <business-kg.db>`: KG SQLite output path. Defaults to `<database-dir>/business-kg.db`.
+- `--min-priority high|medium|low`: minimum candidate priority. Defaults to `high`.
+- `--max-methods <count>`: cap methods sent to LLM.
+- `--force`: delete and recreate existing KG output database before building.
+
+Environment:
+
+- `ANTHROPIC_API_KEY`: required.
+- `ANTHROPIC_API_BASE`: optional. Defaults to `https://api.anthropic.com`.
+- `ANTHROPIC_MODEL`: optional. Defaults to `claude-sonnet-5`.
+
+Outputs:
+
+- SQLite `business-kg.db` with reusable business nodes, business edges, evidence rows, and LLM run metadata.
+- Stdout selection, LLM, and database summary.
+- Bounded LLM tools can read compact extraction DB context, related method source, and existing KG nodes; the default limit is 5 tool calls per method.
+- No persistent LLM cache in v1.
+
+Example:
+
+```bash
+gluon-cli code-parser build-business-kg \
+  --database /path/to/gluon/data/project/business-extraction.db \
+  --source-path /path/to/project \
+  --max-methods 5
+```

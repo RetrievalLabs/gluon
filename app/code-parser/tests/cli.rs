@@ -414,6 +414,32 @@ fn extract_business_persists_multi_module_ownership() {
     let _ = fs::remove_dir_all(output_root);
 }
 
+#[test]
+fn build_business_kg_rejects_missing_api_key() {
+    let root = test_dir("build-kg-missing-key");
+    fs::write(
+        root.join("OrderService.java"),
+        "class OrderService {\n  void approve() {\n    if (status != null) return;\n  }\n}\n",
+    )
+    .unwrap();
+    let extraction_db = root.join("business-extraction.db");
+    write_business_extraction_db(&extraction_db, "OrderService.java");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .env_remove("ANTHROPIC_API_KEY")
+        .args(["build-business-kg", "--database"])
+        .arg(&extraction_db)
+        .args(["--source-path"])
+        .arg(&root)
+        .args(["--max-methods", "1"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("missing ANTHROPIC_API_KEY"));
+    let _ = fs::remove_dir_all(root);
+}
+
 fn write_build_report(root: &PathBuf, dependency_fragment: &str) -> PathBuf {
     let report_path = root.join("build-report.json");
     fs::write(
@@ -494,6 +520,57 @@ while True:
         fs::set_permissions(&script, permissions).unwrap();
     }
     script
+}
+
+fn write_business_extraction_db(path: &PathBuf, file: &str) {
+    let connection = Connection::open(path).unwrap();
+    connection
+        .execute_batch(
+            "
+            CREATE TABLE classes (
+                id TEXT PRIMARY KEY,
+                qualified_name TEXT NOT NULL
+            );
+            CREATE TABLE methods (
+                id TEXT PRIMARY KEY,
+                class_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                file TEXT NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL
+            );
+            CREATE TABLE candidate_scores (
+                method_id TEXT PRIMARY KEY,
+                score INTEGER NOT NULL,
+                priority TEXT NOT NULL
+            );
+            ",
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO classes (id, qualified_name) VALUES ('class:OrderService', 'OrderService')",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO methods (
+                id, class_id, name, signature, file, start_line, end_line
+             ) VALUES (
+                'method:OrderService#approve', 'class:OrderService', 'approve', 'approve()', ?1, 2, 4
+             )",
+            [file],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO candidate_scores (method_id, score, priority)
+             VALUES ('method:OrderService#approve', 10, 'high')",
+            [],
+        )
+        .unwrap();
 }
 
 fn test_dir(name: &str) -> PathBuf {
