@@ -491,6 +491,7 @@ fn build_business_kg_with_input(
     );
     let run_started_at = Instant::now();
     let selected_count = summary.selected;
+    let mut last_error = None;
     for (index, method) in selected.into_iter().enumerate() {
         let method_started_at = Instant::now();
         eprintln!(
@@ -532,38 +533,60 @@ fn build_business_kg_with_input(
                 Err(error) => {
                     summary.failed += 1;
                     store.record_method_failure(run_id, &method.id, &error)?;
+                    let reason = short_error(&error);
+                    last_error = Some(format!("{}: {}", method.id, reason));
                     eprintln!(
-                        "build-business-kg: method {}/{} failed elapsed_ms={} tool_calls={} error={}",
+                        "build-business-kg: method {}/{} failed elapsed_ms={} tool_calls={}",
                         index + 1,
                         selected_count,
                         method_started_at.elapsed().as_millis(),
-                        tool_calls,
-                        short_error(&error)
+                        tool_calls
+                    );
+                    eprintln!(
+                        "build-business-kg: failure_reason method_id={} reason={}",
+                        method.id, reason
                     );
                 }
             },
             Err(error) => {
                 summary.failed += 1;
                 store.record_method_failure(run_id, &method.id, &error)?;
+                let reason = short_error(&error);
+                last_error = Some(format!("{}: {}", method.id, reason));
                 eprintln!(
-                    "build-business-kg: method {}/{} failed elapsed_ms={} tool_calls={} error={}",
+                    "build-business-kg: method {}/{} failed elapsed_ms={} tool_calls={}",
                     index + 1,
                     selected_count,
                     method_started_at.elapsed().as_millis(),
-                    tool_calls,
-                    short_error(&error)
+                    tool_calls
+                );
+                eprintln!(
+                    "build-business-kg: failure_reason method_id={} reason={}",
+                    method.id, reason
                 );
             }
         }
         summary.tool_calls += tool_calls;
-        eprintln!(
-            "build-business-kg: progress {}/{} complete failed={} total_tool_calls={} elapsed_ms={}",
-            summary.methods_processed + summary.failed,
-            selected_count,
-            summary.failed,
-            summary.tool_calls,
-            run_started_at.elapsed().as_millis()
-        );
+        if let Some(error) = &last_error {
+            eprintln!(
+                "build-business-kg: progress {}/{} complete failed={} total_tool_calls={} elapsed_ms={} last_error={}",
+                summary.methods_processed + summary.failed,
+                selected_count,
+                summary.failed,
+                summary.tool_calls,
+                run_started_at.elapsed().as_millis(),
+                error
+            );
+        } else {
+            eprintln!(
+                "build-business-kg: progress {}/{} complete failed={} total_tool_calls={} elapsed_ms={}",
+                summary.methods_processed + summary.failed,
+                selected_count,
+                summary.failed,
+                summary.tool_calls,
+                run_started_at.elapsed().as_millis()
+            );
+        }
     }
 
     store.finish_run(run_id, &summary)?;
