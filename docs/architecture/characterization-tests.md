@@ -63,6 +63,10 @@ snapshot rows. It must not overwrite user-authored tests.
 `--continue` resumes an interrupted generation or observation run by skipping
 completed behavior scenarios.
 
+If generation, compilation, or test execution fails, the command should print a
+verbose error and stop. The user can fix the issue manually or adjust inputs,
+then rerun with `--continue` to resume from the last completed scenario.
+
 ## Behavior Selection
 
 The generator selects behavior nodes from `business-kg.db`.
@@ -128,6 +132,9 @@ overwritten.
 8. Capture observed behavior.
 9. Persist snapshots.
 10. Run generated tests in assert mode against modernized code.
+
+There is no automatic LLM repair loop. Failures stop the run after recording
+diagnostics.
 
 ## Testcase Inputs
 
@@ -398,6 +405,28 @@ Control:
 
 If deterministic setup is not possible, mark the scenario as skipped with a
 diagnostic instead of generating a flaky test.
+
+## Failure Handling
+
+The runtime must fail fast on generation, compile, or execution errors.
+
+On failure, print verbose diagnostics:
+
+- behavior ID and scenario ID
+- KG node ID and evidence method IDs
+- generated file path
+- phase: `generate`, `compile`, `observe`, or `assert`
+- failing command when applicable
+- exit status
+- concise stdout/stderr excerpt
+- full diagnostic path or DB row ID when persisted
+
+The command must persist run progress before stopping. A later invocation with
+`--continue` resumes by skipping completed scenarios and starting at the first
+incomplete or failed scenario.
+
+Do not ask the LLM to repair failed generated code automatically. Do not modify
+production source or user-authored tests during failure handling.
 
 ## Runtime LLM Loop
 
