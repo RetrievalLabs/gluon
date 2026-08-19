@@ -1,8 +1,13 @@
 use std::path::Path;
 
+pub mod characterization;
 pub mod kg;
 pub mod model;
 
+pub use characterization::{
+    GenerateCharacterizationTestsOptions, GenerateCharacterizationTestsSummary,
+    generate_characterization_tests,
+};
 pub use kg::{BuildBusinessKgOptions, BuildBusinessKgSummary, Priority, build_business_kg};
 pub use model::ExtractionSummary;
 

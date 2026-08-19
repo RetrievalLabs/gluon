@@ -488,6 +488,64 @@ class OrderServiceIT {
 }
 
 #[test]
+fn generate_characterization_tests_persists_traceable_behaviors() {
+    let root = test_dir("characterization-generate");
+    let output_root = test_dir("characterization-output");
+    let business_db = root.join("business-extraction.db");
+    let kg_db = root.join("business-kg.db");
+    write_characterization_business_db(&business_db);
+    write_characterization_kg_db(&kg_db);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["generate-characterization-tests", "--business-database"])
+        .arg(&business_db)
+        .args(["--kg-database"])
+        .arg(&kg_db)
+        .args(["--source-path"])
+        .arg(&root)
+        .args(["--output-dir"])
+        .arg(&output_root)
+        .args(["--max-behaviors", "1"])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("selected_behaviors=1"));
+    assert!(stdout.contains("persisted_behaviors=1"));
+
+    let characterization_db = output_root
+        .join(root.file_name().unwrap())
+        .join("characterization-tests.db");
+    assert!(characterization_db.exists());
+    let connection = Connection::open(&characterization_db).unwrap();
+    let run_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM characterization_runs", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let behavior_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM characterization_behaviors",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let method_ids_json: String = connection
+        .query_row(
+            "SELECT source_method_ids_json FROM characterization_behaviors",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(run_count, 1);
+    assert_eq!(behavior_count, 1);
+    assert!(method_ids_json.contains("method:OrderService#approve"));
+    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_dir_all(output_root);
+}
+
+#[test]
 fn build_business_kg_rejects_missing_api_key() {
     let root = test_dir("build-kg-missing-key");
     fs::write(
@@ -511,6 +569,62 @@ fn build_business_kg_rejects_missing_api_key() {
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("missing ANTHROPIC_API_KEY"));
     let _ = fs::remove_dir_all(root);
+}
+
+fn write_characterization_business_db(path: &PathBuf) {
+    let connection = Connection::open(path).unwrap();
+    connection
+        .execute_batch(
+            "
+            CREATE TABLE methods (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL
+            );
+            INSERT INTO methods (id, name)
+            VALUES ('method:OrderService#approve', 'approve');
+            ",
+        )
+        .unwrap();
+}
+
+fn write_characterization_kg_db(path: &PathBuf) {
+    let connection = Connection::open(path).unwrap();
+    connection
+        .execute_batch(
+            "
+            CREATE TABLE business_nodes (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                name TEXT NOT NULL,
+                statement TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE business_evidence (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                node_id TEXT,
+                edge_id INTEGER,
+                method_id TEXT NOT NULL,
+                source_lines_json TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            INSERT INTO business_nodes (
+                id, kind, name, statement, confidence, created_at
+            ) VALUES (
+                'node:approve-pending', 'BusinessRule', 'Approve pending order',
+                'Pending orders can be approved.', 0.9, '1'
+            );
+            INSERT INTO business_evidence (
+                node_id, method_id, source_lines_json, reason, created_at
+            ) VALUES (
+                'node:approve-pending', 'method:OrderService#approve',
+                '[{\"file\":\"OrderService.java\",\"start_line\":1,\"end_line\":3}]',
+                'method enforces rule', '1'
+            );
+            ",
+        )
+        .unwrap();
 }
 
 fn write_build_report(root: &PathBuf, dependency_fragment: &str) -> PathBuf {

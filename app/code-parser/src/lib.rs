@@ -5,7 +5,8 @@ pub mod languages;
 pub use cli::run_cli;
 pub use languages::business::{
     BuildBusinessKgOptions, BuildBusinessKgSummary, BusinessExtractionOptions, ExtractionSummary,
-    Priority, build_business_kg,
+    GenerateCharacterizationTestsOptions, GenerateCharacterizationTestsSummary, Priority,
+    build_business_kg, generate_characterization_tests,
 };
 pub use languages::java::JavaLanguageParser;
 pub use languages::java::build::model::{

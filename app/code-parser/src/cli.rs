@@ -3,7 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::languages::business::{
-    BuildBusinessKgOptions, BusinessExtractionOptions, Priority, build_business_kg,
+    BuildBusinessKgOptions, BusinessExtractionOptions, GenerateCharacterizationTestsOptions,
+    Priority, build_business_kg, generate_characterization_tests,
 };
 use crate::languages::java::build::model::BuildReport;
 use crate::languages::java::build::parse_build;
@@ -18,6 +19,7 @@ enum CliOptions {
     ExtractBusiness(ExtractBusinessOptions),
     ExtractTests(ExtractTestsOptions),
     BuildBusinessKg(BuildBusinessKgCliOptions),
+    GenerateCharacterizationTests(GenerateCharacterizationTestsCliOptions),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -72,6 +74,18 @@ struct BuildBusinessKgCliOptions {
     max_failures: Option<usize>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct GenerateCharacterizationTestsCliOptions {
+    business_database: PathBuf,
+    kg_database: PathBuf,
+    source_path: PathBuf,
+    output_dir: PathBuf,
+    max_behaviors: Option<usize>,
+    node_kind: Option<String>,
+    force: bool,
+    resume: bool,
+}
+
 pub fn run_cli<I, S>(args: I) -> i32
 where
     I: IntoIterator<Item = S>,
@@ -112,6 +126,9 @@ where
         Ok(CliOptions::ExtractBusiness(options)) => run_extract_business(options),
         Ok(CliOptions::ExtractTests(options)) => run_extract_tests(options),
         Ok(CliOptions::BuildBusinessKg(options)) => run_build_business_kg(options),
+        Ok(CliOptions::GenerateCharacterizationTests(options)) => {
+            run_generate_characterization_tests(options)
+        }
         Err(error) => {
             command_failed("arguments", &error);
             print_usage();
@@ -139,6 +156,8 @@ where
         "extract-business" => parse_extract_business_args(args).map(CliOptions::ExtractBusiness),
         "extract-tests" => parse_extract_tests_args(args).map(CliOptions::ExtractTests),
         "build-business-kg" => parse_build_business_kg_args(args).map(CliOptions::BuildBusinessKg),
+        "generate-characterization-tests" => parse_generate_characterization_tests_args(args)
+            .map(CliOptions::GenerateCharacterizationTests),
         _ => Err(format!("unsupported command: {command}")),
     }
 }
@@ -446,6 +465,76 @@ fn parse_build_business_kg_args(
     })
 }
 
+fn parse_generate_characterization_tests_args(
+    mut args: impl Iterator<Item = String>,
+) -> Result<GenerateCharacterizationTestsCliOptions, String> {
+    let mut business_database = None;
+    let mut kg_database = None;
+    let mut source_path = None;
+    let mut output_dir = None;
+    let mut max_behaviors = None;
+    let mut node_kind = None;
+    let mut force = false;
+    let mut resume = false;
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--business-database" => {
+                let value = args.next().ok_or("--business-database requires a value")?;
+                business_database = Some(PathBuf::from(value));
+            }
+            "--kg-database" => {
+                let value = args.next().ok_or("--kg-database requires a value")?;
+                kg_database = Some(PathBuf::from(value));
+            }
+            "--source-path" => {
+                let value = args.next().ok_or("--source-path requires a value")?;
+                source_path = Some(PathBuf::from(value));
+            }
+            "--output-dir" => {
+                let value = args.next().ok_or("--output-dir requires a value")?;
+                output_dir = Some(PathBuf::from(value));
+            }
+            "--max-behaviors" => {
+                let value = args.next().ok_or("--max-behaviors requires a value")?;
+                let parsed = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid --max-behaviors: {value}"))?;
+                if parsed == 0 {
+                    return Err("--max-behaviors must be greater than 0".to_string());
+                }
+                max_behaviors = Some(parsed);
+            }
+            "--node-kind" => {
+                node_kind = Some(args.next().ok_or("--node-kind requires a value")?);
+            }
+            "--force" => {
+                force = true;
+            }
+            "--continue" => {
+                resume = true;
+            }
+            "--help" | "-h" => return Err("help requested".to_string()),
+            other => return Err(format!("unsupported argument: {other}")),
+        }
+    }
+
+    if force && resume {
+        return Err("--force and --continue cannot be used together".to_string());
+    }
+
+    Ok(GenerateCharacterizationTestsCliOptions {
+        business_database: business_database.ok_or("missing required --business-database")?,
+        kg_database: kg_database.ok_or("missing required --kg-database")?,
+        source_path: source_path.ok_or("missing required --source-path")?,
+        output_dir: output_dir.ok_or("missing required --output-dir")?,
+        max_behaviors,
+        node_kind,
+        force,
+        resume,
+    })
+}
+
 fn run_analyze_report(options: AnalyzeReportOptions) -> i32 {
     let build_report = match read_build_report(&options.report) {
         Ok(report) => report,
@@ -678,9 +767,47 @@ fn run_build_business_kg(options: BuildBusinessKgCliOptions) -> i32 {
     }
 }
 
+fn run_generate_characterization_tests(options: GenerateCharacterizationTestsCliOptions) -> i32 {
+    let characterization_options = GenerateCharacterizationTestsOptions {
+        business_database: options.business_database,
+        kg_database: options.kg_database,
+        source_path: options.source_path,
+        output_dir: options.output_dir,
+        max_behaviors: options.max_behaviors,
+        node_kind: options.node_kind,
+        force: options.force,
+        resume: options.resume,
+    };
+
+    match generate_characterization_tests(&characterization_options) {
+        Ok(summary) => {
+            println!("generate-characterization-tests select:");
+            println!("  selected_behaviors={}", summary.selected_behaviors);
+            println!("  persisted_behaviors={}", summary.persisted_behaviors);
+            println!("  skipped_behaviors={}", summary.skipped_behaviors);
+            println!("generate-characterization-tests database:");
+            println!("  path={}", summary.output_path);
+            println!("  diagnostics={}", summary.diagnostics);
+            if summary.diagnostics == 0 { 0 } else { 1 }
+        }
+        Err(error) => {
+            command_failed("generate-characterization-tests", &error);
+            if error.contains("does not exist")
+                || error.contains("invalid business database")
+                || error.contains("invalid KG database")
+                || error.contains("unsupported --node-kind")
+            {
+                2
+            } else {
+                1
+            }
+        }
+    }
+}
+
 fn print_usage() {
     eprintln!(
-        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--jdtls-deep] [--continue]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]"
+        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--jdtls-deep] [--continue]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]\n       code-parser generate-characterization-tests --business-database <business-extraction.db> --kg-database <business-kg.db> --source-path <legacy-project-root> --output-dir <gluon-output-dir> [--max-behaviors <count>] [--node-kind BusinessRule|Workflow|Invariant|StateTransition|SideEffect] [--continue] [--force]"
     );
 }
 
@@ -1122,5 +1249,62 @@ mod tests {
         .expect_err("missing database");
 
         assert!(error.contains("missing required --database"));
+    }
+
+    #[test]
+    fn parses_generate_characterization_tests_arguments() {
+        let options = parse_args([
+            "code-parser",
+            "generate-characterization-tests",
+            "--business-database",
+            "business-extraction.db",
+            "--kg-database",
+            "business-kg.db",
+            "--source-path",
+            "project",
+            "--output-dir",
+            "data",
+            "--max-behaviors",
+            "4",
+            "--node-kind",
+            "Workflow",
+            "--continue",
+        ])
+        .expect("valid arguments");
+
+        assert_eq!(
+            options,
+            CliOptions::GenerateCharacterizationTests(GenerateCharacterizationTestsCliOptions {
+                business_database: PathBuf::from("business-extraction.db"),
+                kg_database: PathBuf::from("business-kg.db"),
+                source_path: PathBuf::from("project"),
+                output_dir: PathBuf::from("data"),
+                max_behaviors: Some(4),
+                node_kind: Some("Workflow".to_string()),
+                force: false,
+                resume: true,
+            })
+        );
+    }
+
+    #[test]
+    fn generate_characterization_tests_rejects_force_continue_conflict() {
+        let error = parse_args([
+            "code-parser",
+            "generate-characterization-tests",
+            "--business-database",
+            "business-extraction.db",
+            "--kg-database",
+            "business-kg.db",
+            "--source-path",
+            "project",
+            "--output-dir",
+            "data",
+            "--force",
+            "--continue",
+        ])
+        .expect_err("conflicting resume options");
+
+        assert!(error.contains("--force and --continue cannot be used together"));
     }
 }
