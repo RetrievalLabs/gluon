@@ -14,11 +14,13 @@ The system uses:
 - `business-kg.db` for business behaviors, rules, workflows, state transitions,
   and source evidence.
 - Raw source code and LSP/JDTLS for precise symbol context.
-- LLM reasoning for scenario generation and test source generation.
+- LLM reasoning for scenario and testcase input generation.
 - Existing Java build tools to compile and run generated tests.
 
 Generated characterization tests are added as new files in the legacy
 repository. Existing source and existing tests must not be modified.
+The LLM must not directly edit or create files. It returns structured scenario
+JSON, and Rust renders owned Java/JUnit files from validated templates.
 
 ## Goal
 
@@ -111,7 +113,7 @@ overwritten.
 
 1. Select KG behaviors.
 2. Build bounded context from KG, extraction DB, source, and existing tests.
-3. Ask the LLM for scenario intent:
+3. Ask the LLM for scenario intent and testcase inputs:
    - scenario name
    - setup requirements
    - generated inputs
@@ -119,12 +121,84 @@ overwritten.
    - observable outputs
    - required fakes
    - side-effect capture points
-4. Generate Java/JUnit characterization test source.
-5. Compile tests with the project build tool.
-6. Run generated tests in observe mode against legacy code.
-7. Capture observed behavior.
-8. Persist snapshots.
-9. Run generated tests in assert mode against modernized code.
+4. Validate the LLM JSON proposal.
+5. Render Java/JUnit characterization test source from Rust-owned templates.
+6. Compile tests with the project build tool.
+7. Run generated tests in observe mode against legacy code.
+8. Capture observed behavior.
+9. Persist snapshots.
+10. Run generated tests in assert mode against modernized code.
+
+## Testcase Inputs
+
+Testcase inputs are first-class artifacts.
+
+The LLM proposes input candidates for each selected behavior:
+
+- happy-path inputs
+- edge-case inputs
+- boundary inputs
+- failure inputs
+- fixture setup
+- fake dependency responses
+- invocation parameters
+
+Rust validates proposed inputs before any file is generated:
+
+- input shape must match the invocation type
+- required fields must be present
+- values must be serializable and deterministic
+- random, clock, UUID, tenant, and user values must be fixed
+- external dependency configuration must point to fakes only
+- generated fixtures must be safe for isolated test execution
+
+The LLM must not provide expected outputs. Expected outputs are observed by
+running the generated test against the legacy application.
+
+```text
+LLM proposes input -> Rust validates input -> legacy code produces output
+```
+
+Both generated inputs and observed outputs are stored in the snapshot database.
+Assert mode reuses the stored inputs exactly and compares modernized outputs
+against stored legacy observations.
+
+## LLM And Rust Ownership
+
+The LLM is a bounded planner, not a filesystem actor.
+
+LLM may propose:
+
+- scenario names
+- testcase inputs
+- fixtures
+- fake requirements
+- invocation paths
+- observation points
+
+LLM must not:
+
+- create files
+- edit files
+- choose arbitrary output paths
+- run build commands
+- write SQLite rows
+- call arbitrary shell commands
+- query arbitrary SQL
+
+Rust owns:
+
+- schema validation
+- generated file paths
+- package and class names
+- Java/JUnit templates
+- imports
+- generated markers
+- overwrite rules
+- snapshot IDs
+- database writes
+- build/test commands
+- traceability enforcement
 
 ## External Dependencies
 
@@ -303,8 +377,9 @@ get_tests_for_method(method_id, limit)
 get_test_case(test_case_id)
 ```
 
-The LLM produces scenario and test-generation proposals. Rust validates the
-proposal, writes owned files, runs build commands, and stores snapshots.
+The LLM produces structured scenario and input proposals. Rust validates the
+proposal, renders owned files, runs approved build commands, and stores
+snapshots.
 
 ## Determinism Rules
 
@@ -324,79 +399,26 @@ Control:
 If deterministic setup is not possible, mark the scenario as skipped with a
 diagnostic instead of generating a flaky test.
 
-## Multi-Agent Workflow
+## Runtime LLM Loop
 
-Use multi-agent execution for implementation, but keep ownership narrow to
-minimize tokens and conflicts.
+Do not use multi-agent orchestration inside the
+`generate-characterization-tests` runtime.
 
-### Context Agent
+Runtime generation should use one bounded LLM loop per behavior:
 
-Read-only.
+```text
+Rust selects behavior
+Rust builds bounded context
+LLM proposes scenario/input JSON
+Rust validates proposal
+Rust renders Java/JUnit files
+Rust runs observe/assert mode
+Rust stores snapshots
+```
 
-Responsibilities:
-
-- inspect current CLI patterns
-- inspect KG schema and extraction DB schema
-- inspect test extraction tables and tools
-- inspect Java build/test runner patterns
-- inspect existing generated-file conventions
-
-Output must be short and factual. Target budget: about 1500 tokens.
-
-### Main Agent
-
-Locks implementation contracts before coding:
-
-- CLI options
-- snapshot DB schema
-- generated file layout
-- fake strategy
-- LLM tool contract
-- validation and test plan
-
-### Implementation Agent
-
-Single coding owner.
-
-Responsibilities:
-
-- add CLI command
-- implement behavior selection
-- implement snapshot DB store
-- implement bounded LLM context/tools
-- implement Java test source generation
-- implement fake handling metadata
-- add focused tests
-
-Avoid multiple coding agents until interfaces are stable.
-
-### Verification Agent
-
-Read-only.
-
-Responsibilities:
-
-- run tests and CLI smoke checks
-- inspect generated files and snapshot rows
-- verify no real external calls are generated
-- verify traceability to KG and extraction DB
-- report only failures, risks, and missing coverage
-
-Target output budget: about 1000 tokens.
-
-### Final Integration
-
-Main agent fixes integration gaps, reruns validation, and reports the final
-state.
-
-## Token-Control Rules
-
-- Do not ask agents to broadly research the repository.
-- Give each agent exact files or exact questions when possible.
-- Do not paste long logs between agents.
-- Do not run parallel implementation agents over the same Rust crate.
-- Prefer short factual reports over narrative summaries.
-- Keep generated prompts compact and tool-driven.
+This keeps generation deterministic, traceable, token-efficient, and easier to
+audit. Runtime verification comes from compiling and running generated tests,
+not from another LLM agent.
 
 ## Acceptance Criteria
 
