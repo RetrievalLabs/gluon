@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::BufRead;
+use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::blocking::Client;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -141,6 +141,7 @@ pub struct EdgeProposal {
     pub target_client_id: Option<String>,
     pub target_node_id: Option<String>,
     pub kind: String,
+    #[serde(default)]
     pub confidence: f64,
     #[serde(default)]
     pub evidence: Vec<EvidenceProposal>,
@@ -168,11 +169,15 @@ impl AnthropicLlmClient {
             .unwrap_or_else(|_| "https://api.anthropic.com".to_string());
         let model = std::env::var("ANTHROPIC_MODEL")
             .unwrap_or_else(|_| DEFAULT_ANTHROPIC_MODEL.to_string());
+        let http = Client::builder()
+            .timeout(Duration::from_secs(600))
+            .build()
+            .map_err(|error| format!("failed to create Anthropic HTTP client: {error}"))?;
         Ok(Self {
             api_key,
             api_base,
             model,
-            http: Client::new(),
+            http,
         })
     }
 }
@@ -197,7 +202,8 @@ impl LlmClient for AnthropicLlmClient {
         loop {
             let body = serde_json::json!({
                 "model": self.model,
-                "max_tokens": 4096,
+                "max_tokens": 8192,
+                "stream": true,
                 "system": system_prompt(),
                 "tools": tool_schemas(),
                 "messages": messages
@@ -251,20 +257,127 @@ impl AnthropicLlmClient {
             .post(url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
+            .header(reqwest::header::ACCEPT_ENCODING, "identity")
             .json(body)
             .send()
-            .map_err(|error| format!("Anthropic request failed: {error}"))?;
+            .map_err(|error| format!("Anthropic request failed: {error:?}"))?;
         let status = response.status();
-        let value: Value = response
-            .json()
-            .map_err(|error| format!("Anthropic response was not valid JSON: {error}"))?;
         if !status.is_success() {
+            let text = response
+                .text()
+                .unwrap_or_else(|error| format!("failed to read error body: {error}"));
             return Err(format!(
-                "Anthropic request failed with status {status}: {value}"
+                "Anthropic request failed with status {status}: {text}"
             ));
         }
-        Ok(value)
+        parse_sse_response(response)
     }
+}
+
+fn parse_sse_response(response: impl Read) -> Result<Value, String> {
+    let mut blocks: HashMap<usize, Value> = HashMap::new();
+    let mut input_buffers: HashMap<usize, String> = HashMap::new();
+    let reader = std::io::BufReader::new(response);
+    for line in reader.lines() {
+        let line = line.map_err(|error| format!("failed to read Anthropic stream: {error:?}"))?;
+        let Some(data) = line.strip_prefix("data: ") else {
+            continue;
+        };
+        if data == "[DONE]" {
+            break;
+        }
+        let event: Value = serde_json::from_str(data)
+            .map_err(|error| format!("invalid Anthropic stream event: {error}: {data}"))?;
+        match event.get("type").and_then(Value::as_str) {
+            Some("content_block_start") => {
+                let index = event
+                    .get("index")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| format!("stream content block missing index: {event}"))?
+                    as usize;
+                let mut block = event
+                    .get("content_block")
+                    .cloned()
+                    .ok_or_else(|| format!("stream content block missing body: {event}"))?;
+                if block.get("type").and_then(Value::as_str) == Some("tool_use") {
+                    input_buffers.insert(index, String::new());
+                    if let Some(object) = block.as_object_mut() {
+                        object.insert("input".to_string(), Value::Object(Default::default()));
+                    }
+                }
+                blocks.insert(index, block);
+            }
+            Some("content_block_delta") => {
+                let index = event
+                    .get("index")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| format!("stream delta missing index: {event}"))?
+                    as usize;
+                let delta = event
+                    .get("delta")
+                    .ok_or_else(|| format!("stream delta missing body: {event}"))?;
+                match delta.get("type").and_then(Value::as_str) {
+                    Some("text_delta") => {
+                        let text = delta.get("text").and_then(Value::as_str).unwrap_or("");
+                        append_text_delta(&mut blocks, index, text)?;
+                    }
+                    Some("input_json_delta") => {
+                        let partial = delta
+                            .get("partial_json")
+                            .and_then(Value::as_str)
+                            .unwrap_or("");
+                        input_buffers.entry(index).or_default().push_str(partial);
+                    }
+                    _ => {}
+                }
+            }
+            Some("content_block_stop") => {
+                let index = event
+                    .get("index")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| format!("stream stop missing index: {event}"))?
+                    as usize;
+                if let Some(input) = input_buffers.remove(&index) {
+                    let parsed = if input.trim().is_empty() {
+                        Value::Object(Default::default())
+                    } else {
+                        serde_json::from_str(&input)
+                            .map_err(|error| format!("invalid tool input JSON: {error}: {input}"))?
+                    };
+                    if let Some(block) = blocks.get_mut(&index)
+                        && let Some(object) = block.as_object_mut()
+                    {
+                        object.insert("input".to_string(), parsed);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut ordered = blocks.into_iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|(index, _)| *index);
+    Ok(serde_json::json!({
+        "content": ordered.into_iter().map(|(_, block)| block).collect::<Vec<_>>()
+    }))
+}
+
+fn append_text_delta(
+    blocks: &mut HashMap<usize, Value>,
+    index: usize,
+    text: &str,
+) -> Result<(), String> {
+    let block = blocks
+        .get_mut(&index)
+        .ok_or_else(|| format!("text delta for unknown content block {index}"))?;
+    let object = block
+        .as_object_mut()
+        .ok_or_else(|| format!("content block {index} is not an object"))?;
+    let current = object.get("text").and_then(Value::as_str).unwrap_or("");
+    object.insert(
+        "text".to_string(),
+        Value::String(format!("{current}{text}")),
+    );
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -652,6 +765,7 @@ Use available tools only when this method needs more context. Stop once enough e
 Return only JSON with this shape:
 {{"nodes":[{{"client_id":"n1","kind":"BusinessRule","name":"...","statement":"...","confidence":0.95,"evidence":[{{"method_id":"{method_id}","source_lines":[1],"reason":"..."}}]}}],"edges":[]}}
 
+Create at most 5 nodes and 8 edges for one method. Prefer highest-confidence business facts only.
 Use supported node kinds only: BusinessRule, Workflow, Invariant, StateTransition, SideEffect, BusinessConcept.
 Use supported edge kinds only: SUPPORTED_BY, DEPENDS_ON, TRIGGERS, TRANSITIONS_TO, MENTIONS.
 If no meaningful business logic is present, return {{"nodes":[],"edges":[]}}.
@@ -1399,7 +1513,11 @@ impl KgStore {
                 insert_evidence(&transaction, run_id, Some(&node_id), None, evidence)?;
             }
         }
+        let client_ids = client_nodes.keys().cloned().collect::<HashSet<_>>();
         for edge in response.edges {
+            if !valid_edge_for_method(method, &edge, &client_ids) {
+                continue;
+            }
             let source_id = resolve_edge_node(
                 edge.source_node_id.as_deref(),
                 edge.source_client_id.as_deref(),
@@ -1556,12 +1674,6 @@ fn validate_response(method: &CandidateMethod, response: &LlmKgResponse) -> Resu
             validate_evidence(method, evidence)?;
         }
     }
-    for edge in &response.edges {
-        validate_edge(edge, &client_ids)?;
-        for evidence in &edge.evidence {
-            validate_evidence(method, evidence)?;
-        }
-    }
     Ok(())
 }
 
@@ -1598,6 +1710,9 @@ fn validate_edge(edge: &EdgeProposal, client_ids: &HashSet<String>) -> Result<()
         return Err(format!("unsupported business edge kind: {}", edge.kind));
     }
     validate_confidence(edge.confidence)?;
+    if edge.confidence == 0.0 {
+        return Err("business edge confidence is missing or zero".to_string());
+    }
     validate_one_edge_reference(
         edge.source_node_id.as_deref(),
         edge.source_client_id.as_deref(),
@@ -1620,6 +1735,18 @@ fn validate_edge(edge: &EdgeProposal, client_ids: &HashSet<String>) -> Result<()
         return Err(format!("business edge {} has no evidence", edge.kind));
     }
     Ok(())
+}
+
+fn valid_edge_for_method(
+    method: &CandidateMethod,
+    edge: &EdgeProposal,
+    client_ids: &HashSet<String>,
+) -> bool {
+    validate_edge(edge, client_ids).is_ok()
+        && edge
+            .evidence
+            .iter()
+            .all(|evidence| validate_evidence(method, evidence).is_ok())
 }
 
 fn validate_one_edge_reference(
@@ -1779,6 +1906,26 @@ mod tests {
     }
 
     #[test]
+    fn malformed_edges_do_not_block_json_parsing() {
+        let parsed = parse_llm_json(
+            r#"{
+                "nodes": [],
+                "edges": [
+                    {
+                        "source": "n1",
+                        "target": "business-node:existing",
+                        "kind": "MENTIONS",
+                        "reason": "Malformed edge from model."
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(parsed.edges.len(), 1);
+        assert_eq!(parsed.edges[0].confidence, 0.0);
+    }
+
+    #[test]
     fn builds_kg_with_deduped_nodes_edges_and_evidence() {
         let root = test_dir("business-kg");
         let source = root.join("OrderService.java");
@@ -1884,6 +2031,62 @@ mod tests {
         assert_eq!(summary.failed, 1);
         assert_eq!(summary.nodes, 0);
         assert_eq!(summary.evidence, 0);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invalid_edges_are_skipped_without_losing_valid_nodes() {
+        let root = test_dir("business-kg-invalid-edge");
+        fs::write(
+            root.join("OrderService.java"),
+            "class OrderService {\n  void approve() {\n    if (status != PENDING) throw new RuntimeException();\n  }\n}\n",
+        )
+        .unwrap();
+        let extraction_db = root.join("business-extraction.db");
+        write_extraction_db(&extraction_db, "OrderService.java");
+        let output = root.join("business-kg.db");
+        let response = LlmKgResponse {
+            nodes: vec![NodeProposal {
+                client_id: Some("n1".to_string()),
+                kind: "BusinessRule".to_string(),
+                name: "Pending approval rule".to_string(),
+                statement: "Approval requires PENDING status.".to_string(),
+                confidence: 0.95,
+                evidence: vec![EvidenceProposal {
+                    method_id: "method:OrderService#approve".to_string(),
+                    source_lines: vec![3],
+                    reason: "The method rejects non-pending status.".to_string(),
+                }],
+            }],
+            edges: vec![EdgeProposal {
+                source_client_id: Some("n1".to_string()),
+                source_node_id: None,
+                target_client_id: None,
+                target_node_id: None,
+                kind: "DEPENDS_ON".to_string(),
+                confidence: 0.8,
+                evidence: vec![EvidenceProposal {
+                    method_id: "method:OrderService#approve".to_string(),
+                    source_lines: vec![3],
+                    reason: "Invalid edge should be ignored.".to_string(),
+                }],
+            }],
+        };
+        let options = BuildBusinessKgOptions {
+            database: extraction_db,
+            output: Some(output.clone()),
+            source_path: root.clone(),
+            min_priority: Priority::High,
+            max_methods: Some(1),
+            force: false,
+        };
+
+        let summary = build_business_kg_with_client(&options, &MockClient { response }).unwrap();
+        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.nodes, 1);
+        assert_eq!(summary.edges, 0);
+        assert_eq!(summary.evidence, 1);
 
         let _ = fs::remove_dir_all(root);
     }
