@@ -57,6 +57,8 @@ struct BuildBusinessKgCliOptions {
     min_priority: Priority,
     max_methods: Option<usize>,
     force: bool,
+    resume: bool,
+    max_failures: Option<usize>,
 }
 
 pub fn run_cli<I, S>(args: I) -> i32
@@ -308,6 +310,8 @@ fn parse_build_business_kg_args(
     let mut min_priority = Priority::High;
     let mut max_methods = None;
     let mut force = false;
+    let mut resume = false;
+    let mut max_failures = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -340,9 +344,25 @@ fn parse_build_business_kg_args(
             "--force" => {
                 force = true;
             }
+            "--continue" => {
+                resume = true;
+            }
+            "--max-failures" => {
+                let value = args.next().ok_or("--max-failures requires a value")?;
+                let parsed = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid --max-failures: {value}"))?;
+                if parsed == 0 {
+                    return Err("--max-failures must be greater than 0".to_string());
+                }
+                max_failures = Some(parsed);
+            }
             "--help" | "-h" => return Err("help requested".to_string()),
             other => return Err(format!("unsupported argument: {other}")),
         }
+    }
+    if force && resume {
+        return Err("--force and --continue cannot be used together".to_string());
     }
 
     Ok(BuildBusinessKgCliOptions {
@@ -352,6 +372,8 @@ fn parse_build_business_kg_args(
         min_priority,
         max_methods,
         force,
+        resume,
+        max_failures,
     })
 }
 
@@ -458,6 +480,8 @@ fn run_build_business_kg(options: BuildBusinessKgCliOptions) -> i32 {
         min_priority: options.min_priority,
         max_methods: options.max_methods,
         force: options.force,
+        resume: options.resume,
+        max_failures: options.max_failures,
     };
 
     match build_business_kg(&kg_options) {
@@ -496,7 +520,7 @@ fn run_build_business_kg(options: BuildBusinessKgCliOptions) -> i32 {
 
 fn print_usage() {
     eprintln!(
-        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--jdtls-deep]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--force]"
+        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--jdtls-deep]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]"
     );
 }
 
@@ -803,6 +827,8 @@ mod tests {
             "medium",
             "--max-methods",
             "5",
+            "--max-failures",
+            "3",
             "--force",
         ])
         .expect("valid arguments");
@@ -816,6 +842,36 @@ mod tests {
                 min_priority: Priority::Medium,
                 max_methods: Some(5),
                 force: true,
+                resume: false,
+                max_failures: Some(3),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_build_business_kg_continue_argument() {
+        let options = parse_args([
+            "code-parser",
+            "build-business-kg",
+            "--database",
+            "business-extraction.db",
+            "--source-path",
+            "project",
+            "--continue",
+        ])
+        .expect("valid arguments");
+
+        assert_eq!(
+            options,
+            CliOptions::BuildBusinessKg(BuildBusinessKgCliOptions {
+                database: PathBuf::from("business-extraction.db"),
+                output: None,
+                source_path: PathBuf::from("project"),
+                min_priority: Priority::High,
+                max_methods: None,
+                force: false,
+                resume: true,
+                max_failures: None,
             })
         );
     }

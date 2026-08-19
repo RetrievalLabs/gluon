@@ -92,6 +92,15 @@ code-parser build-business-kg \
   `--max-methods`    no                all selected                      Maximum methods
                                                                          sent to LLM
 
+  `--max-failures`   no                no cap                            Stop after this
+                                                                         many failed
+                                                                         methods
+
+  `--continue`       no                false                             Resume an existing
+                                                                         KG by skipping
+                                                                         methods with
+                                                                         evidence
+
   `--force`          no                false                             Rebuild existing
                                                                          KG output
   ----------------------------------------------------------------------------------------
@@ -100,6 +109,17 @@ code-parser build-business-kg \
 building. Without `--force`, an existing output database should be reopened and
 appended to. Reused nodes, reused edges, and duplicate evidence should be
 deduplicated by their stable keys.
+
+`--continue` should skip methods that already have rows in
+`business_evidence.method_id`, allowing interrupted long-running KG builds to
+resume without spending LLM calls on completed methods. `--force` and
+`--continue` are mutually exclusive.
+
+Malformed LLM JSON should be repaired locally when possible and retried once
+through the LLM when parsing still fails. Common malformed edge fields, such as
+`source` and `target`, should be normalized into the validated
+`source_client_id`/`source_node_id` and `target_client_id`/`target_node_id`
+contract before edge validation.
 
 The first implementation should use:
 

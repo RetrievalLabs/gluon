@@ -21,6 +21,8 @@ pub struct BuildBusinessKgOptions {
     pub min_priority: Priority,
     pub max_methods: Option<usize>,
     pub force: bool,
+    pub resume: bool,
+    pub max_failures: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,6 +184,14 @@ pub struct EdgeProposal {
     pub confidence: f64,
     #[serde(default)]
     pub evidence: Vec<EvidenceProposal>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub target: Option<String>,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub source_lines: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -256,7 +266,10 @@ impl LlmClient for AnthropicLlmClient {
                 let text = anthropic_text_from_content(&content).ok_or_else(|| {
                     format!("Anthropic response contained no text content: {value}")
                 })?;
-                return parse_llm_json(&text);
+                return match parse_llm_json(&text) {
+                    Ok(response) => Ok(response),
+                    Err(error) => self.repair_json_response(&url, &messages, &text, &error),
+                };
             }
 
             messages.push(serde_json::json!({
@@ -308,6 +321,45 @@ impl AnthropicLlmClient {
             ));
         }
         parse_sse_response(response)
+    }
+
+    fn repair_json_response(
+        &self,
+        url: &str,
+        original_messages: &[Value],
+        bad_text: &str,
+        parse_error: &str,
+    ) -> Result<LlmKgResponse, String> {
+        let mut messages = original_messages.to_vec();
+        messages.push(serde_json::json!({
+            "role": "assistant",
+            "content": bad_text
+        }));
+        messages.push(serde_json::json!({
+            "role": "user",
+            "content": format!(
+                "Your previous response was not valid JSON: {parse_error}\nReturn only a corrected JSON object with top-level keys nodes and edges. Do not explain."
+            )
+        }));
+        let body = serde_json::json!({
+            "model": self.model,
+            "max_tokens": 8192,
+            "stream": true,
+            "system": system_prompt(),
+            "messages": messages
+        });
+        let value = self.post_message(url, &body)?;
+        let content = value
+            .get("content")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                format!("Anthropic repair response contained no content array: {value}")
+            })?;
+        let text = anthropic_text_from_content(content).ok_or_else(|| {
+            format!("Anthropic repair response contained no text content: {value}")
+        })?;
+        parse_llm_json(&text)
+            .map_err(|repair_error| format!("{parse_error}; repair failed: {repair_error}"))
     }
 }
 
@@ -475,7 +527,19 @@ fn build_business_kg_with_input(
     }
 
     let mut store = KgStore::open(&output)?;
-    let run_id = store.start_run(client.model())?;
+    if options.resume {
+        let before = selected.len();
+        selected.retain(|method| {
+            store
+                .method_has_evidence(&method.id)
+                .map(|has_evidence| !has_evidence)
+                .unwrap_or(true)
+        });
+        eprintln!(
+            "build-business-kg: resume skipped {} methods with existing KG evidence",
+            before.saturating_sub(selected.len())
+        );
+    }
     let mut summary = BuildBusinessKgSummary {
         database_path: options.database.display().to_string(),
         output_path: output.display().to_string(),
@@ -484,6 +548,7 @@ fn build_business_kg_with_input(
         selected: selected.len(),
         ..BuildBusinessKgSummary::default()
     };
+    let run_id = store.start_run(client.model(), summary.selected)?;
 
     eprintln!(
         "build-business-kg: selected {} methods from {} candidates; output={}",
@@ -567,6 +632,7 @@ fn build_business_kg_with_input(
             }
         }
         summary.tool_calls += tool_calls;
+        store.update_run_progress(run_id, &summary)?;
         if let Some(error) = &last_error {
             eprintln!(
                 "build-business-kg: progress {}/{} complete failed={} total_tool_calls={} elapsed_ms={} last_error={}",
@@ -587,13 +653,22 @@ fn build_business_kg_with_input(
                 run_started_at.elapsed().as_millis()
             );
         }
+        if let Some(max_failures) = options.max_failures
+            && summary.failed >= max_failures
+        {
+            eprintln!(
+                "build-business-kg: stopping because failed={} reached max_failures={}",
+                summary.failed, max_failures
+            );
+            break;
+        }
     }
 
-    store.finish_run(run_id, &summary)?;
     let counts = store.counts()?;
     summary.nodes = counts.nodes;
     summary.edges = counts.edges;
     summary.evidence = counts.evidence;
+    store.finish_run(run_id, &summary)?;
     eprintln!(
         "build-business-kg: done status={} methods_processed={} failed={} nodes={} edges={} evidence={} elapsed_ms={}",
         if summary.failed == 0 {
@@ -633,6 +708,12 @@ fn validate_build_options(options: &BuildBusinessKgOptions) -> Result<(), String
             "source path does not exist: {}",
             options.source_path.display()
         ));
+    }
+    if options.force && options.resume {
+        return Err("--force and --continue cannot be used together".to_string());
+    }
+    if options.max_failures == Some(0) {
+        return Err("--max-failures must be greater than 0".to_string());
     }
     Ok(())
 }
@@ -907,11 +988,40 @@ Existing KG nodes available for reuse:
 Use available tools only when this method needs more context. Stop once enough evidence has been collected.
 
 Return only JSON with this shape:
-{{"nodes":[{{"client_id":"n1","kind":"BusinessRule","name":"...","statement":"...","confidence":0.95,"evidence":[{{"method_id":"{method_id}","source_lines":[1],"reason":"..."}}]}}],"edges":[]}}
+{{
+  "nodes": [
+    {{
+      "client_id": "n1",
+      "kind": "BusinessRule",
+      "name": "...",
+      "statement": "...",
+      "confidence": 0.95,
+      "evidence": [{{"method_id":"{method_id}","source_lines":[{start_line}],"reason":"..."}}]
+    }}
+  ],
+  "edges": [
+    {{
+      "source_client_id": "n1",
+      "target_client_id": "n2",
+      "kind": "DEPENDS_ON",
+      "confidence": 0.85,
+      "evidence": [{{"method_id":"{method_id}","source_lines":[{start_line}],"reason":"source and target are related because..."}}]
+    }},
+    {{
+      "source_client_id": "n1",
+      "target_node_id": "business-node:existing-id-from-existing_nodes",
+      "kind": "MENTIONS",
+      "confidence": 0.75,
+      "evidence": [{{"method_id":"{method_id}","source_lines":[{start_line}],"reason":"new fact overlaps existing node..."}}]
+    }}
+  ]
+}}
 
 Create at most 5 nodes and 8 edges for one method. Prefer highest-confidence business facts only.
 Use supported node kinds only: BusinessRule, Workflow, Invariant, StateTransition, SideEffect, BusinessConcept.
 Use supported edge kinds only: SUPPORTED_BY, DEPENDS_ON, TRIGGERS, TRANSITIONS_TO, MENTIONS.
+Edges must use source_client_id/source_node_id and target_client_id/target_node_id. Do not use source or target fields.
+Every edge must include confidence and evidence. Evidence source_lines must be sorted, unique, and inside the current method lines.
 If no meaningful business logic is present, return {{"nodes":[],"edges":[]}}.
 "#,
         method_id = request.method.id,
@@ -928,7 +1038,7 @@ If no meaningful business logic is present, return {{"nodes":[],"edges":[]}}.
 }
 
 fn system_prompt() -> &'static str {
-    "You are a business logic analyst. Extract only business meaning supported by source evidence. Never invent requirements. Ignore technical plumbing, logging, configuration, and CRUD-only code unless it encodes a business rule. Every node and edge must have evidence and confidence. Return only valid JSON."
+    "You are a business logic analyst. Extract only business meaning supported by source evidence. Never invent requirements. Ignore technical plumbing, logging, configuration, and CRUD-only code unless it encodes a business rule. Every node and edge must have evidence and confidence. Return only valid JSON that exactly follows the requested schema."
 }
 
 fn anthropic_text_from_content(content: &[Value]) -> Option<String> {
@@ -1066,19 +1176,89 @@ fn tool_schema(name: &str, description: &str, required: &[(&str, &str)]) -> Valu
 
 fn parse_llm_json(text: &str) -> Result<LlmKgResponse, String> {
     let trimmed = text.trim();
-    let json_text = if trimmed.starts_with("```") {
-        extract_fenced_json(trimmed).unwrap_or(trimmed)
-    } else {
-        trimmed
-    };
-    serde_json::from_str(json_text)
-        .map_err(|error| format!("failed to parse LLM JSON response: {error}: {json_text}"))
+    let candidates = json_parse_candidates(trimmed);
+    let mut last_error = None;
+    for json_text in candidates {
+        match serde_json::from_str(&json_text) {
+            Ok(response) => return Ok(response),
+            Err(error) => last_error = Some(format!("{error}: {json_text}")),
+        }
+    }
+    Err(format!(
+        "failed to parse LLM JSON response: {}",
+        last_error.unwrap_or_else(|| trimmed.to_string())
+    ))
 }
 
 fn extract_fenced_json(text: &str) -> Option<&str> {
     let start = text.find('\n')? + 1;
     let end = text.rfind("```")?;
     text.get(start..end).map(str::trim)
+}
+
+fn json_parse_candidates(text: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+    if let Some(fenced) = extract_fenced_json(text) {
+        candidates.push(fenced.to_string());
+    }
+    candidates.push(text.to_string());
+    if let Some(object) = extract_outer_json_object(text) {
+        candidates.push(object.to_string());
+    }
+    if let Some(repaired) = repair_truncated_json_object(text) {
+        candidates.push(repaired);
+    }
+    candidates
+}
+
+fn extract_outer_json_object(text: &str) -> Option<&str> {
+    let start = text.find('{')?;
+    let end = text.rfind('}')?;
+    if end <= start {
+        return None;
+    }
+    text.get(start..=end).map(str::trim)
+}
+
+fn repair_truncated_json_object(text: &str) -> Option<String> {
+    let start = text.find('{')?;
+    let mut object = text[start..].trim().to_string();
+    if object.is_empty() {
+        return None;
+    }
+    let mut stack = Vec::new();
+    let mut in_string = false;
+    let mut escaped = false;
+    for ch in object.chars() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '{' => stack.push('}'),
+            '[' => stack.push(']'),
+            '}' | ']' => {
+                if stack.pop() != Some(ch) {
+                    return None;
+                }
+            }
+            _ => {}
+        }
+    }
+    if in_string {
+        object.push('"');
+    }
+    while let Some(ch) = stack.pop() {
+        object.push(ch);
+    }
+    Some(object)
 }
 
 struct MethodToolExecutor<'a> {
@@ -1393,12 +1573,12 @@ impl KgStore {
         Ok(Self { connection })
     }
 
-    fn start_run(&mut self, model: &str) -> Result<i64, String> {
+    fn start_run(&mut self, model: &str, methods_total: usize) -> Result<i64, String> {
         self.connection
             .execute(
-                "INSERT INTO llm_extraction_runs (model, status, started_at)
-                 VALUES (?1, 'running', ?2)",
-                params![model, timestamp()],
+                "INSERT INTO llm_extraction_runs (model, status, started_at, methods_total)
+                 VALUES (?1, 'running', ?2, ?3)",
+                params![model, timestamp(), methods_total as i64],
             )
             .map_err(|error| format!("failed to create KG run: {error}"))?;
         Ok(self.connection.last_insert_rowid())
@@ -1413,17 +1593,54 @@ impl KgStore {
         self.connection
             .execute(
                 "UPDATE llm_extraction_runs
-                 SET status = ?1, finished_at = ?2, methods_processed = ?3, failed = ?4
-                 WHERE id = ?5",
+                 SET status = ?1,
+                     finished_at = ?2,
+                     methods_processed = ?3,
+                     failed = ?4,
+                     nodes_created = ?5,
+                     edges_created = ?6,
+                     evidence_created = ?7
+                 WHERE id = ?8",
                 params![
                     status,
                     timestamp(),
                     summary.methods_processed as i64,
                     summary.failed as i64,
+                    summary.nodes as i64,
+                    summary.edges as i64,
+                    summary.evidence as i64,
                     run_id,
                 ],
             )
             .map_err(|error| format!("failed to finish KG run {run_id}: {error}"))?;
+        Ok(())
+    }
+
+    fn update_run_progress(
+        &mut self,
+        run_id: i64,
+        summary: &BuildBusinessKgSummary,
+    ) -> Result<(), String> {
+        let counts = self.counts()?;
+        self.connection
+            .execute(
+                "UPDATE llm_extraction_runs
+                 SET methods_processed = ?1,
+                     failed = ?2,
+                     nodes_created = ?3,
+                     edges_created = ?4,
+                     evidence_created = ?5
+                 WHERE id = ?6",
+                params![
+                    summary.methods_processed as i64,
+                    summary.failed as i64,
+                    counts.nodes as i64,
+                    counts.edges as i64,
+                    counts.evidence as i64,
+                    run_id,
+                ],
+            )
+            .map_err(|error| format!("failed to update KG run progress {run_id}: {error}"))?;
         Ok(())
     }
 
@@ -1455,6 +1672,18 @@ impl KgStore {
             )
             .map_err(|error| format!("failed to record KG method failure: {error}"))?;
         Ok(())
+    }
+
+    fn method_has_evidence(&self, method_id: &str) -> Result<bool, String> {
+        self.connection
+            .query_row(
+                "SELECT 1 FROM business_evidence WHERE method_id = ?1 LIMIT 1",
+                [method_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map(|value| value.is_some())
+            .map_err(|error| format!("failed to query KG evidence for method {method_id}: {error}"))
     }
 
     fn find_nodes_for_prompt(&self, limit: usize) -> Result<Vec<ExistingNode>, String> {
@@ -1625,6 +1854,7 @@ impl KgStore {
         method: &CandidateMethod,
         response: LlmKgResponse,
     ) -> Result<(), String> {
+        let response = normalize_response(method, response);
         validate_response(method, &response)?;
         let transaction = self
             .connection
@@ -1728,8 +1958,12 @@ fn create_kg_schema(connection: &Connection) -> Result<(), String> {
                 started_at TEXT NOT NULL,
                 finished_at TEXT,
                 error TEXT,
+                methods_total INTEGER DEFAULT 0,
                 methods_processed INTEGER DEFAULT 0,
-                failed INTEGER DEFAULT 0
+                failed INTEGER DEFAULT 0,
+                nodes_created INTEGER DEFAULT 0,
+                edges_created INTEGER DEFAULT 0,
+                evidence_created INTEGER DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS business_nodes (
@@ -1802,7 +2036,150 @@ fn create_kg_schema(connection: &Connection) -> Result<(), String> {
                 WHERE edge_id IS NOT NULL;
             ",
         )
-        .map_err(|error| format!("failed to create KG schema: {error}"))
+        .map_err(|error| format!("failed to create KG schema: {error}"))?;
+    ensure_run_column(
+        connection,
+        "methods_total",
+        "ALTER TABLE llm_extraction_runs ADD COLUMN methods_total INTEGER DEFAULT 0",
+    )?;
+    ensure_run_column(
+        connection,
+        "nodes_created",
+        "ALTER TABLE llm_extraction_runs ADD COLUMN nodes_created INTEGER DEFAULT 0",
+    )?;
+    ensure_run_column(
+        connection,
+        "edges_created",
+        "ALTER TABLE llm_extraction_runs ADD COLUMN edges_created INTEGER DEFAULT 0",
+    )?;
+    ensure_run_column(
+        connection,
+        "evidence_created",
+        "ALTER TABLE llm_extraction_runs ADD COLUMN evidence_created INTEGER DEFAULT 0",
+    )?;
+    Ok(())
+}
+
+fn ensure_run_column(connection: &Connection, name: &str, ddl: &str) -> Result<(), String> {
+    let mut statement = connection
+        .prepare("PRAGMA table_info(llm_extraction_runs)")
+        .map_err(|error| format!("failed to inspect KG run schema: {error}"))?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| format!("failed to read KG run schema: {error}"))?;
+    for column in columns {
+        if column.map_err(|error| format!("failed to read KG run column: {error}"))? == name {
+            return Ok(());
+        }
+    }
+    connection
+        .execute(ddl, [])
+        .map_err(|error| format!("failed to migrate KG run schema: {error}"))?;
+    Ok(())
+}
+
+fn normalize_response(method: &CandidateMethod, mut response: LlmKgResponse) -> LlmKgResponse {
+    let node_evidence_lines = response
+        .nodes
+        .iter()
+        .filter_map(|node| {
+            node.client_id
+                .as_ref()
+                .map(|client_id| (client_id.clone(), evidence_lines_for_node(node)))
+        })
+        .collect::<HashMap<_, _>>();
+    for edge in &mut response.edges {
+        normalize_edge_reference(
+            &mut edge.source_client_id,
+            &mut edge.source_node_id,
+            &edge.source,
+        );
+        normalize_edge_reference(
+            &mut edge.target_client_id,
+            &mut edge.target_node_id,
+            &edge.target,
+        );
+        if edge.confidence == 0.0 {
+            edge.confidence = 0.75;
+        }
+        if edge.evidence.is_empty()
+            && let Some(reason) = edge
+                .reason
+                .as_ref()
+                .filter(|value| !value.trim().is_empty())
+            && let Some(source_lines) = edge_source_lines(method, edge, &node_evidence_lines)
+        {
+            edge.evidence.push(EvidenceProposal {
+                method_id: method.id.clone(),
+                source_lines,
+                reason: reason.clone(),
+            });
+        }
+    }
+    response
+}
+
+fn normalize_edge_reference(
+    client_id: &mut Option<String>,
+    node_id: &mut Option<String>,
+    fallback: &Option<String>,
+) {
+    if client_id.is_some() || node_id.is_some() {
+        return;
+    }
+    let Some(value) = fallback
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    else {
+        return;
+    };
+    if value.starts_with("business-node:") {
+        *node_id = Some(value.to_string());
+    } else {
+        *client_id = Some(value.to_string());
+    }
+}
+
+fn edge_source_lines(
+    method: &CandidateMethod,
+    edge: &EdgeProposal,
+    node_evidence_lines: &HashMap<String, Vec<usize>>,
+) -> Option<Vec<usize>> {
+    if !edge.source_lines.is_empty() {
+        return Some(normalize_source_lines(method, edge.source_lines.clone()));
+    }
+    let mut lines = Vec::new();
+    if let Some(client_id) = &edge.source_client_id
+        && let Some(source_lines) = node_evidence_lines.get(client_id)
+    {
+        lines.extend(source_lines);
+    }
+    if let Some(client_id) = &edge.target_client_id
+        && let Some(source_lines) = node_evidence_lines.get(client_id)
+    {
+        lines.extend(source_lines);
+    }
+    let lines = normalize_source_lines(method, lines);
+    if lines.is_empty() { None } else { Some(lines) }
+}
+
+fn evidence_lines_for_node(node: &NodeProposal) -> Vec<usize> {
+    let mut lines = node
+        .evidence
+        .iter()
+        .flat_map(|evidence| evidence.source_lines.iter().copied())
+        .collect::<Vec<_>>();
+    lines.sort_unstable();
+    lines.dedup();
+    lines
+}
+
+fn normalize_source_lines(method: &CandidateMethod, mut lines: Vec<usize>) -> Vec<usize> {
+    lines.retain(|line| *line >= method.start_line && *line <= method.end_line);
+    lines.sort_unstable();
+    lines.dedup();
+    lines
 }
 
 fn validate_response(method: &CandidateMethod, response: &LlmKgResponse) -> Result<(), String> {
@@ -2103,6 +2480,8 @@ mod tests {
             min_priority: Priority::High,
             max_methods: Some(1),
             force: false,
+            resume: false,
+            max_failures: None,
         };
 
         let summary = build_business_kg_with_client(&options, &MockClient { response }).unwrap();
@@ -2169,6 +2548,8 @@ mod tests {
             min_priority: Priority::High,
             max_methods: Some(1),
             force: false,
+            resume: false,
+            max_failures: None,
         };
 
         let summary = build_business_kg_with_client(&options, &MockClient { response }).unwrap();
@@ -2215,6 +2596,10 @@ mod tests {
                     source_lines: vec![3],
                     reason: "Invalid edge should be ignored.".to_string(),
                 }],
+                source: None,
+                target: None,
+                reason: None,
+                source_lines: Vec::new(),
             }],
         };
         let options = BuildBusinessKgOptions {
@@ -2224,6 +2609,8 @@ mod tests {
             min_priority: Priority::High,
             max_methods: Some(1),
             force: false,
+            resume: false,
+            max_failures: None,
         };
 
         let summary = build_business_kg_with_client(&options, &MockClient { response }).unwrap();
@@ -2231,6 +2618,76 @@ mod tests {
         assert_eq!(summary.nodes, 1);
         assert_eq!(summary.edges, 0);
         assert_eq!(summary.evidence, 1);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn malformed_edge_fields_are_normalized_and_inserted() {
+        let root = test_dir("business-kg-normalized-edge");
+        fs::write(
+            root.join("OrderService.java"),
+            "class OrderService {\n  void approve() {\n    if (status != PENDING) throw new RuntimeException();\n  }\n}\n",
+        )
+        .unwrap();
+        let extraction_db = root.join("business-extraction.db");
+        write_extraction_db(&extraction_db, "OrderService.java");
+        let output = root.join("business-kg.db");
+        let node_evidence = |reason: &str| {
+            vec![EvidenceProposal {
+                method_id: "method:OrderService#approve".to_string(),
+                source_lines: vec![3],
+                reason: reason.to_string(),
+            }]
+        };
+        let response = LlmKgResponse {
+            nodes: vec![
+                NodeProposal {
+                    client_id: Some("n1".to_string()),
+                    kind: "BusinessRule".to_string(),
+                    name: "Pending approval rule".to_string(),
+                    statement: "Approval requires PENDING status.".to_string(),
+                    confidence: 0.95,
+                    evidence: node_evidence("The method checks pending state."),
+                },
+                NodeProposal {
+                    client_id: Some("n2".to_string()),
+                    kind: "SideEffect".to_string(),
+                    name: "Rejected approval".to_string(),
+                    statement: "Non-pending approval is rejected.".to_string(),
+                    confidence: 0.9,
+                    evidence: node_evidence("The method throws on non-pending state."),
+                },
+            ],
+            edges: vec![EdgeProposal {
+                source_client_id: None,
+                source_node_id: None,
+                target_client_id: None,
+                target_node_id: None,
+                kind: "TRIGGERS".to_string(),
+                confidence: 0.0,
+                evidence: Vec::new(),
+                source: Some("n1".to_string()),
+                target: Some("n2".to_string()),
+                reason: Some("Pending rule triggers rejection side effect.".to_string()),
+                source_lines: Vec::new(),
+            }],
+        };
+        let options = BuildBusinessKgOptions {
+            database: extraction_db,
+            output: Some(output.clone()),
+            source_path: root.clone(),
+            min_priority: Priority::High,
+            max_methods: Some(1),
+            force: false,
+            resume: false,
+            max_failures: None,
+        };
+
+        let summary = build_business_kg_with_client(&options, &MockClient { response }).unwrap();
+        assert_eq!(summary.nodes, 2);
+        assert_eq!(summary.edges, 1);
+        assert_eq!(summary.evidence, 3);
 
         let _ = fs::remove_dir_all(root);
     }

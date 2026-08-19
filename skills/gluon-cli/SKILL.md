@@ -161,6 +161,8 @@ Flags:
 - `--output <business-kg.db>`: KG SQLite output path. Defaults to `<database-dir>/business-kg.db`.
 - `--min-priority high|medium|low`: minimum candidate priority. Defaults to `high`.
 - `--max-methods <count>`: cap methods sent to LLM.
+- `--max-failures <count>`: stop after this many failed methods.
+- `--continue`: resume an existing KG DB by skipping methods that already have evidence.
 - `--force`: delete and recreate existing KG output database before building.
 
 Environment:
@@ -175,6 +177,7 @@ Outputs:
 - Stdout selection, LLM, and database summary.
 - Stderr live progress for long runs: selected count, current method, success/failure, tool calls, elapsed time, and final status.
 - Bounded LLM tools can read compact extraction DB context, related method source, and existing KG nodes; the default limit is 5 tool calls per method.
+- Malformed JSON responses are repaired locally or retried once through the LLM. Common malformed edge fields such as `source`/`target` are normalized before validation.
 - No persistent LLM cache in v1.
 
 Example:
