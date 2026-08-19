@@ -973,10 +973,11 @@ Suggested structure:
 
 ``` text
 business/
+├── extraction.rs
 ├── extraction/
 │   └── ...
+├── kg.rs
 └── kg/
-    ├── mod.rs
     ├── agent.rs
     ├── tools.rs
     ├── prompt.rs
@@ -1021,7 +1022,7 @@ Responsibilities:
 -   evidence
 -   run metadata
 
-### `mod.rs`
+### `kg.rs`
 
 -   public business KG API
 
