@@ -496,6 +496,17 @@ fn run_build_business_kg(options: BuildBusinessKgCliOptions) -> i32 {
                 summary.methods_processed, summary.selected
             );
             println!("  tool_calls={}", summary.tool_calls);
+            println!("  input_tokens={}", summary.input_tokens);
+            println!("  output_tokens={}", summary.output_tokens);
+            println!(
+                "  cache_creation_input_tokens={}",
+                summary.cache_creation_input_tokens
+            );
+            println!(
+                "  cache_read_input_tokens={}",
+                summary.cache_read_input_tokens
+            );
+            println!("  total_tokens={}", summary.total_tokens);
             println!("  failed={}", summary.failed);
             println!("build-business-kg database:");
             println!("  path={}", summary.output_path);

@@ -61,6 +61,11 @@ pub struct BuildBusinessKgSummary {
     pub methods_processed: usize,
     pub failed: usize,
     pub tool_calls: usize,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub total_tokens: u64,
     pub nodes: usize,
     pub edges: usize,
     pub evidence: usize,
@@ -109,7 +114,7 @@ pub trait LlmClient {
         &self,
         request: &MethodRequest,
         tools: &mut dyn ToolExecutor,
-    ) -> Result<LlmKgResponse, String>;
+    ) -> Result<LlmMethodResult, String>;
 }
 
 pub trait ToolExecutor {
@@ -160,6 +165,64 @@ pub struct LlmKgResponse {
     pub nodes: Vec<NodeProposal>,
     #[serde(default)]
     pub edges: Vec<EdgeProposal>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TokenUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+}
+
+impl TokenUsage {
+    fn add(&mut self, other: &TokenUsage) {
+        self.input_tokens += other.input_tokens;
+        self.output_tokens += other.output_tokens;
+        self.cache_creation_input_tokens += other.cache_creation_input_tokens;
+        self.cache_read_input_tokens += other.cache_read_input_tokens;
+    }
+
+    fn total_tokens(&self) -> u64 {
+        self.input_tokens
+            + self.output_tokens
+            + self.cache_creation_input_tokens
+            + self.cache_read_input_tokens
+    }
+
+    fn update_from_anthropic_usage(&mut self, usage: &Value) {
+        if let Some(value) = usage.get("input_tokens").and_then(Value::as_u64) {
+            self.input_tokens = value;
+        }
+        if let Some(value) = usage.get("output_tokens").and_then(Value::as_u64) {
+            self.output_tokens = value;
+        }
+        if let Some(value) = usage
+            .get("cache_creation_input_tokens")
+            .and_then(Value::as_u64)
+        {
+            self.cache_creation_input_tokens = value;
+        }
+        if let Some(value) = usage.get("cache_read_input_tokens").and_then(Value::as_u64) {
+            self.cache_read_input_tokens = value;
+        }
+        if let Some(cache_creation) = usage.get("cache_creation") {
+            self.cache_creation_input_tokens = cache_creation
+                .get("ephemeral_5m_input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+                + cache_creation
+                    .get("ephemeral_1h_input_tokens")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct LlmMethodResult {
+    response: LlmKgResponse,
+    usage: TokenUsage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -238,13 +301,14 @@ impl LlmClient for AnthropicLlmClient {
         &self,
         request: &MethodRequest,
         tools: &mut dyn ToolExecutor,
-    ) -> Result<LlmKgResponse, String> {
+    ) -> Result<LlmMethodResult, String> {
         let prompt = build_prompt(request)?;
         let url = format!("{}/v1/messages", self.api_base.trim_end_matches('/'));
         let mut messages = vec![serde_json::json!({
             "role": "user",
             "content": prompt
         })];
+        let mut usage = TokenUsage::default();
 
         loop {
             let body = serde_json::json!({
@@ -255,7 +319,9 @@ impl LlmClient for AnthropicLlmClient {
                 "tools": tool_schemas(),
                 "messages": messages
             });
-            let value = self.post_message(&url, &body)?;
+            let message = self.post_message(&url, &body)?;
+            usage.add(&message.usage);
+            let value = message.value;
             let content = value
                 .get("content")
                 .and_then(Value::as_array)
@@ -267,8 +333,8 @@ impl LlmClient for AnthropicLlmClient {
                     format!("Anthropic response contained no text content: {value}")
                 })?;
                 return match parse_llm_json(&text) {
-                    Ok(response) => Ok(response),
-                    Err(error) => self.repair_json_response(&url, &messages, &text, &error),
+                    Ok(response) => Ok(LlmMethodResult { response, usage }),
+                    Err(error) => self.repair_json_response(&url, &messages, &text, &error, usage),
                 };
             }
 
@@ -301,7 +367,7 @@ impl LlmClient for AnthropicLlmClient {
 }
 
 impl AnthropicLlmClient {
-    fn post_message(&self, url: &str, body: &Value) -> Result<Value, String> {
+    fn post_message(&self, url: &str, body: &Value) -> Result<AnthropicMessage, String> {
         let response = self
             .http
             .post(url)
@@ -329,7 +395,8 @@ impl AnthropicLlmClient {
         original_messages: &[Value],
         bad_text: &str,
         parse_error: &str,
-    ) -> Result<LlmKgResponse, String> {
+        mut usage: TokenUsage,
+    ) -> Result<LlmMethodResult, String> {
         let mut messages = original_messages.to_vec();
         messages.push(serde_json::json!({
             "role": "assistant",
@@ -348,7 +415,9 @@ impl AnthropicLlmClient {
             "system": system_prompt(),
             "messages": messages
         });
-        let value = self.post_message(url, &body)?;
+        let message = self.post_message(url, &body)?;
+        usage.add(&message.usage);
+        let value = message.value;
         let content = value
             .get("content")
             .and_then(Value::as_array)
@@ -359,13 +428,21 @@ impl AnthropicLlmClient {
             format!("Anthropic repair response contained no text content: {value}")
         })?;
         parse_llm_json(&text)
+            .map(|response| LlmMethodResult { response, usage })
             .map_err(|repair_error| format!("{parse_error}; repair failed: {repair_error}"))
     }
 }
 
-fn parse_sse_response(response: impl Read) -> Result<Value, String> {
+#[derive(Debug, Clone)]
+struct AnthropicMessage {
+    value: Value,
+    usage: TokenUsage,
+}
+
+fn parse_sse_response(response: impl Read) -> Result<AnthropicMessage, String> {
     let mut blocks: HashMap<usize, Value> = HashMap::new();
     let mut input_buffers: HashMap<usize, String> = HashMap::new();
+    let mut usage = TokenUsage::default();
     let reader = std::io::BufReader::new(response);
     for line in reader.lines() {
         let line = line.map_err(|error| format!("failed to read Anthropic stream: {error:?}"))?;
@@ -377,6 +454,15 @@ fn parse_sse_response(response: impl Read) -> Result<Value, String> {
         }
         let event: Value = serde_json::from_str(data)
             .map_err(|error| format!("invalid Anthropic stream event: {error}: {data}"))?;
+        if let Some(message_usage) = event
+            .get("message")
+            .and_then(|message| message.get("usage"))
+        {
+            usage.update_from_anthropic_usage(message_usage);
+        }
+        if let Some(event_usage) = event.get("usage") {
+            usage.update_from_anthropic_usage(event_usage);
+        }
         match event.get("type").and_then(Value::as_str) {
             Some("content_block_start") => {
                 let index = event
@@ -445,9 +531,12 @@ fn parse_sse_response(response: impl Read) -> Result<Value, String> {
     }
     let mut ordered = blocks.into_iter().collect::<Vec<_>>();
     ordered.sort_by_key(|(index, _)| *index);
-    Ok(serde_json::json!({
-        "content": ordered.into_iter().map(|(_, block)| block).collect::<Vec<_>>()
-    }))
+    Ok(AnthropicMessage {
+        value: serde_json::json!({
+            "content": ordered.into_iter().map(|(_, block)| block).collect::<Vec<_>>()
+        }),
+        usage,
+    })
 }
 
 fn append_text_delta(
@@ -582,30 +671,46 @@ fn build_business_kg_with_input(
             (result, tools.call_count())
         };
         match analysis_result {
-            Ok(response) => match store.commit_method_response(run_id, &method, response) {
+            Ok(result) => match store.commit_method_response(run_id, &method, result.response) {
                 Ok(()) => {
                     summary.methods_processed += 1;
+                    summary.input_tokens += result.usage.input_tokens;
+                    summary.output_tokens += result.usage.output_tokens;
+                    summary.cache_creation_input_tokens += result.usage.cache_creation_input_tokens;
+                    summary.cache_read_input_tokens += result.usage.cache_read_input_tokens;
+                    summary.total_tokens += result.usage.total_tokens();
                     eprintln!(
-                        "build-business-kg: method {}/{} ok elapsed_ms={} tool_calls={} complete={} failed={}",
+                        "build-business-kg: method {}/{} ok elapsed_ms={} tool_calls={} input_tokens={} output_tokens={} total_tokens={} complete={} failed={}",
                         index + 1,
                         selected_count,
                         method_started_at.elapsed().as_millis(),
                         tool_calls,
+                        result.usage.input_tokens,
+                        result.usage.output_tokens,
+                        result.usage.total_tokens(),
                         summary.methods_processed,
                         summary.failed
                     );
                 }
                 Err(error) => {
                     summary.failed += 1;
+                    summary.input_tokens += result.usage.input_tokens;
+                    summary.output_tokens += result.usage.output_tokens;
+                    summary.cache_creation_input_tokens += result.usage.cache_creation_input_tokens;
+                    summary.cache_read_input_tokens += result.usage.cache_read_input_tokens;
+                    summary.total_tokens += result.usage.total_tokens();
                     store.record_method_failure(run_id, &method.id, &error)?;
                     let reason = short_error(&error);
                     last_error = Some(format!("{}: {}", method.id, reason));
                     eprintln!(
-                        "build-business-kg: method {}/{} failed elapsed_ms={} tool_calls={}",
+                        "build-business-kg: method {}/{} failed elapsed_ms={} tool_calls={} input_tokens={} output_tokens={} total_tokens={}",
                         index + 1,
                         selected_count,
                         method_started_at.elapsed().as_millis(),
-                        tool_calls
+                        tool_calls,
+                        result.usage.input_tokens,
+                        result.usage.output_tokens,
+                        result.usage.total_tokens()
                     );
                     eprintln!(
                         "build-business-kg: failure_reason method_id={} reason={}",
@@ -635,21 +740,23 @@ fn build_business_kg_with_input(
         store.update_run_progress(run_id, &summary)?;
         if let Some(error) = &last_error {
             eprintln!(
-                "build-business-kg: progress {}/{} complete failed={} total_tool_calls={} elapsed_ms={} last_error={}",
+                "build-business-kg: progress {}/{} complete failed={} total_tool_calls={} total_tokens={} elapsed_ms={} last_error={}",
                 summary.methods_processed + summary.failed,
                 selected_count,
                 summary.failed,
                 summary.tool_calls,
+                summary.total_tokens,
                 run_started_at.elapsed().as_millis(),
                 error
             );
         } else {
             eprintln!(
-                "build-business-kg: progress {}/{} complete failed={} total_tool_calls={} elapsed_ms={}",
+                "build-business-kg: progress {}/{} complete failed={} total_tool_calls={} total_tokens={} elapsed_ms={}",
                 summary.methods_processed + summary.failed,
                 selected_count,
                 summary.failed,
                 summary.tool_calls,
+                summary.total_tokens,
                 run_started_at.elapsed().as_millis()
             );
         }
@@ -670,7 +777,7 @@ fn build_business_kg_with_input(
     summary.evidence = counts.evidence;
     store.finish_run(run_id, &summary)?;
     eprintln!(
-        "build-business-kg: done status={} methods_processed={} failed={} nodes={} edges={} evidence={} elapsed_ms={}",
+        "build-business-kg: done status={} methods_processed={} failed={} input_tokens={} output_tokens={} total_tokens={} nodes={} edges={} evidence={} elapsed_ms={}",
         if summary.failed == 0 {
             "completed"
         } else {
@@ -678,6 +785,9 @@ fn build_business_kg_with_input(
         },
         summary.methods_processed,
         summary.failed,
+        summary.input_tokens,
+        summary.output_tokens,
+        summary.total_tokens,
         summary.nodes,
         summary.edges,
         summary.evidence,
@@ -1599,8 +1709,13 @@ impl KgStore {
                      failed = ?4,
                      nodes_created = ?5,
                      edges_created = ?6,
-                     evidence_created = ?7
-                 WHERE id = ?8",
+                     evidence_created = ?7,
+                     input_tokens = ?8,
+                     output_tokens = ?9,
+                     cache_creation_input_tokens = ?10,
+                     cache_read_input_tokens = ?11,
+                     total_tokens = ?12
+                 WHERE id = ?13",
                 params![
                     status,
                     timestamp(),
@@ -1609,6 +1724,11 @@ impl KgStore {
                     summary.nodes as i64,
                     summary.edges as i64,
                     summary.evidence as i64,
+                    summary.input_tokens as i64,
+                    summary.output_tokens as i64,
+                    summary.cache_creation_input_tokens as i64,
+                    summary.cache_read_input_tokens as i64,
+                    summary.total_tokens as i64,
                     run_id,
                 ],
             )
@@ -1629,14 +1749,24 @@ impl KgStore {
                      failed = ?2,
                      nodes_created = ?3,
                      edges_created = ?4,
-                     evidence_created = ?5
-                 WHERE id = ?6",
+                     evidence_created = ?5,
+                     input_tokens = ?6,
+                     output_tokens = ?7,
+                     cache_creation_input_tokens = ?8,
+                     cache_read_input_tokens = ?9,
+                     total_tokens = ?10
+                 WHERE id = ?11",
                 params![
                     summary.methods_processed as i64,
                     summary.failed as i64,
                     counts.nodes as i64,
                     counts.edges as i64,
                     counts.evidence as i64,
+                    summary.input_tokens as i64,
+                    summary.output_tokens as i64,
+                    summary.cache_creation_input_tokens as i64,
+                    summary.cache_read_input_tokens as i64,
+                    summary.total_tokens as i64,
                     run_id,
                 ],
             )
@@ -1963,7 +2093,12 @@ fn create_kg_schema(connection: &Connection) -> Result<(), String> {
                 failed INTEGER DEFAULT 0,
                 nodes_created INTEGER DEFAULT 0,
                 edges_created INTEGER DEFAULT 0,
-                evidence_created INTEGER DEFAULT 0
+                evidence_created INTEGER DEFAULT 0,
+                input_tokens INTEGER DEFAULT 0,
+                output_tokens INTEGER DEFAULT 0,
+                cache_creation_input_tokens INTEGER DEFAULT 0,
+                cache_read_input_tokens INTEGER DEFAULT 0,
+                total_tokens INTEGER DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS business_nodes (
@@ -2056,6 +2191,31 @@ fn create_kg_schema(connection: &Connection) -> Result<(), String> {
         connection,
         "evidence_created",
         "ALTER TABLE llm_extraction_runs ADD COLUMN evidence_created INTEGER DEFAULT 0",
+    )?;
+    ensure_run_column(
+        connection,
+        "input_tokens",
+        "ALTER TABLE llm_extraction_runs ADD COLUMN input_tokens INTEGER DEFAULT 0",
+    )?;
+    ensure_run_column(
+        connection,
+        "output_tokens",
+        "ALTER TABLE llm_extraction_runs ADD COLUMN output_tokens INTEGER DEFAULT 0",
+    )?;
+    ensure_run_column(
+        connection,
+        "cache_creation_input_tokens",
+        "ALTER TABLE llm_extraction_runs ADD COLUMN cache_creation_input_tokens INTEGER DEFAULT 0",
+    )?;
+    ensure_run_column(
+        connection,
+        "cache_read_input_tokens",
+        "ALTER TABLE llm_extraction_runs ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0",
+    )?;
+    ensure_run_column(
+        connection,
+        "total_tokens",
+        "ALTER TABLE llm_extraction_runs ADD COLUMN total_tokens INTEGER DEFAULT 0",
     )?;
     Ok(())
 }
@@ -2402,6 +2562,16 @@ mod tests {
 
     struct MockClient {
         response: LlmKgResponse,
+        usage: TokenUsage,
+    }
+
+    impl MockClient {
+        fn new(response: LlmKgResponse) -> Self {
+            Self {
+                response,
+                usage: TokenUsage::default(),
+            }
+        }
     }
 
     impl LlmClient for MockClient {
@@ -2413,8 +2583,11 @@ mod tests {
             &self,
             _request: &MethodRequest,
             _tools: &mut dyn ToolExecutor,
-        ) -> Result<LlmKgResponse, String> {
-            Ok(self.response.clone())
+        ) -> Result<LlmMethodResult, String> {
+            Ok(LlmMethodResult {
+                response: self.response.clone(),
+                usage: self.usage.clone(),
+            })
         }
     }
 
@@ -2444,6 +2617,25 @@ mod tests {
         .unwrap();
         assert_eq!(parsed.edges.len(), 1);
         assert_eq!(parsed.edges[0].confidence, 0.0);
+    }
+
+    #[test]
+    fn sse_parser_captures_anthropic_usage() {
+        let stream = concat!(
+            "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":100,\"cache_creation\":{\"ephemeral_5m_input_tokens\":7},\"cache_read_input_tokens\":3,\"output_tokens\":1}}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"nodes\\\":[],\\\"edges\\\":[]}\"}}\n\n",
+            "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":20}}\n\n",
+            "data: [DONE]\n\n",
+        );
+
+        let parsed = parse_sse_response(stream.as_bytes()).unwrap();
+
+        assert_eq!(parsed.usage.input_tokens, 100);
+        assert_eq!(parsed.usage.output_tokens, 20);
+        assert_eq!(parsed.usage.cache_creation_input_tokens, 7);
+        assert_eq!(parsed.usage.cache_read_input_tokens, 3);
+        assert_eq!(parsed.usage.total_tokens(), 130);
     }
 
     #[test]
@@ -2484,29 +2676,62 @@ mod tests {
             max_failures: None,
         };
 
-        let summary = build_business_kg_with_client(&options, &MockClient { response }).unwrap();
+        let usage = TokenUsage {
+            input_tokens: 120,
+            output_tokens: 45,
+            cache_creation_input_tokens: 10,
+            cache_read_input_tokens: 5,
+        };
+        let summary = build_business_kg_with_client(
+            &options,
+            &MockClient {
+                response,
+                usage: usage.clone(),
+            },
+        )
+        .unwrap();
         assert_eq!(summary.nodes, 1);
         assert_eq!(summary.evidence, 1);
+        assert_eq!(summary.input_tokens, usage.input_tokens);
+        assert_eq!(summary.output_tokens, usage.output_tokens);
+        assert_eq!(summary.total_tokens, usage.total_tokens());
+        let connection = Connection::open(&output).unwrap();
+        let stored_tokens: (i64, i64, i64) = connection
+            .query_row(
+                "SELECT input_tokens, output_tokens, total_tokens
+                 FROM llm_extraction_runs
+                 ORDER BY id DESC
+                 LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            stored_tokens,
+            (
+                usage.input_tokens as i64,
+                usage.output_tokens as i64,
+                usage.total_tokens() as i64,
+            )
+        );
 
         let second = build_business_kg_with_client(
             &options,
-            &MockClient {
-                response: LlmKgResponse {
-                    nodes: vec![NodeProposal {
-                        client_id: Some("n1".to_string()),
-                        kind: "BusinessRule".to_string(),
-                        name: "Pending approval rule".to_string(),
-                        statement: "Approval requires PENDING status.".to_string(),
-                        confidence: 0.95,
-                        evidence: vec![EvidenceProposal {
-                            method_id: "method:OrderService#approve".to_string(),
-                            source_lines: vec![3],
-                            reason: "The method rejects non-pending status.".to_string(),
-                        }],
+            &MockClient::new(LlmKgResponse {
+                nodes: vec![NodeProposal {
+                    client_id: Some("n1".to_string()),
+                    kind: "BusinessRule".to_string(),
+                    name: "Pending approval rule".to_string(),
+                    statement: "Approval requires PENDING status.".to_string(),
+                    confidence: 0.95,
+                    evidence: vec![EvidenceProposal {
+                        method_id: "method:OrderService#approve".to_string(),
+                        source_lines: vec![3],
+                        reason: "The method rejects non-pending status.".to_string(),
                     }],
-                    edges: Vec::new(),
-                },
-            },
+                }],
+                edges: Vec::new(),
+            }),
         )
         .unwrap();
         assert_eq!(second.nodes, 1);
@@ -2552,7 +2777,7 @@ mod tests {
             max_failures: None,
         };
 
-        let summary = build_business_kg_with_client(&options, &MockClient { response }).unwrap();
+        let summary = build_business_kg_with_client(&options, &MockClient::new(response)).unwrap();
         assert_eq!(summary.failed, 1);
         assert_eq!(summary.nodes, 0);
         assert_eq!(summary.evidence, 0);
@@ -2613,7 +2838,7 @@ mod tests {
             max_failures: None,
         };
 
-        let summary = build_business_kg_with_client(&options, &MockClient { response }).unwrap();
+        let summary = build_business_kg_with_client(&options, &MockClient::new(response)).unwrap();
         assert_eq!(summary.failed, 0);
         assert_eq!(summary.nodes, 1);
         assert_eq!(summary.edges, 0);
@@ -2684,7 +2909,7 @@ mod tests {
             max_failures: None,
         };
 
-        let summary = build_business_kg_with_client(&options, &MockClient { response }).unwrap();
+        let summary = build_business_kg_with_client(&options, &MockClient::new(response)).unwrap();
         assert_eq!(summary.nodes, 2);
         assert_eq!(summary.edges, 1);
         assert_eq!(summary.evidence, 3);

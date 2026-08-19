@@ -621,8 +621,17 @@ CREATE TABLE IF NOT EXISTS llm_extraction_runs (
     started_at TEXT NOT NULL,
     finished_at TEXT,
     error TEXT,
+    methods_total INTEGER DEFAULT 0,
     methods_processed INTEGER DEFAULT 0,
-    failed INTEGER DEFAULT 0
+    failed INTEGER DEFAULT 0,
+    nodes_created INTEGER DEFAULT 0,
+    edges_created INTEGER DEFAULT 0,
+    evidence_created INTEGER DEFAULT 0,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    cache_creation_input_tokens INTEGER DEFAULT 0,
+    cache_read_input_tokens INTEGER DEFAULT 0,
+    total_tokens INTEGER DEFAULT 0
 );
 ```
 
@@ -1042,6 +1051,8 @@ build-business-kg database:
 ```
 
 Also record the same statistics in `llm_extraction_runs`.
+Token usage should be captured from Anthropic stream usage events, printed in
+progress/final summaries, and stored on `llm_extraction_runs`.
 
 ------------------------------------------------------------------------
 
