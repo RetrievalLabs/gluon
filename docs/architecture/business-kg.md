@@ -14,8 +14,9 @@ The architecture should keep LLM token consumption low:
 -   Claude starts with a compact method prompt.
 -   Claude may use bounded tools when additional context is genuinely
     required.
--   `business-kg.db` stores the resulting business knowledge.
--   The KG remains traceable to the extraction DB through `method_id`.
+-   `business-kg.db` stores the resulting business knowledge and evidence.
+-   The KG remains traceable to the extraction DB through
+    `business_evidence.method_id`.
 
 The system should initially process **high-priority methods only**.
 
@@ -80,9 +81,14 @@ code-parser build-business-kg \
   `--max-methods`    no                all selected                      Maximum methods
                                                                          sent to LLM
 
-  `--force`          no                false                             Ignore existing
-                                                                         LLM cache
+  `--force`          no                false                             Rebuild existing
+                                                                         KG output
   ----------------------------------------------------------------------------------------
+
+`--force` should delete and recreate the existing KG output database before
+building. Without `--force`, an existing output database should be reopened and
+appended to. Reused nodes, reused edges, and duplicate evidence should be
+deduplicated by their stable keys.
 
 The first implementation should use:
 
@@ -116,10 +122,13 @@ SELECT
 FROM methods m
 JOIN candidate_scores cs
     ON cs.method_id = m.id
-WHERE cs.priority = 'high'
+WHERE cs.priority IN ('high')
 ORDER BY cs.score DESC
 LIMIT ?;
 ```
+
+For v1, `--min-priority high` maps to `high` only. Later support can map
+`medium` to `high, medium` and `low` to `high, medium, low`.
 
 Do not automatically include low-scoring entry points.
 
@@ -323,7 +332,7 @@ methods.end_line
 
 and `--source-path`.
 
-Only the requested method's source should be returned.
+Only the current method's source should be returned by default.
 
 Do not expose arbitrary whole-file reads by default.
 
@@ -340,6 +349,10 @@ If the model needs the implementation, it can subsequently call:
 ``` text
 read_method_source(method_id)
 ```
+
+The implementation should only allow this for method IDs returned by a
+bounded relationship or search tool during the same method analysis. This
+permits targeted context without creating whole-repository source access.
 
 ## 7.6 Search tools
 
@@ -382,32 +395,67 @@ repeatedly creating duplicates.
 ## Write
 
 ``` text
-create_business_node(
-    kind,
-    name,
-    statement,
-    confidence,
-    method_id,
-    evidence_json
-)
+propose_business_node(kind, name, statement, confidence, evidence)
 ```
 
 and:
 
 ``` text
-create_business_edge(
-    source_id,
-    target_id,
-    kind,
-    confidence,
-    evidence_json
-)
+propose_business_edge(source_id, target_id, kind, confidence, evidence)
 ```
 
-Rust must validate every write.
+`evidence` must include the supporting `method_id`, source lines, and reason.
+
+Rust must validate every proposed write.
 
 The LLM must never execute raw `INSERT`, `UPDATE`, or `DELETE`
 statements.
+
+Writes should be staged per analyzed method. Rust should validate the final
+structured result and commit all accepted nodes, edges, and evidence in one
+transaction. Failed validation must not leave partial KG rows for that method.
+
+Final LLM output should be structured JSON:
+
+``` json
+{
+  "nodes": [
+    {
+      "client_id": "n1",
+      "kind": "BusinessRule",
+      "name": "Pending order approval rule",
+      "statement": "An order can only be approved when its status is PENDING.",
+      "confidence": 0.95,
+      "evidence": [
+        {
+          "method_id": "method:OrderService#approve",
+          "source_lines": [42, 43],
+          "reason": "The method rejects approval unless the order status is PENDING."
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "source_client_id": "n1",
+      "target_node_id": "business-node:...",
+      "kind": "SUPPORTED_BY",
+      "confidence": 0.9,
+      "evidence": [
+        {
+          "method_id": "method:OrderService#approve",
+          "source_lines": [42, 43],
+          "reason": "The validation supports the relationship between approval and pending status."
+        }
+      ]
+    }
+  ]
+}
+```
+
+Edges can reference nodes created in the same response by `client_id` or
+existing KG nodes by `target_node_id` / `source_node_id`. Each edge must set
+exactly one source reference and exactly one target reference.
 
 ------------------------------------------------------------------------
 
@@ -487,7 +535,6 @@ The prompt must clearly distinguish these categories.
 Supported edge kinds:
 
 ``` text
-IMPLEMENTED_BY
 SUPPORTED_BY
 DEPENDS_ON
 TRIGGERS
@@ -497,12 +544,12 @@ MENTIONS
 
 The prompt must define edge direction explicitly.
 
-Example:
+Examples:
 
 ``` text
 BusinessRule
-    --IMPLEMENTED_BY-->
-Method-related business knowledge
+    --SUPPORTED_BY-->
+BusinessConcept
 ```
 
 For state changes:
@@ -523,8 +570,7 @@ Payment Charge
 
 Do not create artificial method nodes merely to represent source code.
 
-`business_nodes.method_id` provides the connection back to the
-extraction DB.
+Evidence rows provide the connection back to the extraction DB.
 
 ------------------------------------------------------------------------
 
@@ -532,49 +578,7 @@ extraction DB.
 
 Create a separate SQLite database.
 
-## `business_nodes`
-
-``` sql
-CREATE TABLE IF NOT EXISTS business_nodes (
-    id TEXT PRIMARY KEY,
-    kind TEXT NOT NULL,
-    name TEXT NOT NULL,
-    statement TEXT NOT NULL,
-    confidence REAL NOT NULL,
-    method_id TEXT NOT NULL,
-    evidence_json TEXT NOT NULL,
-    created_at TEXT NOT NULL
-);
-```
-
-The important traceability field is:
-
-``` text
-method_id
-```
-
-The source file, class, function name, and line range can be retrieved
-from `business-extraction.db`.
-
-Do not duplicate this metadata in the KG unless a later requirement
-demonstrates a need for it.
-
-## `business_edges`
-
-``` sql
-CREATE TABLE IF NOT EXISTS business_edges (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    source_id TEXT NOT NULL,
-    target_id TEXT NOT NULL,
-    kind TEXT NOT NULL,
-    confidence REAL NOT NULL,
-    evidence_json TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-
-    FOREIGN KEY (source_id) REFERENCES business_nodes(id),
-    FOREIGN KEY (target_id) REFERENCES business_nodes(id)
-);
-```
+Create `llm_extraction_runs` before graph tables that reference it.
 
 ## `llm_extraction_runs`
 
@@ -587,27 +591,131 @@ CREATE TABLE IF NOT EXISTS llm_extraction_runs (
     finished_at TEXT,
     error TEXT,
     methods_processed INTEGER DEFAULT 0,
-    cache_hits INTEGER DEFAULT 0,
     failed INTEGER DEFAULT 0
 );
 ```
 
-## `llm_extraction_cache`
+## `business_nodes`
 
 ``` sql
-CREATE TABLE IF NOT EXISTS llm_extraction_cache (
-    method_id TEXT NOT NULL,
-    prompt_hash TEXT NOT NULL,
-    response_json TEXT NOT NULL,
-    status TEXT NOT NULL,
-    error TEXT,
+CREATE TABLE IF NOT EXISTS business_nodes (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL,
+    statement TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    created_by_run_id INTEGER,
     created_at TEXT NOT NULL,
 
-    UNIQUE(method_id, prompt_hash)
+    FOREIGN KEY (created_by_run_id) REFERENCES llm_extraction_runs(id)
 );
 ```
 
-Add appropriate indexes for frequent KG lookups.
+Nodes represent reusable business knowledge. Do not tie a node to exactly one
+method, because the same business rule or concept can be supported by multiple
+methods.
+
+Node IDs should be deterministic:
+
+``` text
+business-node:<sha256(kind + normalized_name + normalized_statement)>
+```
+
+Normalization should trim whitespace, collapse internal whitespace, and compare
+case-insensitively for duplicate detection. If a proposed node has the same
+normalized kind, name, and statement as an existing node, reuse the existing
+node and add new evidence instead of creating a duplicate.
+
+## `business_edges`
+
+``` sql
+CREATE TABLE IF NOT EXISTS business_edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    created_by_run_id INTEGER,
+    created_at TEXT NOT NULL,
+
+    FOREIGN KEY (source_id) REFERENCES business_nodes(id),
+    FOREIGN KEY (target_id) REFERENCES business_nodes(id),
+    FOREIGN KEY (created_by_run_id) REFERENCES llm_extraction_runs(id)
+);
+```
+
+Edges should be unique by normalized `(source_id, target_id, kind)`. If the
+same edge is proposed again, reuse it and add new evidence.
+
+## `business_evidence`
+
+``` sql
+CREATE TABLE IF NOT EXISTS business_evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_id TEXT,
+    edge_id INTEGER,
+    method_id TEXT NOT NULL,
+    source_lines_json TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    created_by_run_id INTEGER,
+    created_at TEXT NOT NULL,
+
+    FOREIGN KEY (node_id) REFERENCES business_nodes(id),
+    FOREIGN KEY (edge_id) REFERENCES business_edges(id),
+    FOREIGN KEY (created_by_run_id) REFERENCES llm_extraction_runs(id),
+    CHECK (
+        (node_id IS NOT NULL AND edge_id IS NULL)
+        OR (node_id IS NULL AND edge_id IS NOT NULL)
+    )
+);
+```
+
+`method_id` links evidence back to `business-extraction.db`. Source file,
+class, method name, and line range can be retrieved from the extraction DB.
+Do not duplicate that metadata unless a later requirement demonstrates a need.
+`created_by_run_id` allows later cleanup or quality comparison by extraction
+run without changing the reusable node identity.
+
+SQLite connections must enable foreign-key enforcement:
+
+``` sql
+PRAGMA foreign_keys = ON;
+```
+
+Add indexes:
+
+``` sql
+CREATE INDEX IF NOT EXISTS idx_business_nodes_kind_name
+    ON business_nodes(kind, name);
+CREATE INDEX IF NOT EXISTS idx_business_edges_source
+    ON business_edges(source_id);
+CREATE INDEX IF NOT EXISTS idx_business_edges_target
+    ON business_edges(target_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_business_edges_unique
+    ON business_edges(source_id, target_id, kind);
+CREATE INDEX IF NOT EXISTS idx_business_evidence_method
+    ON business_evidence(method_id);
+CREATE INDEX IF NOT EXISTS idx_business_evidence_node
+    ON business_evidence(node_id);
+CREATE INDEX IF NOT EXISTS idx_business_evidence_edge
+    ON business_evidence(edge_id);
+CREATE INDEX IF NOT EXISTS idx_business_nodes_run
+    ON business_nodes(created_by_run_id);
+CREATE INDEX IF NOT EXISTS idx_business_edges_run
+    ON business_edges(created_by_run_id);
+CREATE INDEX IF NOT EXISTS idx_business_evidence_run
+    ON business_evidence(created_by_run_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_business_evidence_node_unique
+    ON business_evidence(node_id, method_id, source_lines_json, reason)
+    WHERE node_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_business_evidence_edge_unique
+    ON business_evidence(edge_id, method_id, source_lines_json, reason)
+    WHERE edge_id IS NOT NULL;
+```
+
+Do not add persistent LLM cache tables in v1. Cache is operational state, not
+business knowledge. Add a separate cache database later only if repeated KG
+builds prove expensive enough to justify it.
 
 ------------------------------------------------------------------------
 
@@ -619,13 +727,15 @@ Example:
 
 ``` json
 {
-  "source_method_id": "method:OrderService#approve",
+  "method_id": "method:OrderService#approve",
   "source_lines": [42, 43, 46, 47],
   "reason": "Status validation followed by APPROVED transition and payment charge"
 }
 ```
 
 Evidence must be grounded in actual source/extraction information.
+`source_lines` should be sorted, unique, and within the source method's line
+range.
 
 This allows migration agents to later trace:
 
@@ -633,7 +743,7 @@ This allows migration agents to later trace:
 Business Rule
     |
     v
-method_id
+business_evidence.method_id
     |
     v
 business-extraction.db
@@ -689,19 +799,13 @@ For every selected high-priority method:
 ``` text
 1. Select method.
 2. Build compact initial prompt.
-3. Compute cache key.
-4. Check cache.
-5. If valid cache exists:
-      restore/verify cached KG result.
-      skip LLM.
-6. Otherwise:
-      call Claude.
-7. Claude can make bounded tool calls.
-8. Rust executes and validates each tool call.
-9. Claude creates business nodes/edges through KG tools.
-10. Claude finishes.
-11. Store the final structured result in cache.
-12. Record method/run statistics.
+3. Call Claude.
+4. Claude can make bounded tool calls.
+5. Rust executes and validates each tool call.
+6. Claude returns proposed business nodes, edges, and evidence.
+7. Rust validates the final structured result.
+8. Commit accepted rows in one transaction.
+9. Record method/run statistics.
 ```
 
 Maximum tool usage should be bounded.
@@ -718,40 +822,14 @@ Also limit individual tool result sizes:
 relationships <= 20
 search results <= 20
 KG neighbors <= 20
-source reads = requested method only
+source reads = current method or explicitly discovered related methods only
 ```
 
 The initial implementation should remain sequential.
 
 ------------------------------------------------------------------------
 
-# 15. Cache Design
-
-Do not calculate the cache hash only from database paths.
-
-Paths are not semantic inputs and would cause unnecessary cache
-invalidation when a project moves.
-
-Use a versioned semantic hash:
-
-``` text
-prompt_version
-+ method_id
-+ method metadata
-+ source content
-+ relevant extraction context
-```
-
-For example:
-
-``` text
-SHA256(
-    BUSINESS_KG_PROMPT_VERSION
-    + method_id
-    + method source
-    + method metadata
-)
-```
+# 15. Prompt Versioning
 
 Define:
 
@@ -766,35 +844,13 @@ changes materially.
 
 # 16. Cache Semantics
 
-A cache hit must be able to reconstruct the KG.
+Do not implement persistent LLM caching in v1.
 
-Do not simply interpret:
-
-``` text
-cache hit = skip everything
-```
-
-Instead:
-
-``` text
-cache hit
-    |
-    v
-load cached structured result
-    |
-    +--> ensure nodes exist
-    |
-    +--> ensure edges exist
-    |
-    v
-skip LLM
-```
-
-This is important if `business-kg.db` is deleted and rebuilt while the
-extraction/cache data is retained.
-
-The cached response should contain enough structured information to
-recreate the generated KG records.
+If caching is added later, keep it outside `business-kg.db` and make cache
+entries reconstruct complete nodes, edges, and evidence. Cache keys should use
+versioned semantic inputs such as prompt version, method ID, method metadata,
+source content, and relevant extraction context. Do not hash database paths as
+semantic inputs.
 
 ------------------------------------------------------------------------
 
@@ -887,7 +943,7 @@ Responsibilities:
 -   extraction DB reads
 -   KG DB schema
 -   KG queries/writes
--   cache
+-   evidence
 -   run metadata
 
 ### `mod.rs`
@@ -940,7 +996,6 @@ During execution:
 ``` text
 build-business-kg llm:
   25/100 complete
-  cache=3
   tool_calls=8
   failed=0
   elapsed_ms=12500
@@ -952,6 +1007,7 @@ Final:
 build-business-kg database:
   nodes=187
   edges=94
+  evidence=241
 ```
 
 Also record the same statistics in `llm_extraction_runs`.
@@ -973,6 +1029,10 @@ error = ...
 Continue processing the remaining methods.
 
 The overall run should indicate partial failure.
+
+If a run is abandoned or fails before completion, rows tied to
+`created_by_run_id` can be inspected or removed without affecting older
+evidence from previous runs.
 
 Fatal errors should include:
 
@@ -999,8 +1059,16 @@ kind is supported
 confidence is 0..1
 name is non-empty
 statement is non-empty
+```
+
+### Evidence
+
+``` text
+exactly one of node_id or edge_id is set
+referenced node or edge exists
 method_id exists in extraction DB
-evidence references valid source information
+source lines are within the source method range
+reason is non-empty
 ```
 
 ### Edge
@@ -1011,6 +1079,7 @@ confidence is 0..1
 source_id exists
 target_id exists
 evidence is present
+evidence supports the relationship, not only the source and target nodes
 ```
 
 The LLM should not be trusted as the database validator.
@@ -1029,6 +1098,7 @@ Test:
 -   `--min-priority`
 -   `--max-methods`
 -   `--force`
+-   `--force` recreates the output DB
 -   invalid priority values
 
 ## Database
@@ -1040,8 +1110,14 @@ Test:
 -   node creation
 -   edge creation
 -   duplicate node handling
+-   deterministic node IDs
+-   duplicate edge handling
+-   duplicate evidence handling
 -   foreign-key validation
--   cache storage/retrieval
+-   `PRAGMA foreign_keys = ON`
+-   evidence creation
+-   index creation
+-   transaction rollback on invalid proposed output
 
 ## LLM
 
@@ -1054,6 +1130,7 @@ Test:
 -   side effect extraction
 -   technical method returning no nodes
 -   invalid LLM output
+-   invalid edge references
 -   confidence validation
 -   unsupported node/edge kind
 
@@ -1069,24 +1146,6 @@ Test:
 -   tool failure
 -   existing KG node lookup
 -   cross-method edge creation
-
-## Cache
-
-Run the same method twice.
-
-Verify:
-
-``` text
-first run:
-  LLM calls > 0
-
-second run:
-  LLM calls = 0
-  cache_hits > 0
-```
-
-Also verify that cached results can rebuild the KG if KG rows are
-removed.
 
 ------------------------------------------------------------------------
 
@@ -1109,7 +1168,7 @@ Inspect:
 SELECT * FROM business_nodes;
 SELECT * FROM business_edges;
 SELECT * FROM llm_extraction_runs;
-SELECT * FROM llm_extraction_cache;
+SELECT * FROM business_evidence;
 ```
 
 For the first five methods manually verify:
@@ -1138,7 +1197,7 @@ Implement in this order:
 1.  Add KG schema.
 2.  Add KG models.
 3.  Add node/edge CRUD.
-4.  Add cache storage.
+4.  Add evidence storage.
 5.  Add run metadata.
 
 ### Phase 2 --- Candidate selection
@@ -1166,35 +1225,37 @@ Implement in this order:
 20. Implement bounded search tools.
 21. Implement KG read tools.
 22. Implement KG write tools.
+23. Implement evidence writes.
 
 ### Phase 5 --- Agent
 
-23. Implement Claude tool-use loop.
-24. Add maximum tool-call limit.
-25. Add tool result limits.
-26. Add validation.
-27. Add cache integration.
-28. Add run statistics.
+24. Implement Claude tool-use loop.
+25. Add maximum tool-call limit.
+26. Add tool result limits.
+27. Add validation.
+28. Add per-method transaction handling.
+29. Add run statistics.
 
 ### Phase 6 --- Testing
 
-29. Unit tests.
-30. Mock LLM integration tests.
-31. Cache tests.
-32. Tool-loop tests.
-33. Nakadi smoke test with `--max-methods 5`.
+30. Unit tests.
+31. Mock LLM integration tests.
+32. Evidence/provenance tests.
+33. Tool-loop tests.
+34. Transaction rollback tests.
+35. Nakadi smoke test with `--max-methods 5`.
 
 ### Phase 7 --- Quality evaluation
 
-34. Run 5 methods.
-35. Manually inspect KG.
-36. Measure tokens/method.
-37. Measure tool calls/method.
-38. Measure duplicate-node rate.
-39. Adjust prompt/tool boundaries.
-40. Run 50 methods.
-41. Evaluate migration usefulness.
-42. Process the complete high-priority set.
+36. Run 5 methods.
+37. Manually inspect KG.
+38. Measure tokens/method.
+39. Measure tool calls/method.
+40. Measure duplicate-node rate.
+41. Adjust prompt/tool boundaries.
+42. Run 50 methods.
+43. Evaluate migration usefulness.
+44. Process the complete high-priority set.
 
 ------------------------------------------------------------------------
 
@@ -1212,14 +1273,14 @@ The implementation should follow these principles:
 5.  **Bounded tools** --- every tool has strict result limits.
 6.  **Separate databases** --- extraction DB remains immutable; KG is
     independently rebuildable.
-7.  **Minimal KG metadata** --- `method_id` is the bridge back to
-    extraction data.
+7.  **Reusable nodes** --- business nodes should not be tied to exactly
+    one method.
 8.  **Evidence everywhere** --- every business claim must be traceable.
 9.  **Incremental KG awareness** --- Claude can read the existing KG and
     reuse concepts.
 10. **Validated writes** --- Rust, not Claude, enforces KG integrity.
-11. **Deterministic caching** --- cache based on semantic inputs and
-    prompt version.
+11. **No persistent cache in v1** --- add cache later only if measured
+    rebuild cost requires it.
 12. **Sequential initially** --- optimize concurrency only after
     measuring.
 13. **Migration-oriented quality** --- the KG is useful only if a future
