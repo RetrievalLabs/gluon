@@ -173,6 +173,7 @@ Outputs:
 
 - SQLite `business-kg.db` with reusable business nodes, business edges, evidence rows, and LLM run metadata.
 - Stdout selection, LLM, and database summary.
+- Stderr live progress for long runs: selected count, current method, success/failure, tool calls, elapsed time, and final status.
 - Bounded LLM tools can read compact extraction DB context, related method source, and existing KG nodes; the default limit is 5 tool calls per method.
 - No persistent LLM cache in v1.
 

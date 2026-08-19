@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use reqwest::blocking::Client;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -485,7 +485,26 @@ fn build_business_kg_with_input(
         ..BuildBusinessKgSummary::default()
     };
 
-    for method in selected {
+    eprintln!(
+        "build-business-kg: selected {} methods from {} candidates; output={}",
+        summary.selected, summary.candidates, summary.output_path
+    );
+    let run_started_at = Instant::now();
+    let selected_count = summary.selected;
+    for (index, method) in selected.into_iter().enumerate() {
+        let method_started_at = Instant::now();
+        eprintln!(
+            "build-business-kg: method {}/{} start id={} class={} name={} lines={}-{} priority={} score={}",
+            index + 1,
+            selected_count,
+            method.id,
+            method.class_name,
+            method.name,
+            method.start_line,
+            method.end_line,
+            method.priority,
+            method.score
+        );
         let request = MethodRequest {
             method: method.clone(),
             existing_nodes: store.find_nodes_for_prompt(20)?,
@@ -500,18 +519,51 @@ fn build_business_kg_with_input(
             Ok(response) => match store.commit_method_response(run_id, &method, response) {
                 Ok(()) => {
                     summary.methods_processed += 1;
+                    eprintln!(
+                        "build-business-kg: method {}/{} ok elapsed_ms={} tool_calls={} complete={} failed={}",
+                        index + 1,
+                        selected_count,
+                        method_started_at.elapsed().as_millis(),
+                        tool_calls,
+                        summary.methods_processed,
+                        summary.failed
+                    );
                 }
                 Err(error) => {
                     summary.failed += 1;
                     store.record_method_failure(run_id, &method.id, &error)?;
+                    eprintln!(
+                        "build-business-kg: method {}/{} failed elapsed_ms={} tool_calls={} error={}",
+                        index + 1,
+                        selected_count,
+                        method_started_at.elapsed().as_millis(),
+                        tool_calls,
+                        short_error(&error)
+                    );
                 }
             },
             Err(error) => {
                 summary.failed += 1;
                 store.record_method_failure(run_id, &method.id, &error)?;
+                eprintln!(
+                    "build-business-kg: method {}/{} failed elapsed_ms={} tool_calls={} error={}",
+                    index + 1,
+                    selected_count,
+                    method_started_at.elapsed().as_millis(),
+                    tool_calls,
+                    short_error(&error)
+                );
             }
         }
         summary.tool_calls += tool_calls;
+        eprintln!(
+            "build-business-kg: progress {}/{} complete failed={} total_tool_calls={} elapsed_ms={}",
+            summary.methods_processed + summary.failed,
+            selected_count,
+            summary.failed,
+            summary.tool_calls,
+            run_started_at.elapsed().as_millis()
+        );
     }
 
     store.finish_run(run_id, &summary)?;
@@ -519,7 +571,31 @@ fn build_business_kg_with_input(
     summary.nodes = counts.nodes;
     summary.edges = counts.edges;
     summary.evidence = counts.evidence;
+    eprintln!(
+        "build-business-kg: done status={} methods_processed={} failed={} nodes={} edges={} evidence={} elapsed_ms={}",
+        if summary.failed == 0 {
+            "completed"
+        } else {
+            "partial_failure"
+        },
+        summary.methods_processed,
+        summary.failed,
+        summary.nodes,
+        summary.edges,
+        summary.evidence,
+        run_started_at.elapsed().as_millis()
+    );
     Ok(summary)
+}
+
+fn short_error(error: &str) -> String {
+    const MAX_LEN: usize = 240;
+    let first_line = error.lines().next().unwrap_or(error).trim();
+    if first_line.len() <= MAX_LEN {
+        first_line.to_string()
+    } else {
+        format!("{}...", &first_line[..MAX_LEN])
+    }
 }
 
 fn validate_build_options(options: &BuildBusinessKgOptions) -> Result<(), String> {
