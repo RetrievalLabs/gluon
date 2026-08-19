@@ -5,7 +5,7 @@ use std::path::Path;
 use regex::Regex;
 use walkdir::{DirEntry, WalkDir};
 
-use crate::languages::java::business::model::ModuleInfo;
+use crate::languages::business::model::ModuleInfo;
 
 pub fn discover_modules(project_root: &Path) -> Vec<ModuleInfo> {
     let mut modules = BTreeMap::new();

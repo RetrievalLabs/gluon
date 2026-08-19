@@ -4,11 +4,11 @@ use std::path::Path;
 use tree_sitter::{Node, Parser, TreeCursor};
 use walkdir::{DirEntry, WalkDir};
 
-use crate::languages::java::build::model::Diagnostic;
-use crate::languages::java::business::model::{
+use crate::languages::business::model::{
     ClassInfo, CodeModel, EntryPointInfo, InvocationInfo, MethodInfo, ParameterInfo,
     RelationshipInfo,
 };
+use crate::languages::java::build::model::Diagnostic;
 use crate::languages::java::business::modules::{discover_modules, module_id_for_file};
 
 #[derive(Debug, Clone)]

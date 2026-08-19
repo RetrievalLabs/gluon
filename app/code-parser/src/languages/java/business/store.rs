@@ -2,7 +2,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, params};
 
-use crate::languages::java::business::model::CodeModel;
+use crate::languages::business::model::CodeModel;
 
 pub fn write_database(path: &Path, model: &CodeModel) -> Result<(), String> {
     if let Some(parent) = path.parent() {
@@ -347,7 +347,7 @@ mod tests {
 
     use rusqlite::Connection;
 
-    use crate::languages::java::business::model::{ClassInfo, MethodInfo, ModuleInfo};
+    use crate::languages::business::model::{ClassInfo, MethodInfo, ModuleInfo};
 
     use super::*;
 

@@ -2,12 +2,12 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::languages::business::{
+    BuildBusinessKgOptions, BusinessExtractionOptions, Priority, build_business_kg,
+};
 use crate::languages::java::build::model::BuildReport;
 use crate::languages::java::build::parse_build;
-use crate::languages::java::business::{
-    BuildBusinessKgOptions, BusinessExtractionOptions, Priority, build_business_kg,
-    extract_business,
-};
+use crate::languages::java::business::extract_business;
 use crate::languages::java::compatibility::analyzer::analyze_report_with_options;
 use crate::languages::java::compatibility::jdk_tools::{DEFAULT_JDK_ROOT, JdkToolOptions};
 

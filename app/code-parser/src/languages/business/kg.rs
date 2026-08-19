@@ -65,7 +65,7 @@ pub struct BuildBusinessKgSummary {
 }
 
 #[derive(Debug, Clone)]
-struct CandidateMethod {
+pub(crate) struct CandidateMethod {
     id: String,
     class_name: String,
     name: String,
@@ -113,6 +113,43 @@ pub trait LlmClient {
 pub trait ToolExecutor {
     fn execute_tool(&mut self, name: &str, input: &Value) -> Result<Value, String>;
     fn call_count(&self) -> usize;
+}
+
+pub(crate) trait BusinessKgInput {
+    fn validate_extraction_db(&self, connection: &Connection) -> Result<(), String>;
+    fn select_methods(
+        &self,
+        connection: &Connection,
+        source_path: &Path,
+        options: &BuildBusinessKgOptions,
+    ) -> Result<Vec<CandidateMethod>, String>;
+    fn count_candidates(&self, connection: &Connection) -> Result<usize, String>;
+    fn count_priority(&self, connection: &Connection, priority: &str) -> Result<usize, String>;
+}
+
+struct CommonSqliteBusinessKgInput;
+
+impl BusinessKgInput for CommonSqliteBusinessKgInput {
+    fn validate_extraction_db(&self, connection: &Connection) -> Result<(), String> {
+        validate_extraction_db(connection)
+    }
+
+    fn select_methods(
+        &self,
+        connection: &Connection,
+        source_path: &Path,
+        options: &BuildBusinessKgOptions,
+    ) -> Result<Vec<CandidateMethod>, String> {
+        select_methods(connection, source_path, options)
+    }
+
+    fn count_candidates(&self, connection: &Connection) -> Result<usize, String> {
+        count_candidates(connection)
+    }
+
+    fn count_priority(&self, connection: &Connection, priority: &str) -> Result<usize, String> {
+        count_priority(connection, priority)
+    }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -399,6 +436,14 @@ pub fn build_business_kg_with_client(
     options: &BuildBusinessKgOptions,
     client: &dyn LlmClient,
 ) -> Result<BuildBusinessKgSummary, String> {
+    build_business_kg_with_input(options, client, &CommonSqliteBusinessKgInput)
+}
+
+fn build_business_kg_with_input(
+    options: &BuildBusinessKgOptions,
+    client: &dyn LlmClient,
+    input: &dyn BusinessKgInput,
+) -> Result<BuildBusinessKgSummary, String> {
     validate_build_options(options)?;
     let output = options.output.clone().unwrap_or_else(|| {
         options
@@ -422,9 +467,9 @@ pub fn build_business_kg_with_client(
             options.database.display()
         )
     })?;
-    validate_extraction_db(&extraction)?;
+    input.validate_extraction_db(&extraction)?;
 
-    let mut selected = select_methods(&extraction, &options.source_path, options)?;
+    let mut selected = input.select_methods(&extraction, &options.source_path, options)?;
     if let Some(max_methods) = options.max_methods {
         selected.truncate(max_methods);
     }
@@ -434,8 +479,8 @@ pub fn build_business_kg_with_client(
     let mut summary = BuildBusinessKgSummary {
         database_path: options.database.display().to_string(),
         output_path: output.display().to_string(),
-        candidates: count_candidates(&extraction)?,
-        high_priority_candidates: count_priority(&extraction, "high")?,
+        candidates: input.count_candidates(&extraction)?,
+        high_priority_candidates: input.count_priority(&extraction, "high")?,
         selected: selected.len(),
         ..BuildBusinessKgSummary::default()
     };

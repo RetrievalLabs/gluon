@@ -2,16 +2,17 @@ use std::path::{Path, PathBuf};
 
 pub mod extractor;
 pub mod jdtls;
-pub mod kg;
-pub mod model;
 pub mod modules;
 pub mod scoring;
 pub mod store;
 pub mod tree_sitter;
 
-pub use extractor::{BusinessExtractionOptions, extract_business};
-pub use kg::{BuildBusinessKgOptions, BuildBusinessKgSummary, Priority, build_business_kg};
-pub use model::ExtractionSummary;
+pub use crate::languages::business::BusinessExtractionOptions;
+pub use crate::languages::business::kg::{
+    BuildBusinessKgOptions, BuildBusinessKgSummary, Priority, build_business_kg,
+};
+pub use crate::languages::business::model::ExtractionSummary;
+pub use extractor::{JavaBusinessExtractor, extract_business};
 
 pub fn default_database_path(project_root: &Path, output_dir: &Path) -> Result<PathBuf, String> {
     let project_name = project_root

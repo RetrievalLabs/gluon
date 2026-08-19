@@ -1,4 +1,4 @@
-use crate::languages::java::business::model::{
+use crate::languages::business::model::{
     CandidateScore, CandidateSignal, CodeModel, ContextPacket, EvidenceRange,
 };
 
@@ -146,7 +146,7 @@ fn count_terms(value: &str, terms: &[&str]) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::languages::java::business::model::{CodeModel, MethodInfo};
+    use crate::languages::business::model::{CodeModel, MethodInfo};
 
     use super::*;
 

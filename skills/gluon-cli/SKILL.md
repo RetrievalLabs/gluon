@@ -148,6 +148,8 @@ gluon-cli code-parser extract-business --path /path/to/project --output-dir /pat
 ### `code-parser build-business-kg`
 
 Builds `business-kg.db` from high-value methods in `business-extraction.db`.
+KG build logic lives in `app/code-parser/src/languages/business/kg.rs`; Java
+extraction remains in `app/code-parser/src/languages/java/business/`.
 
 Required input:
 

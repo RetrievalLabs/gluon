@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::languages::java::build::resolver::CommandRunner;
 
+pub mod business;
 pub mod java;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

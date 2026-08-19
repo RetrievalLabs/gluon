@@ -8,10 +8,8 @@ use std::time::Instant;
 
 use serde_json::{Value, json};
 
+use crate::languages::business::model::{CodeModel, InvocationInfo, MethodInfo, RelationshipInfo};
 use crate::languages::java::build::model::Diagnostic;
-use crate::languages::java::business::model::{
-    CodeModel, InvocationInfo, MethodInfo, RelationshipInfo,
-};
 use crate::languages::java::business::modules::module_id_for_file;
 
 pub struct JdtlsOptions {

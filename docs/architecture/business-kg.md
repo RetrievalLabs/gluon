@@ -44,6 +44,17 @@ business-extraction.db
 The extraction DB must remain unchanged and should be treated as
 read-only.
 
+The implementation is split by language responsibility:
+
+-   `app/code-parser/src/languages/business/` contains shared business
+    contracts, the language-neutral code model, and KG build/validation
+    logic.
+-   `app/code-parser/src/languages/java/business/` contains Java-specific
+    extraction, JDTLS enrichment, scoring, and extraction DB persistence.
+-   New languages should implement extraction and extraction-DB input behavior
+    behind the shared business traits instead of duplicating KG persistence or
+    LLM orchestration.
+
 ------------------------------------------------------------------------
 
 ## 3. CLI

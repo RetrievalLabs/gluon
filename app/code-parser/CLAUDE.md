@@ -5,6 +5,9 @@ A Rust-based CLI tool for parsing Java build metadata.
 ## Structure
 
 - `src/languages/<language>/` - language-specific parsers and orchestration.
+- `src/languages/business/` - language-neutral business extraction contracts, shared code model, and Business KG builder.
+- `src/languages/business/model.rs` - shared business extraction code model, relationships, candidates, context packet, and summary data structures.
+- `src/languages/business/kg.rs` - Business KG builder, Anthropic LLM integration, bounded KG tools, KG SQLite schema, validation, evidence, and common SQLite extraction input adapter.
 - `src/languages/java/build/` - Java build metadata parsing and resolution.
 - `src/languages/java/build/model.rs` - shared build report data model.
 - `src/languages/java/build/maven.rs` - static Maven `pom.xml` parsing.
@@ -13,8 +16,7 @@ A Rust-based CLI tool for parsing Java build metadata.
 - `src/languages/java/build/resolver/runner.rs` - command execution, executable checks, and command diagnostics.
 - `src/languages/java/build/resolver/maven.rs` - Maven resolution commands and output parsing.
 - `src/languages/java/build/resolver/gradle.rs` - Gradle resolution commands and output parsing.
-- `src/languages/java/business/` - Java business logic extraction, JDTLS semantic enrichment, candidate scoring, and SQLite storage.
-- `src/languages/java/business/model.rs` - business extraction code model, relationships, candidates, context packet, and summary data structures.
+- `src/languages/java/business/` - Java business logic extraction, JDTLS semantic enrichment, candidate scoring, and SQLite extraction storage.
 - `src/languages/java/business/tree_sitter.rs` - tree-sitter Java structural extraction for classes, methods, annotations, entry points, and call sites.
 - `src/languages/java/business/jdtls.rs` - required Eclipse JDTLS LSP client for semantic definitions and references.
 - `src/languages/java/business/modules.rs` - Maven and Gradle multi-module discovery and source-file module ownership mapping.

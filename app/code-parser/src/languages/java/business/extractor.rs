@@ -2,22 +2,39 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use crate::languages::business::model::{CodeModel, ExtractionSummary};
+use crate::languages::business::{
+    BusinessDatabasePath, BusinessExtractionOptions, BusinessExtractor,
+};
 use crate::languages::java::business::default_database_path;
 use crate::languages::java::business::jdtls::{JdtlsOptions, enrich_with_jdtls};
-use crate::languages::java::business::model::{CodeModel, ExtractionSummary};
 use crate::languages::java::business::scoring::score_candidates;
 use crate::languages::java::business::store::write_database;
 use crate::languages::java::business::tree_sitter::extract_structure_with_stats;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BusinessExtractionOptions {
-    pub path: PathBuf,
-    pub output_dir: PathBuf,
-    pub database: Option<PathBuf>,
-    pub jdtls_command: String,
-    pub jdtls_workspace: Option<PathBuf>,
-    pub jdtls_max_in_flight: usize,
-    pub jdtls_deep: bool,
+pub struct JavaBusinessExtractor;
+
+impl BusinessExtractor for JavaBusinessExtractor {
+    fn language(&self) -> &'static str {
+        "java"
+    }
+
+    fn extract_business(
+        &self,
+        options: &BusinessExtractionOptions,
+    ) -> Result<ExtractionSummary, String> {
+        extract_business(options)
+    }
+}
+
+impl BusinessDatabasePath for JavaBusinessExtractor {
+    fn default_database_path(
+        &self,
+        project_root: &Path,
+        output_dir: &Path,
+    ) -> Result<PathBuf, String> {
+        default_database_path(project_root, output_dir)
+    }
 }
 
 pub fn extract_business(options: &BusinessExtractionOptions) -> Result<ExtractionSummary, String> {
@@ -191,9 +208,7 @@ fn deduplicate_relationships(model: &mut CodeModel) {
         .dedup_by(|left, right| relationship_key(left) == relationship_key(right));
 }
 
-fn relationship_key(
-    relationship: &crate::languages::java::business::model::RelationshipInfo,
-) -> String {
+fn relationship_key(relationship: &crate::languages::business::model::RelationshipInfo) -> String {
     format!(
         "{}\0{}\0{}\0{}",
         relationship.source_id, relationship.target_id, relationship.kind, relationship.source
