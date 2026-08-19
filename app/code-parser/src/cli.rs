@@ -7,7 +7,7 @@ use crate::languages::business::{
 };
 use crate::languages::java::build::model::BuildReport;
 use crate::languages::java::build::parse_build;
-use crate::languages::java::business::extract_business;
+use crate::languages::java::business::{TestExtractionOptions, extract_business, extract_tests};
 use crate::languages::java::compatibility::analyzer::analyze_report_with_options;
 use crate::languages::java::compatibility::jdk_tools::{DEFAULT_JDK_ROOT, JdkToolOptions};
 
@@ -16,6 +16,7 @@ enum CliOptions {
     ParseBuild(ParseBuildOptions),
     AnalyzeReport(AnalyzeReportOptions),
     ExtractBusiness(ExtractBusinessOptions),
+    ExtractTests(ExtractTestsOptions),
     BuildBusinessKg(BuildBusinessKgCliOptions),
 }
 
@@ -47,6 +48,15 @@ struct ExtractBusinessOptions {
     jdtls_workspace: Option<PathBuf>,
     jdtls_max_in_flight: usize,
     jdtls_deep: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ExtractTestsOptions {
+    path: PathBuf,
+    database: PathBuf,
+    jdtls_command: String,
+    jdtls_workspace: Option<PathBuf>,
+    jdtls_max_in_flight: usize,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -99,6 +109,7 @@ where
         },
         Ok(CliOptions::AnalyzeReport(options)) => run_analyze_report(options),
         Ok(CliOptions::ExtractBusiness(options)) => run_extract_business(options),
+        Ok(CliOptions::ExtractTests(options)) => run_extract_tests(options),
         Ok(CliOptions::BuildBusinessKg(options)) => run_build_business_kg(options),
         Err(error) => {
             command_failed("arguments", &error);
@@ -125,6 +136,7 @@ where
         "parse-build" => parse_parse_build_args(args).map(CliOptions::ParseBuild),
         "analyze-report" => parse_analyze_report_args(args).map(CliOptions::AnalyzeReport),
         "extract-business" => parse_extract_business_args(args).map(CliOptions::ExtractBusiness),
+        "extract-tests" => parse_extract_tests_args(args).map(CliOptions::ExtractTests),
         "build-business-kg" => parse_build_business_kg_args(args).map(CliOptions::BuildBusinessKg),
         _ => Err(format!("unsupported command: {command}")),
     }
@@ -301,6 +313,57 @@ fn parse_extract_business_args(
     })
 }
 
+fn parse_extract_tests_args(
+    mut args: impl Iterator<Item = String>,
+) -> Result<ExtractTestsOptions, String> {
+    let mut path = None;
+    let mut database = None;
+    let mut jdtls_command = "jdtls".to_string();
+    let mut jdtls_workspace = None;
+    let mut jdtls_max_in_flight = 32;
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--path" => {
+                let value = args.next().ok_or("--path requires a value")?;
+                path = Some(PathBuf::from(value));
+            }
+            "--database" => {
+                let value = args.next().ok_or("--database requires a value")?;
+                database = Some(PathBuf::from(value));
+            }
+            "--jdtls-command" => {
+                jdtls_command = args.next().ok_or("--jdtls-command requires a value")?;
+            }
+            "--jdtls-workspace" => {
+                let value = args.next().ok_or("--jdtls-workspace requires a value")?;
+                jdtls_workspace = Some(PathBuf::from(value));
+            }
+            "--jdtls-max-in-flight" => {
+                let value = args
+                    .next()
+                    .ok_or("--jdtls-max-in-flight requires a value")?;
+                jdtls_max_in_flight = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid --jdtls-max-in-flight: {value}"))?;
+                if jdtls_max_in_flight == 0 {
+                    return Err("--jdtls-max-in-flight must be greater than 0".to_string());
+                }
+            }
+            "--help" | "-h" => return Err("help requested".to_string()),
+            other => return Err(format!("unsupported argument: {other}")),
+        }
+    }
+
+    Ok(ExtractTestsOptions {
+        path: path.ok_or("missing required --path")?,
+        database: database.ok_or("missing required --database")?,
+        jdtls_command,
+        jdtls_workspace,
+        jdtls_max_in_flight,
+    })
+}
+
 fn parse_build_business_kg_args(
     mut args: impl Iterator<Item = String>,
 ) -> Result<BuildBusinessKgCliOptions, String> {
@@ -472,6 +535,38 @@ fn run_extract_business(options: ExtractBusinessOptions) -> i32 {
     }
 }
 
+fn run_extract_tests(options: ExtractTestsOptions) -> i32 {
+    let extraction_options = TestExtractionOptions {
+        path: options.path,
+        database: options.database,
+        jdtls_command: options.jdtls_command,
+        jdtls_workspace: options.jdtls_workspace,
+        jdtls_max_in_flight: options.jdtls_max_in_flight,
+    };
+
+    match extract_tests(&extraction_options) {
+        Ok(summary) => {
+            println!("database: {}", summary.database_path);
+            println!("test_suites: {}", summary.suites);
+            println!("test_cases: {}", summary.cases);
+            println!("test_targets: {}", summary.targets);
+            println!("test_assertions: {}", summary.assertions);
+            println!("test_fixtures: {}", summary.fixtures);
+            println!("test_entry_points: {}", summary.entry_points);
+            println!("diagnostics: {}", summary.diagnostics);
+            0
+        }
+        Err(error) => {
+            command_failed("extract-tests", &error);
+            if is_usage_or_jdtls_startup_error(&error) {
+                2
+            } else {
+                1
+            }
+        }
+    }
+}
+
 fn run_build_business_kg(options: BuildBusinessKgCliOptions) -> i32 {
     let kg_options = BuildBusinessKgOptions {
         database: options.database,
@@ -531,7 +626,7 @@ fn run_build_business_kg(options: BuildBusinessKgCliOptions) -> i32 {
 
 fn print_usage() {
     eprintln!(
-        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--jdtls-deep]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]"
+        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--jdtls-deep]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]"
     );
 }
 
@@ -821,6 +916,44 @@ mod tests {
             .expect_err("missing output dir");
 
         assert!(error.contains("missing required --output-dir"));
+    }
+
+    #[test]
+    fn parses_extract_tests_arguments() {
+        let options = parse_args([
+            "code-parser",
+            "extract-tests",
+            "--path",
+            "project",
+            "--database",
+            "business-extraction.db",
+            "--jdtls-command",
+            "/bin/jdtls",
+            "--jdtls-workspace",
+            "workspace",
+            "--jdtls-max-in-flight",
+            "16",
+        ])
+        .expect("valid arguments");
+
+        assert_eq!(
+            options,
+            CliOptions::ExtractTests(ExtractTestsOptions {
+                path: PathBuf::from("project"),
+                database: PathBuf::from("business-extraction.db"),
+                jdtls_command: "/bin/jdtls".to_string(),
+                jdtls_workspace: Some(PathBuf::from("workspace")),
+                jdtls_max_in_flight: 16,
+            })
+        );
+    }
+
+    #[test]
+    fn extract_tests_requires_database() {
+        let error = parse_args(["code-parser", "extract-tests", "--path", "project"])
+            .expect_err("missing database");
+
+        assert!(error.contains("missing required --database"));
     }
 
     #[test]

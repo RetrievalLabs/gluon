@@ -5,6 +5,7 @@ pub mod jdtls;
 pub mod modules;
 pub mod scoring;
 pub mod store;
+pub mod test_extractor;
 pub mod tree_sitter;
 
 pub use crate::languages::business::BusinessExtractionOptions;
@@ -13,6 +14,7 @@ pub use crate::languages::business::kg::{
 };
 pub use crate::languages::business::model::ExtractionSummary;
 pub use extractor::{JavaBusinessExtractor, extract_business};
+pub use test_extractor::{TestExtractionOptions, TestExtractionSummary, extract_tests};
 
 pub fn default_database_path(project_root: &Path, output_dir: &Path) -> Result<PathBuf, String> {
     let project_name = project_root

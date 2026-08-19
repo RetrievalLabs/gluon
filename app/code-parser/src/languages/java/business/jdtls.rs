@@ -19,6 +19,23 @@ pub struct JdtlsOptions {
     pub deep_enrichment: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct JdtlsDefinitionRequest {
+    pub owner_id: String,
+    pub file: String,
+    pub name: String,
+    pub line: usize,
+    pub column: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct JdtlsDefinition {
+    pub owner_id: String,
+    pub name: String,
+    pub file: String,
+    pub line: usize,
+}
+
 pub fn enrich_with_jdtls(
     project_root: &Path,
     options: &JdtlsOptions,
@@ -55,6 +72,36 @@ pub fn enrich_with_jdtls(
     }
     client.shutdown();
     Ok(())
+}
+
+pub fn resolve_test_definitions(
+    project_root: &Path,
+    options: &JdtlsOptions,
+    java_files: &[String],
+    requests: &[JdtlsDefinitionRequest],
+) -> Result<Vec<JdtlsDefinition>, String> {
+    if !command_available(&options.command) {
+        return Err(format!(
+            "JDTLS executable not found.\ncommand: {}\nPATH: {}\nhint: install Eclipse JDT Language Server or pass --jdtls-command <path-to-jdtls>",
+            options.command,
+            env::var("PATH").unwrap_or_else(|_| "<unset>".to_string())
+        ));
+    }
+
+    fs::create_dir_all(&options.workspace).map_err(|error| {
+        format!(
+            "failed to create JDTLS workspace {}: {error}",
+            options.workspace.display()
+        )
+    })?;
+
+    let max_in_flight = options.max_in_flight.max(1);
+    let mut client = LspClient::start(&options.command, project_root, &options.workspace)?;
+    client.initialize(project_root)?;
+    client.open_java_file_paths(project_root, java_files)?;
+    let definitions = client.resolve_definition_requests(project_root, requests, max_in_flight)?;
+    client.shutdown();
+    Ok(definitions)
 }
 
 fn command_available(command: &str) -> bool {
@@ -153,41 +200,143 @@ impl LspClient {
 
     fn open_java_files(&mut self, project_root: &Path, model: &CodeModel) -> Result<(), String> {
         for file in java_files(model) {
-            let path = project_root.join(&file);
-            let module_id = module_id_for_file(&file, &model.modules);
-            let text = fs::read_to_string(&path).map_err(|error| {
-                self.verbose_error(
-                    "didOpen",
-                    project_root,
-                    Some(&file),
-                    &format!(
-                        "failed to read Java source before JDTLS didOpen.\nmodule: {module_id}\nerror: {error}"
-                    ),
-                )
-            })?;
-            self.notify(
-                "textDocument/didOpen",
-                json!({
-                    "textDocument": {
-                        "uri": file_uri(&path),
-                        "languageId": "java",
-                        "version": 1,
-                        "text": text
-                    }
-                }),
-            )
-            .map_err(|error| {
-                self.verbose_error(
-                    "didOpen",
-                    project_root,
-                    Some(&file),
-                    &format!(
-                        "JDTLS didOpen notification failed.\nmodule: {module_id}\nerror: {error}"
-                    ),
-                )
-            })?;
+            self.open_java_file(project_root, &file, None)?;
         }
         Ok(())
+    }
+
+    fn open_java_file_paths(
+        &mut self,
+        project_root: &Path,
+        files: &[String],
+    ) -> Result<(), String> {
+        for file in files {
+            self.open_java_file(project_root, file, None)?;
+        }
+        Ok(())
+    }
+
+    fn open_java_file(
+        &mut self,
+        project_root: &Path,
+        file: &str,
+        module_id: Option<&str>,
+    ) -> Result<(), String> {
+        let module_label = module_id.unwrap_or("unknown");
+        let path = project_root.join(file);
+        let text = fs::read_to_string(&path).map_err(|error| {
+            self.verbose_error(
+                "didOpen",
+                project_root,
+                Some(file),
+                &format!(
+                    "failed to read Java source before JDTLS didOpen.\nmodule: {module_label}\nerror: {error}"
+                ),
+            )
+        })?;
+        self.notify(
+            "textDocument/didOpen",
+            json!({
+                "textDocument": {
+                    "uri": file_uri(&path),
+                    "languageId": "java",
+                    "version": 1,
+                    "text": text
+                }
+            }),
+        )
+        .map_err(|error| {
+            self.verbose_error(
+                "didOpen",
+                project_root,
+                Some(file),
+                &format!(
+                    "JDTLS didOpen notification failed.\nmodule: {module_label}\nerror: {error}"
+                ),
+            )
+        })?;
+        Ok(())
+    }
+
+    fn resolve_definition_requests(
+        &mut self,
+        project_root: &Path,
+        requests: &[JdtlsDefinitionRequest],
+        max_in_flight: usize,
+    ) -> Result<Vec<JdtlsDefinition>, String> {
+        let total = requests.len();
+        let started_at = Instant::now();
+        let mut next = 0;
+        let mut complete = 0;
+        let mut pending = BTreeMap::new();
+        let mut definitions = Vec::new();
+        log_phase_start("test definitions", total, max_in_flight);
+
+        while next < total || !pending.is_empty() {
+            while pending.len() < max_in_flight && next < total {
+                let request = requests[next].clone();
+                next += 1;
+                let path = project_root.join(&request.file);
+                let id = self
+                    .send_request(
+                        "textDocument/definition",
+                        json!({
+                            "textDocument": { "uri": file_uri(&path) },
+                            "position": {
+                                "line": request.line.saturating_sub(1),
+                                "character": request.column
+                            }
+                        }),
+                    )
+                    .map_err(|error| {
+                        self.verbose_error(
+                            "textDocument/definition",
+                            project_root,
+                            Some(&request.file),
+                            &format!(
+                                "JDTLS definition request failed for test call {} at {}:{}:{}.\nerror: {error}",
+                                request.name, request.file, request.line, request.column
+                            ),
+                        )
+                    })?;
+                pending.insert(id, request);
+            }
+
+            let response = self.read_response()?;
+            let Some(request) = pending.remove(&response.id) else {
+                continue;
+            };
+            let result = response.result.map_err(|error| {
+                self.verbose_error(
+                    "textDocument/definition",
+                    project_root,
+                    Some(&request.file),
+                    &format!(
+                        "JDTLS definition request failed for test call {} at {}:{}:{}.\nerror: {error}",
+                        request.name, request.file, request.line, request.column
+                    ),
+                )
+            })?;
+            for location in locations_from_value(&result) {
+                if let Some(file) = relative_uri_path(project_root, &location.uri) {
+                    definitions.push(JdtlsDefinition {
+                        owner_id: request.owner_id.clone(),
+                        name: request.name.clone(),
+                        file,
+                        line: location.line,
+                    });
+                }
+            }
+            complete += 1;
+            log_phase_progress(
+                "test definitions",
+                complete,
+                total,
+                pending.len(),
+                started_at,
+            );
+        }
+        Ok(definitions)
     }
 
     fn require_document_symbols(

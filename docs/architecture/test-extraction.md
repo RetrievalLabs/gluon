@@ -81,11 +81,12 @@ code-parser extract-tests \
 `--path` points at the source repository.
 
 `--database` points at an existing or writable `business-extraction.db`.
-When production extraction has already been run, test extraction can resolve
-test targets to existing production methods and classes in the same database.
+When production extraction has already been run, test extraction resolves test
+targets to existing production methods and classes in the same database.
 
-JDTLS settings should follow the same operational model as business extraction
-when semantic resolution is enabled:
+JDTLS is used for true target linking. Test method calls are resolved with
+`textDocument/definition`, then mapped back to production `methods.id` or
+`classes.id` by source file and line range:
 
 ```bash
 code-parser extract-tests \
@@ -273,7 +274,8 @@ Production extraction stores production methods and classes in:
 - `entry_points.id`
 
 Test extraction stores links from tests to those identifiers in
-`test_targets.target_id`.
+`test_targets.target_id`. These links come from JDTLS definition locations, not
+name matching.
 
 The KG can use this relationship to explain test coverage for a business fact:
 

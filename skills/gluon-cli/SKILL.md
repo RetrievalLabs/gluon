@@ -145,6 +145,37 @@ gluon-cli code-parser extract-business --path /path/to/project --output-dir /pat
 gluon-cli code-parser extract-business --path /path/to/project --output-dir /path/to/gluon/data --jdtls-command /opt/jdtls/bin/jdtls
 ```
 
+### `code-parser extract-tests`
+
+Extracts Java integration, E2E, and acceptance test evidence into the same
+SQLite database produced by `extract-business`.
+
+Required input:
+
+- `--path <project-root>`: Java project root or Java source file.
+- `--database <business-extraction.db>`: existing or writable extraction database.
+
+Flags:
+
+- `--jdtls-command <command>`: JDTLS executable used for true target linking. Defaults to `jdtls`.
+- `--jdtls-workspace <directory>`: JDTLS workspace directory. Defaults beside the database path.
+- `--jdtls-max-in-flight <count>`: maximum definition requests in flight. Defaults to `32`.
+
+Outputs:
+
+- Appends/replaces `test_*` tables in `business-extraction.db`.
+- Stdout summary with test suite, case, target, assertion, fixture, entry point, and diagnostic counts.
+- Stderr phase status for test scan, target linking, database write, and elapsed time.
+- Regular unit tests are skipped. Integration, E2E, and acceptance tests are included.
+- `test_targets` are resolved through JDTLS `textDocument/definition` and mapped to production method/class IDs by source range.
+- No LLM in v1.
+
+Example:
+
+```bash
+gluon-cli code-parser extract-tests --path /path/to/project --database /path/to/gluon/data/project/business-extraction.db
+```
+
 ### `code-parser build-business-kg`
 
 Builds `business-kg.db` from high-value methods in `business-extraction.db`.

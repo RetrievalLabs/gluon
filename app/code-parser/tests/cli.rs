@@ -415,6 +415,68 @@ fn extract_business_persists_multi_module_ownership() {
 }
 
 #[test]
+fn extract_tests_appends_test_tables_to_business_database() {
+    let root = test_dir("extract-tests");
+    fs::create_dir_all(root.join("src/main/java/demo")).unwrap();
+    fs::create_dir_all(root.join("src/integrationTest/java/demo")).unwrap();
+    fs::write(
+        root.join("src/main/java/demo/OrderService.java"),
+        "package demo; public class OrderService { public void approve() {} }\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/integrationTest/java/demo/OrderServiceIT.java"),
+        r#"package demo;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+@SpringBootTest
+class OrderServiceIT {
+  @Test
+  void approvesOrder() {
+    OrderService service = new OrderService();
+    service.approve();
+    assertEquals("ok", "ok");
+  }
+}
+"#,
+    )
+    .unwrap();
+    let db = root.join("business-extraction.db");
+    write_test_target_business_db(&db);
+    let fake_jdtls = write_definition_fake_jdtls(&root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["extract-tests", "--path"])
+        .arg(&root)
+        .args(["--database"])
+        .arg(&db)
+        .args(["--jdtls-command"])
+        .arg(&fake_jdtls)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("test_suites: 1"));
+    assert!(stdout.contains("test_cases: 1"));
+    assert!(stdout.contains("test_assertions: 1"));
+    let connection = Connection::open(&db).unwrap();
+    let suite_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM test_suites", [], |row| row.get(0))
+        .unwrap();
+    let case_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM test_cases", [], |row| row.get(0))
+        .unwrap();
+    let target_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM test_targets", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(suite_count, 1);
+    assert_eq!(case_count, 1);
+    assert!(target_count >= 1);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn build_business_kg_rejects_missing_api_key() {
     let root = test_dir("build-kg-missing-key");
     fs::write(
@@ -571,6 +633,103 @@ fn write_business_extraction_db(path: &PathBuf, file: &str) {
             [],
         )
         .unwrap();
+}
+
+fn write_test_target_business_db(path: &PathBuf) {
+    let connection = Connection::open(path).unwrap();
+    connection
+        .execute_batch(
+            "
+            CREATE TABLE classes (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                qualified_name TEXT NOT NULL,
+                file TEXT NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL
+            );
+            CREATE TABLE methods (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                file TEXT NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL
+            );
+            INSERT INTO classes (id, name, qualified_name, file, start_line, end_line)
+            VALUES ('class:demo.OrderService@src/main/java/demo/OrderService.java:1', 'OrderService', 'demo.OrderService', 'src/main/java/demo/OrderService.java', 1, 1);
+            INSERT INTO methods (id, name, file, start_line, end_line)
+            VALUES ('method:demo.OrderService#approve()@src/main/java/demo/OrderService.java:1', 'approve', 'src/main/java/demo/OrderService.java', 1, 1);
+            ",
+        )
+        .unwrap();
+}
+
+fn write_definition_fake_jdtls(root: &PathBuf) -> PathBuf {
+    let script = root.join("fake-definition-jdtls.py");
+    let target = root
+        .join("src/main/java/demo/OrderService.java")
+        .display()
+        .to_string();
+    fs::write(
+        &script,
+        format!(
+            r#"#!/usr/bin/env python3
+import json
+import sys
+
+target_uri = "file://{target}"
+
+def read_message():
+    length = None
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return None
+        line = line.decode("utf-8").strip()
+        if not line:
+            break
+        if line.lower().startswith("content-length:"):
+            length = int(line.split(":", 1)[1].strip())
+    if length is None:
+        return None
+    return json.loads(sys.stdin.buffer.read(length).decode("utf-8"))
+
+def write_message(value):
+    body = json.dumps(value).encode("utf-8")
+    sys.stdout.buffer.write(b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body)
+    sys.stdout.buffer.flush()
+
+while True:
+    message = read_message()
+    if message is None:
+        break
+    method = message.get("method")
+    if "id" not in message:
+        if method == "exit":
+            break
+        continue
+    if method == "initialize":
+        result = {{"capabilities": {{"definitionProvider": True}}}}
+    elif method == "shutdown":
+        result = None
+    elif method == "textDocument/definition":
+        result = [{{"uri": target_uri, "range": {{"start": {{"line": 0, "character": 43}}, "end": {{"line": 0, "character": 50}}}}}}]
+    else:
+        result = None
+    write_message({{"jsonrpc": "2.0", "id": message["id"], "result": result}})
+"#,
+            target = target.replace('\\', "\\\\").replace('"', "\\\"")
+        ),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(&script).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script, permissions).unwrap();
+    }
+    script
 }
 
 fn test_dir(name: &str) -> PathBuf {
