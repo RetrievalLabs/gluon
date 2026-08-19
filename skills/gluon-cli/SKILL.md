@@ -207,7 +207,8 @@ Outputs:
 - SQLite `business-kg.db` with reusable business nodes, business edges, evidence rows, and LLM run metadata.
 - Stdout selection, LLM token usage, and database summary.
 - Stderr live progress for long runs: selected count, current method, success/failure, tool calls, token usage, elapsed time, and final status.
-- Bounded LLM tools can read compact extraction DB context, related method source, and existing KG nodes; the default limit is 5 tool calls per method.
+- Bounded LLM tools can read compact extraction DB context, related method source, existing KG nodes, and optional `test_*` evidence from the same DB; the default limit is 5 tool calls per method.
+- Test evidence is supporting context only. Business facts still require production source evidence.
 - Malformed JSON responses are repaired locally or retried once through the LLM. Common malformed edge fields such as `source`/`target` are normalized before validation.
 - No persistent LLM cache in v1.
 

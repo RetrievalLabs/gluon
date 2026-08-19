@@ -249,6 +249,12 @@ candidate_signals
 evidence_ranges
 context_packets
 diagnostics
+test_suites
+test_cases
+test_targets
+test_assertions
+test_fixtures
+test_entry_points
 ```
 
 Important relationships:
@@ -269,6 +275,13 @@ methods.id
     +--> candidate_signals.method_id
     |
     +--> evidence_ranges.method_id
+    |
+    +--> test_targets.target_id
+            |
+            +--> test_cases.id
+            +--> test_assertions.test_case_id
+            +--> test_fixtures.test_case_id / suite_id
+            +--> test_entry_points.test_case_id
 ```
 
 The LLM should not need to know every column of every table initially.
@@ -404,6 +417,28 @@ search_source(pattern, limit)
 ```
 
 with a maximum result count.
+
+## 7.7 Test Evidence Tools
+
+When `extract-tests` has populated the same extraction DB, the KG builder can
+expose bounded test evidence through narrow tools:
+
+``` text
+get_tests_for_method(method_id, limit)
+get_test_case(test_case_id)
+get_test_assertions(test_case_id, limit)
+get_test_entry_points(test_case_id, limit)
+get_test_fixtures(test_case_id, limit)
+```
+
+These tools read only `test_*` tables and return compact rows linked through
+`test_targets`. They are optional: if test extraction has not run, they return
+empty results.
+
+The LLM must treat test evidence as supporting validation only. Tests can help
+confirm workflows, expected states, entry points, and fixtures, but they must
+not create business facts by themselves. A KG node or edge still needs
+production source evidence from the current method or related methods.
 
 ------------------------------------------------------------------------
 

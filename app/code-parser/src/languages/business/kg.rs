@@ -1069,6 +1069,15 @@ fn clamp_limit(limit: usize) -> usize {
     limit.clamp(1, 20)
 }
 
+fn truncate_text(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    let mut truncated = value.chars().take(max_chars).collect::<String>();
+    truncated.push_str("\n...[truncated]");
+    truncated
+}
+
 fn build_prompt(request: &MethodRequest) -> Result<String, String> {
     let entry_points = serde_json::to_string(&request.method.entry_points)
         .map_err(|error| format!("failed to serialize entry points: {error}"))?;
@@ -1096,6 +1105,7 @@ Existing KG nodes available for reuse:
 {existing_nodes}
 
 Use available tools only when this method needs more context. Stop once enough evidence has been collected.
+Test tools expose integration/E2E/acceptance evidence when test extraction has been run. Use tests only as supporting validation; do not create business facts from tests alone without production source evidence from the current or related methods.
 
 Return only JSON with this shape:
 {{
@@ -1243,6 +1253,31 @@ fn tool_schemas() -> Vec<Value> {
             "get_business_neighbors",
             "Return bounded incoming and outgoing KG neighbors.",
             &[("node_id", "string")],
+        ),
+        tool_schema(
+            "get_tests_for_method",
+            "Return bounded integration/E2E/acceptance tests linked to a production method.",
+            &[("method_id", "string")],
+        ),
+        tool_schema(
+            "get_test_case",
+            "Return compact metadata and bounded body text for one test case.",
+            &[("test_case_id", "string")],
+        ),
+        tool_schema(
+            "get_test_assertions",
+            "Return bounded assertions for one test case.",
+            &[("test_case_id", "string")],
+        ),
+        tool_schema(
+            "get_test_entry_points",
+            "Return bounded HTTP, messaging, or command entry points exercised by one test case.",
+            &[("test_case_id", "string")],
+        ),
+        tool_schema(
+            "get_test_fixtures",
+            "Return bounded suite and case fixtures for one test case.",
+            &[("test_case_id", "string")],
         ),
     ]
 }
@@ -1623,6 +1658,188 @@ impl<'a> MethodToolExecutor<'a> {
         let limit = arg_limit(input);
         self.store.find_business_nodes(query, kind, limit)
     }
+
+    fn get_tests_for_method(&self, method_id: &str, limit: usize) -> Result<Value, String> {
+        if !table_exists(self.extraction, "test_targets")?
+            || !table_exists(self.extraction, "test_cases")?
+        {
+            return Ok(serde_json::json!({ "tests": [] }));
+        }
+        let mut statement = self
+            .extraction
+            .prepare(
+                "SELECT tc.id, tc.name, tc.display_name, tc.test_kind, tc.file,
+                        tc.start_line, tc.end_line, tt.relationship, tt.confidence, tt.source
+                 FROM test_targets tt
+                 JOIN test_cases tc ON tc.id = tt.test_case_id
+                 WHERE tt.target_kind = 'method' AND tt.target_id = ?1
+                 ORDER BY tt.confidence DESC, tc.file, tc.start_line, tc.id
+                 LIMIT ?2",
+            )
+            .map_err(|error| format!("failed to prepare test target query: {error}"))?;
+        let rows = statement
+            .query_map(params![method_id, clamp_limit(limit) as i64], |row| {
+                Ok(serde_json::json!({
+                    "test_case_id": row.get::<_, String>(0)?,
+                    "name": row.get::<_, String>(1)?,
+                    "display_name": row.get::<_, Option<String>>(2)?,
+                    "test_kind": row.get::<_, String>(3)?,
+                    "file": row.get::<_, String>(4)?,
+                    "start_line": row.get::<_, i64>(5)?,
+                    "end_line": row.get::<_, i64>(6)?,
+                    "relationship": row.get::<_, String>(7)?,
+                    "confidence": row.get::<_, f64>(8)?,
+                    "source": row.get::<_, String>(9)?,
+                }))
+            })
+            .map_err(|error| format!("failed to query tests for method {method_id}: {error}"))?;
+        Ok(serde_json::json!({ "tests": collect_json_rows(rows)? }))
+    }
+
+    fn get_test_case(&self, test_case_id: &str) -> Result<Value, String> {
+        if !table_exists(self.extraction, "test_cases")? {
+            return Ok(serde_json::json!({ "test_case": null }));
+        }
+        let test_case = self
+            .extraction
+            .query_row(
+                "SELECT tc.id, tc.suite_id, tc.name, tc.display_name, tc.test_kind,
+                        tc.file, tc.start_line, tc.end_line, tc.annotations_json,
+                        tc.body_text, ts.qualified_name
+                 FROM test_cases tc
+                 LEFT JOIN test_suites ts ON ts.id = tc.suite_id
+                 WHERE tc.id = ?1",
+                [test_case_id],
+                |row| {
+                    let body_text: String = row.get(9)?;
+                    Ok(serde_json::json!({
+                        "id": row.get::<_, String>(0)?,
+                        "suite_id": row.get::<_, String>(1)?,
+                        "name": row.get::<_, String>(2)?,
+                        "display_name": row.get::<_, Option<String>>(3)?,
+                        "test_kind": row.get::<_, String>(4)?,
+                        "file": row.get::<_, String>(5)?,
+                        "start_line": row.get::<_, i64>(6)?,
+                        "end_line": row.get::<_, i64>(7)?,
+                        "annotations_json": row.get::<_, String>(8)?,
+                        "body_text": truncate_text(&body_text, 4000),
+                        "suite_qualified_name": row.get::<_, Option<String>>(10)?,
+                    }))
+                },
+            )
+            .optional()
+            .map_err(|error| format!("failed to query test case {test_case_id}: {error}"))?;
+        Ok(serde_json::json!({ "test_case": test_case }))
+    }
+
+    fn get_test_assertions(&self, test_case_id: &str, limit: usize) -> Result<Value, String> {
+        if !table_exists(self.extraction, "test_assertions")? {
+            return Ok(serde_json::json!({ "assertions": [] }));
+        }
+        let mut statement = self
+            .extraction
+            .prepare(
+                "SELECT assertion_kind, expression, expected_value, file, line
+                 FROM test_assertions
+                 WHERE test_case_id = ?1
+                 ORDER BY line, id
+                 LIMIT ?2",
+            )
+            .map_err(|error| format!("failed to prepare test assertion query: {error}"))?;
+        let rows = statement
+            .query_map(params![test_case_id, clamp_limit(limit) as i64], |row| {
+                let expression: String = row.get(1)?;
+                Ok(serde_json::json!({
+                    "assertion_kind": row.get::<_, String>(0)?,
+                    "expression": truncate_text(&expression, 1000),
+                    "expected_value": row.get::<_, Option<String>>(2)?,
+                    "file": row.get::<_, String>(3)?,
+                    "line": row.get::<_, i64>(4)?,
+                }))
+            })
+            .map_err(|error| format!("failed to query test assertions {test_case_id}: {error}"))?;
+        Ok(serde_json::json!({ "assertions": collect_json_rows(rows)? }))
+    }
+
+    fn get_test_entry_points(&self, test_case_id: &str, limit: usize) -> Result<Value, String> {
+        if !table_exists(self.extraction, "test_entry_points")? {
+            return Ok(serde_json::json!({ "entry_points": [] }));
+        }
+        let mut statement = self
+            .extraction
+            .prepare(
+                "SELECT kind, framework, route, http_method, topic, command, source
+                 FROM test_entry_points
+                 WHERE test_case_id = ?1
+                 ORDER BY id
+                 LIMIT ?2",
+            )
+            .map_err(|error| format!("failed to prepare test entry point query: {error}"))?;
+        let rows = statement
+            .query_map(params![test_case_id, clamp_limit(limit) as i64], |row| {
+                Ok(serde_json::json!({
+                    "kind": row.get::<_, String>(0)?,
+                    "framework": row.get::<_, Option<String>>(1)?,
+                    "route": row.get::<_, Option<String>>(2)?,
+                    "http_method": row.get::<_, Option<String>>(3)?,
+                    "topic": row.get::<_, Option<String>>(4)?,
+                    "command": row.get::<_, Option<String>>(5)?,
+                    "source": row.get::<_, String>(6)?,
+                }))
+            })
+            .map_err(|error| {
+                format!("failed to query test entry points {test_case_id}: {error}")
+            })?;
+        Ok(serde_json::json!({ "entry_points": collect_json_rows(rows)? }))
+    }
+
+    fn get_test_fixtures(&self, test_case_id: &str, limit: usize) -> Result<Value, String> {
+        if !table_exists(self.extraction, "test_cases")?
+            || !table_exists(self.extraction, "test_fixtures")?
+        {
+            return Ok(serde_json::json!({ "fixtures": [] }));
+        }
+        let suite_id = self
+            .extraction
+            .query_row(
+                "SELECT suite_id FROM test_cases WHERE id = ?1",
+                [test_case_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| format!("failed to query test case suite {test_case_id}: {error}"))?;
+        let Some(suite_id) = suite_id else {
+            return Ok(serde_json::json!({ "fixtures": [] }));
+        };
+        let mut statement = self
+            .extraction
+            .prepare(
+                "SELECT fixture_kind, name, details_json, file, line,
+                        CASE WHEN test_case_id IS NULL THEN 'suite' ELSE 'case' END
+                 FROM test_fixtures
+                 WHERE test_case_id = ?1 OR suite_id = ?2
+                 ORDER BY line, id
+                 LIMIT ?3",
+            )
+            .map_err(|error| format!("failed to prepare test fixture query: {error}"))?;
+        let rows = statement
+            .query_map(
+                params![test_case_id, suite_id, clamp_limit(limit) as i64],
+                |row| {
+                    let details_json: String = row.get(2)?;
+                    Ok(serde_json::json!({
+                        "fixture_kind": row.get::<_, String>(0)?,
+                        "name": row.get::<_, String>(1)?,
+                        "details_json": truncate_text(&details_json, 1000),
+                        "file": row.get::<_, String>(3)?,
+                        "line": row.get::<_, i64>(4)?,
+                        "scope": row.get::<_, String>(5)?,
+                    }))
+                },
+            )
+            .map_err(|error| format!("failed to query test fixtures {test_case_id}: {error}"))?;
+        Ok(serde_json::json!({ "fixtures": collect_json_rows(rows)? }))
+    }
 }
 
 impl ToolExecutor for MethodToolExecutor<'_> {
@@ -1652,6 +1869,19 @@ impl ToolExecutor for MethodToolExecutor<'_> {
             "get_business_neighbors" => self
                 .store
                 .get_business_neighbors(arg_str(input, "node_id")?, arg_limit(input)),
+            "get_tests_for_method" => {
+                self.get_tests_for_method(arg_str(input, "method_id")?, arg_limit(input))
+            }
+            "get_test_case" => self.get_test_case(arg_str(input, "test_case_id")?),
+            "get_test_assertions" => {
+                self.get_test_assertions(arg_str(input, "test_case_id")?, arg_limit(input))
+            }
+            "get_test_entry_points" => {
+                self.get_test_entry_points(arg_str(input, "test_case_id")?, arg_limit(input))
+            }
+            "get_test_fixtures" => {
+                self.get_test_fixtures(arg_str(input, "test_case_id")?, arg_limit(input))
+            }
             other => Err(format!("unsupported tool: {other}")),
         }
     }
@@ -3004,6 +3234,90 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[test]
+    fn tool_executor_reads_bounded_test_evidence() {
+        let root = test_dir("business-kg-test-tools");
+        fs::write(
+            root.join("OrderService.java"),
+            "class OrderService {\n  void approve() {\n    validate();\n  }\n  void validate() {}\n}\n",
+        )
+        .unwrap();
+        let extraction_db = root.join("business-extraction.db");
+        write_extraction_db(&extraction_db, "OrderService.java");
+        let extraction = Connection::open(&extraction_db).unwrap();
+        let store = KgStore::open(&root.join("business-kg.db")).unwrap();
+        let current = CandidateMethod {
+            id: "method:OrderService#approve".to_string(),
+            class_name: "OrderService".to_string(),
+            name: "approve".to_string(),
+            signature: "approve()".to_string(),
+            file: "OrderService.java".to_string(),
+            start_line: 2,
+            end_line: 4,
+            score: 10,
+            priority: "high".to_string(),
+            source: String::new(),
+            entry_points: Vec::new(),
+        };
+        let mut tools = MethodToolExecutor::new(&extraction, &root, &store, &current);
+
+        let tests = tools
+            .execute_tool(
+                "get_tests_for_method",
+                &serde_json::json!({"method_id": "method:OrderService#approve", "limit": 1}),
+            )
+            .unwrap();
+        assert_eq!(
+            tests["tests"][0]["test_case_id"],
+            "test-case:OrderServiceIT#approvePending"
+        );
+        assert_eq!(tests["tests"][0]["source"], "jdtls_definition");
+
+        let test_case = tools
+            .execute_tool(
+                "get_test_case",
+                &serde_json::json!({"test_case_id": "test-case:OrderServiceIT#approvePending"}),
+            )
+            .unwrap();
+        assert_eq!(test_case["test_case"]["name"], "approvePending");
+        assert!(
+            test_case["test_case"]["body_text"]
+                .as_str()
+                .unwrap()
+                .contains("approve();")
+        );
+
+        let assertions = tools
+            .execute_tool(
+                "get_test_assertions",
+                &serde_json::json!({"test_case_id": "test-case:OrderServiceIT#approvePending"}),
+            )
+            .unwrap();
+        assert_eq!(assertions["assertions"][0]["assertion_kind"], "assertThat");
+
+        let entry_points = tools
+            .execute_tool(
+                "get_test_entry_points",
+                &serde_json::json!({"test_case_id": "test-case:OrderServiceIT#approvePending"}),
+            )
+            .unwrap();
+        assert_eq!(
+            entry_points["entry_points"][0]["route"],
+            "/orders/{id}/approve"
+        );
+
+        let fixtures = tools
+            .execute_tool(
+                "get_test_fixtures",
+                &serde_json::json!({"test_case_id": "test-case:OrderServiceIT#approvePending"}),
+            )
+            .unwrap();
+        assert_eq!(fixtures["fixtures"].as_array().unwrap().len(), 2);
+        assert_eq!(fixtures["fixtures"][0]["scope"], "suite");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
     fn write_extraction_db(path: &Path, file: &str) {
         let connection = Connection::open(path).unwrap();
         connection
@@ -3046,6 +3360,69 @@ mod tests {
                     framework TEXT,
                     route TEXT,
                     http_method TEXT
+                );
+                CREATE TABLE test_suites (
+                    id TEXT PRIMARY KEY,
+                    module_id TEXT,
+                    class_name TEXT NOT NULL,
+                    package_name TEXT,
+                    qualified_name TEXT NOT NULL,
+                    test_kind TEXT NOT NULL,
+                    file TEXT NOT NULL,
+                    start_line INTEGER NOT NULL,
+                    end_line INTEGER NOT NULL,
+                    annotations_json TEXT NOT NULL
+                );
+                CREATE TABLE test_cases (
+                    id TEXT PRIMARY KEY,
+                    suite_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    display_name TEXT,
+                    test_kind TEXT NOT NULL,
+                    file TEXT NOT NULL,
+                    start_line INTEGER NOT NULL,
+                    end_line INTEGER NOT NULL,
+                    annotations_json TEXT NOT NULL,
+                    body_text TEXT NOT NULL
+                );
+                CREATE TABLE test_targets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    test_case_id TEXT NOT NULL,
+                    target_kind TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    relationship TEXT NOT NULL,
+                    confidence REAL NOT NULL,
+                    source TEXT NOT NULL
+                );
+                CREATE TABLE test_assertions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    test_case_id TEXT NOT NULL,
+                    assertion_kind TEXT NOT NULL,
+                    expression TEXT NOT NULL,
+                    expected_value TEXT,
+                    file TEXT NOT NULL,
+                    line INTEGER NOT NULL
+                );
+                CREATE TABLE test_fixtures (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    suite_id TEXT,
+                    test_case_id TEXT,
+                    fixture_kind TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    details_json TEXT NOT NULL,
+                    file TEXT NOT NULL,
+                    line INTEGER NOT NULL
+                );
+                CREATE TABLE test_entry_points (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    test_case_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    framework TEXT,
+                    route TEXT,
+                    http_method TEXT,
+                    topic TEXT,
+                    command TEXT,
+                    source TEXT NOT NULL
                 );
                 ",
             )
@@ -3090,6 +3467,89 @@ mod tests {
             .execute(
                 "INSERT INTO relationships (source_id, target_id, kind, confidence, source)
                  VALUES ('method:OrderService#approve', 'method:OrderService#validate', 'CALLS', 0.9, 'tree-sitter')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO test_suites (
+                    id, module_id, class_name, package_name, qualified_name, test_kind,
+                    file, start_line, end_line, annotations_json
+                 ) VALUES (
+                    'test-suite:OrderServiceIT', 'module:.', 'OrderServiceIT', NULL,
+                    'OrderServiceIT', 'integration', 'OrderServiceIT.java', 1, 20, '[]'
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO test_cases (
+                    id, suite_id, name, display_name, test_kind, file, start_line,
+                    end_line, annotations_json, body_text
+                 ) VALUES (
+                    'test-case:OrderServiceIT#approvePending', 'test-suite:OrderServiceIT',
+                    'approvePending', 'approves pending orders', 'integration',
+                    'OrderServiceIT.java', 5, 12, '[]',
+                    'void approvePending() { approve(); assertThat(status).isEqualTo(APPROVED); }'
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO test_targets (
+                    test_case_id, target_kind, target_id, relationship, confidence, source
+                 ) VALUES (
+                    'test-case:OrderServiceIT#approvePending', 'method',
+                    'method:OrderService#approve', 'exercises', 0.95, 'jdtls_definition'
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO test_assertions (
+                    test_case_id, assertion_kind, expression, expected_value, file, line
+                 ) VALUES (
+                    'test-case:OrderServiceIT#approvePending', 'assertThat',
+                    'assertThat(status).isEqualTo(APPROVED)', 'APPROVED',
+                    'OrderServiceIT.java', 10
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO test_fixtures (
+                    suite_id, test_case_id, fixture_kind, name, details_json, file, line
+                 ) VALUES (
+                    'test-suite:OrderServiceIT', NULL, 'setup', 'createPendingOrder',
+                    '{\"status\":\"PENDING\"}', 'OrderServiceIT.java', 3
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO test_fixtures (
+                    suite_id, test_case_id, fixture_kind, name, details_json, file, line
+                 ) VALUES (
+                    'test-suite:OrderServiceIT', 'test-case:OrderServiceIT#approvePending',
+                    'given', 'pendingOrder', '{\"status\":\"PENDING\"}',
+                    'OrderServiceIT.java', 6
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO test_entry_points (
+                    test_case_id, kind, framework, route, http_method, topic, command, source
+                 ) VALUES (
+                    'test-case:OrderServiceIT#approvePending', 'http', 'spring',
+                    '/orders/{id}/approve', 'POST', NULL, NULL, 'mockMvc'
+                 )",
                 [],
             )
             .unwrap();
