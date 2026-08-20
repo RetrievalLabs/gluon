@@ -65,10 +65,10 @@ the CLI blocks extraction and prints verbose failure details.
 
 Semantic enrichment sends bounded pipelined LSP requests within each phase
 rather than waiting for every request before sending the next one. The default
-window is 32 in-flight requests. Default extraction resolves document symbols
-and call definitions. Deep enrichment is opt-in and additionally resolves
-project-wide references and implementations; those heavier phases are capped
-lower to avoid overwhelming JDTLS on large repositories.
+window is 32 in-flight requests. Extraction resolves document symbols, call
+definitions, project-wide references, and implementations. Reference and
+implementation phases are capped lower to avoid overwhelming JDTLS on large
+repositories.
 
 ---
 
@@ -230,7 +230,7 @@ Code Model
     └── WRITES
 ```
 
-The Code Model is persisted in SQLite as the v1 system of record. Tree-sitter creates complete structural records first. JDTLS then enriches those records with resolved symbols and call targets in default mode. Deep enrichment additionally resolves references and implementations when requested.
+The Code Model is persisted in SQLite as the v1 system of record. Tree-sitter creates complete structural records first. JDTLS then enriches those records with resolved symbols, call targets, references, and implementations.
 
 Example:
 
@@ -434,7 +434,7 @@ The CLI should print a short summary to stdout, including database path, module 
 The CLI command is:
 
 ```bash
-code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--jdtls-deep]
+code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]
 ```
 
 `--jdtls-command` defaults to `jdtls`. The command is mandatory for v1 extraction.

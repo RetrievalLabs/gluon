@@ -699,7 +699,6 @@ fn link_targets_with_jdtls(
             command: options.jdtls_command.clone(),
             workspace,
             max_in_flight: options.jdtls_max_in_flight,
-            deep_enrichment: false,
         },
         &java_files,
         &requests,

@@ -16,7 +16,6 @@ pub struct JdtlsOptions {
     pub command: String,
     pub workspace: PathBuf,
     pub max_in_flight: usize,
-    pub deep_enrichment: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -62,14 +61,8 @@ pub fn enrich_with_jdtls(
     client.open_java_files(project_root, model)?;
     client.require_document_symbols(project_root, model, max_in_flight)?;
     client.resolve_invocations(project_root, model, max_in_flight)?;
-    if options.deep_enrichment {
-        client.resolve_references(project_root, model, max_in_flight.min(16))?;
-        client.resolve_implementations(project_root, model, max_in_flight.min(16))?;
-    } else {
-        eprintln!(
-            "jdtls deep enrichment skipped; pass --jdtls-deep to resolve references and implementations"
-        );
-    }
+    client.resolve_references(project_root, model, max_in_flight.min(16))?;
+    client.resolve_implementations(project_root, model, max_in_flight.min(16))?;
     client.shutdown();
     Ok(())
 }

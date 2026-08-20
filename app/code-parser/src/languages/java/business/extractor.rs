@@ -130,8 +130,8 @@ pub fn extract_business(options: &BusinessExtractionOptions) -> Result<Extractio
     let phase = checkpoint_phase(&checkpoint_path).unwrap_or(CheckpointPhase::Structure);
     if phase == CheckpointPhase::Structure {
         eprintln!(
-            "extract-business jdtls: start command={} max_in_flight={} deep={}",
-            options.jdtls_command, options.jdtls_max_in_flight, options.jdtls_deep
+            "extract-business jdtls: start command={} max_in_flight={}",
+            options.jdtls_command, options.jdtls_max_in_flight
         );
         let phase_started_at = Instant::now();
         enrich_with_jdtls(
@@ -140,7 +140,6 @@ pub fn extract_business(options: &BusinessExtractionOptions) -> Result<Extractio
                 command: options.jdtls_command.clone(),
                 workspace,
                 max_in_flight: options.jdtls_max_in_flight,
-                deep_enrichment: options.jdtls_deep,
             },
             &mut model,
         )?;

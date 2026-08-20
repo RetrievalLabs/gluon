@@ -28,7 +28,6 @@ pub struct BusinessExtractionOptions {
     pub jdtls_command: String,
     pub jdtls_workspace: Option<std::path::PathBuf>,
     pub jdtls_max_in_flight: usize,
-    pub jdtls_deep: bool,
     pub resume: bool,
 }
 
