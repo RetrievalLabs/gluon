@@ -531,6 +531,23 @@ fn generate_characterization_tests_persists_traceable_behaviors() {
             |row| row.get(0),
         )
         .unwrap();
+    let scenario_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM characterization_scenarios",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let file_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM characterization_files", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let generated_path: String = connection
+        .query_row("SELECT path FROM characterization_files", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
     let method_ids_json: String = connection
         .query_row(
             "SELECT source_method_ids_json FROM characterization_behaviors",
@@ -540,7 +557,13 @@ fn generate_characterization_tests_persists_traceable_behaviors() {
         .unwrap();
     assert_eq!(run_count, 1);
     assert_eq!(behavior_count, 1);
+    assert_eq!(scenario_count, 1);
+    assert_eq!(file_count, 1);
     assert!(method_ids_json.contains("method:OrderService#approve"));
+    let generated_file = root.join(&generated_path);
+    let generated_source = fs::read_to_string(generated_file).unwrap();
+    assert!(generated_source.contains("GLUON-GENERATED-CHARACTERIZATION-TEST"));
+    assert!(generated_source.contains("@Ignore"));
     let _ = fs::remove_dir_all(root);
     let _ = fs::remove_dir_all(output_root);
 }

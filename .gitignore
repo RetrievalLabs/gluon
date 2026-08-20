@@ -16,3 +16,5 @@ bin/
 .env
 .env.*
 !.env.example
+
+data/nakadi/

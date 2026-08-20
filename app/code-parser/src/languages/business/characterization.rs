@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OptionalExtension, params};
+use sha2::{Digest, Sha256};
 
 const SUPPORTED_NODE_KINDS: [&str; 5] = [
     "BusinessRule",
@@ -44,6 +45,40 @@ struct BehaviorCandidate {
     statement: String,
     method_ids: Vec<String>,
 }
+
+#[derive(Debug)]
+struct MethodContext {
+    method_id: String,
+    method_name: String,
+    signature: Option<String>,
+    file: Option<String>,
+    start_line: Option<i64>,
+    end_line: Option<i64>,
+    class_name: Option<String>,
+    qualified_class_name: Option<String>,
+    package_name: Option<String>,
+}
+
+#[derive(Debug)]
+struct GeneratedScenario {
+    id: String,
+    name: String,
+    scenario_kind: String,
+    invocation_kind: String,
+}
+
+#[derive(Debug)]
+struct GeneratedFile {
+    scenario_id: String,
+    path: PathBuf,
+    relative_path: String,
+    class_name: String,
+    package_name: String,
+    content: String,
+    content_hash: String,
+}
+
+const GENERATED_MARKER: &str = "GLUON-GENERATED-CHARACTERIZATION-TEST";
 
 pub fn generate_characterization_tests(
     options: &GenerateCharacterizationTestsOptions,
@@ -101,6 +136,44 @@ pub fn generate_characterization_tests(
             Ok(persisted) => {
                 if persisted {
                     summary.persisted_behaviors += 1;
+                    match generate_behavior_scaffold(&business, options, run_id, &candidate) {
+                        Ok((scenario, file)) => {
+                            store.persist_scenario(
+                                run_id,
+                                &behavior_id(&candidate.node_id),
+                                &scenario,
+                            )?;
+                            match write_generated_file(&file, options.force) {
+                                Ok(()) => {
+                                    store.persist_file(&file)?;
+                                }
+                                Err(error) => {
+                                    summary.diagnostics += 1;
+                                    store.record_diagnostic(
+                                        run_id,
+                                        Some(&behavior_id(&candidate.node_id)),
+                                        Some(&candidate.node_id),
+                                        Some(&scenario.id),
+                                        "error",
+                                        "write_file",
+                                        &error,
+                                    )?;
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            summary.diagnostics += 1;
+                            store.record_diagnostic(
+                                run_id,
+                                Some(&behavior_id(&candidate.node_id)),
+                                Some(&candidate.node_id),
+                                None,
+                                "error",
+                                "generate",
+                                &error,
+                            )?;
+                        }
+                    }
                 } else {
                     summary.skipped_behaviors += 1;
                 }
@@ -111,6 +184,7 @@ pub fn generate_characterization_tests(
                     run_id,
                     Some(&behavior_id(&candidate.node_id)),
                     Some(&candidate.node_id),
+                    None,
                     "error",
                     "persist",
                     &error,
@@ -273,6 +347,321 @@ fn method_exists(connection: &Connection, method_id: &str) -> Result<bool, Strin
         .map_err(|error| format!("failed to verify method {method_id}: {error}"))
 }
 
+fn generate_behavior_scaffold(
+    business: &Connection,
+    options: &GenerateCharacterizationTestsOptions,
+    run_id: i64,
+    candidate: &BehaviorCandidate,
+) -> Result<(GeneratedScenario, GeneratedFile), String> {
+    let method_id = candidate
+        .method_ids
+        .first()
+        .ok_or_else(|| format!("behavior {} has no source methods", candidate.node_id))?;
+    let method = load_method_context(business, method_id)?;
+    let scenario_id = scenario_id(&candidate.node_id, method_id);
+    let scenario = GeneratedScenario {
+        id: scenario_id.clone(),
+        name: format!("Characterize {}", candidate.name),
+        scenario_kind: "scaffold".to_string(),
+        invocation_kind: invocation_kind(business, method_id),
+    };
+    let package_name = generated_package_name(method.package_name.as_deref());
+    let class_name = generated_class_name(&candidate.name, &candidate.node_id);
+    let relative_path = generated_relative_path(&method, &package_name, &class_name);
+    let path = options.source_path.join(&relative_path);
+    let content = render_scaffold_test(run_id, candidate, &method, &package_name, &class_name);
+    let content_hash = sha256_hex(&content);
+
+    Ok((
+        scenario,
+        GeneratedFile {
+            scenario_id,
+            path,
+            relative_path: relative_path.display().to_string(),
+            class_name,
+            package_name,
+            content,
+            content_hash,
+        },
+    ))
+}
+
+fn load_method_context(connection: &Connection, method_id: &str) -> Result<MethodContext, String> {
+    let method_name = query_text_column(connection, "methods", "name", "id", method_id)?
+        .ok_or_else(|| format!("method not found: {method_id}"))?;
+    let class_id = query_text_column(connection, "methods", "class_id", "id", method_id)?;
+    let signature = query_text_column(connection, "methods", "signature", "id", method_id)?;
+    let file = query_text_column(connection, "methods", "file", "id", method_id)?;
+    let start_line = query_i64_column(connection, "methods", "start_line", "id", method_id)?;
+    let end_line = query_i64_column(connection, "methods", "end_line", "id", method_id)?;
+
+    let class_name = class_id.as_deref().and_then(|id| {
+        query_text_column(connection, "classes", "name", "id", id)
+            .ok()
+            .flatten()
+    });
+    let qualified_class_name = class_id.as_deref().and_then(|id| {
+        query_text_column(connection, "classes", "qualified_name", "id", id)
+            .ok()
+            .flatten()
+    });
+    let package_name = class_id.as_deref().and_then(|id| {
+        query_text_column(connection, "classes", "package_name", "id", id)
+            .ok()
+            .flatten()
+    });
+
+    Ok(MethodContext {
+        method_id: method_id.to_string(),
+        method_name,
+        signature,
+        file,
+        start_line,
+        end_line,
+        class_name,
+        qualified_class_name,
+        package_name,
+    })
+}
+
+fn query_text_column(
+    connection: &Connection,
+    table: &str,
+    column: &str,
+    key_column: &str,
+    key: &str,
+) -> Result<Option<String>, String> {
+    if !column_exists(connection, table, column)? || !column_exists(connection, table, key_column)?
+    {
+        return Ok(None);
+    }
+    let sql = format!("SELECT {column} FROM {table} WHERE {key_column} = ?1");
+    connection
+        .query_row(&sql, [key], |row| row.get(0))
+        .optional()
+        .map_err(|error| format!("failed to query {table}.{column}: {error}"))
+}
+
+fn query_i64_column(
+    connection: &Connection,
+    table: &str,
+    column: &str,
+    key_column: &str,
+    key: &str,
+) -> Result<Option<i64>, String> {
+    if !column_exists(connection, table, column)? || !column_exists(connection, table, key_column)?
+    {
+        return Ok(None);
+    }
+    let sql = format!("SELECT {column} FROM {table} WHERE {key_column} = ?1");
+    connection
+        .query_row(&sql, [key], |row| row.get(0))
+        .optional()
+        .map_err(|error| format!("failed to query {table}.{column}: {error}"))
+}
+
+fn column_exists(connection: &Connection, table: &str, column: &str) -> Result<bool, String> {
+    let mut statement = connection
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(|error| format!("failed to inspect table {table}: {error}"))?;
+    let rows = statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| format!("failed to inspect columns for {table}: {error}"))?;
+    for row in rows {
+        let name = row.map_err(|error| format!("failed to read column for {table}: {error}"))?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn invocation_kind(connection: &Connection, method_id: &str) -> String {
+    if table_exists(connection, "entry_points").unwrap_or(false)
+        && let Ok(Some(kind)) =
+            query_text_column(connection, "entry_points", "kind", "method_id", method_id)
+    {
+        return kind;
+    }
+    "direct_method_scaffold".to_string()
+}
+
+fn table_exists(connection: &Connection, table: &str) -> Result<bool, String> {
+    connection
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map(|value| value.is_some())
+        .map_err(|error| format!("failed to inspect table {table}: {error}"))
+}
+
+fn generated_package_name(source_package: Option<&str>) -> String {
+    source_package
+        .filter(|package| !package.is_empty())
+        .map(|package| format!("{package}.gluon.characterization"))
+        .unwrap_or_else(|| "gluon.characterization".to_string())
+}
+
+fn generated_class_name(name: &str, node_id: &str) -> String {
+    let mut class_name = String::from("Gluon");
+    let mut capitalize_next = true;
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            if capitalize_next {
+                class_name.push(ch.to_ascii_uppercase());
+                capitalize_next = false;
+            } else {
+                class_name.push(ch);
+            }
+        } else {
+            capitalize_next = true;
+        }
+    }
+    if class_name == "Gluon" {
+        class_name.push_str("Behavior");
+    }
+    class_name.push_str(&short_hash(node_id));
+    class_name.push_str("CharacterizationTest");
+    class_name
+}
+
+fn generated_relative_path(
+    method: &MethodContext,
+    package_name: &str,
+    class_name: &str,
+) -> PathBuf {
+    let source_prefix = method
+        .file
+        .as_deref()
+        .and_then(|file| file.split_once("src/main/java").map(|(prefix, _)| prefix));
+    let mut path = source_prefix
+        .map(PathBuf::from)
+        .unwrap_or_else(PathBuf::new)
+        .join("src/test/java");
+    for segment in package_name.split('.') {
+        path.push(segment);
+    }
+    path.push(format!("{class_name}.java"));
+    path
+}
+
+fn render_scaffold_test(
+    run_id: i64,
+    candidate: &BehaviorCandidate,
+    method: &MethodContext,
+    package_name: &str,
+    class_name: &str,
+) -> String {
+    let class_ref = method
+        .qualified_class_name
+        .as_deref()
+        .or(method.class_name.as_deref())
+        .unwrap_or("<unknown class>");
+    let signature = method.signature.as_deref().unwrap_or(&method.method_name);
+    let file = method.file.as_deref().unwrap_or("<unknown file>");
+    let line_range = match (method.start_line, method.end_line) {
+        (Some(start), Some(end)) => format!("{start}-{end}"),
+        _ => "unknown".to_string(),
+    };
+
+    format!(
+        r#"package {package_name};
+
+import org.junit.Ignore;
+import org.junit.Test;
+
+/**
+ * {GENERATED_MARKER}
+ * Behavior: {behavior_name}
+ * KG node: {kg_node}
+ * Characterization run: {run_id}
+ * Source method: {method_id}
+ * Source location: {file}:{line_range}
+ *
+ * This scaffold is disabled until fixture generation and observation capture
+ * are available for this behavior.
+ */
+@Ignore("Generated characterization scaffold requires fixture and observation support.")
+public final class {class_name} {{
+    @Test
+    public void characterizesBehavior() {{
+        throw new UnsupportedOperationException("{message}");
+    }}
+}}
+"#,
+        behavior_name = java_comment_text(&candidate.name),
+        kg_node = java_comment_text(&candidate.node_id),
+        method_id = java_comment_text(&method.method_id),
+        message = java_string(&format!(
+            "Generate fixture for {}.{} from {}",
+            class_ref, signature, candidate.kind
+        )),
+    )
+}
+
+fn write_generated_file(file: &GeneratedFile, force: bool) -> Result<(), String> {
+    if file.path.exists() {
+        let existing = fs::read_to_string(&file.path).map_err(|error| {
+            format!(
+                "failed to read existing generated file {}: {error}",
+                file.path.display()
+            )
+        })?;
+        if !existing.contains(GENERATED_MARKER) {
+            return Err(format!(
+                "refusing to overwrite non-generated file {}",
+                file.path.display()
+            ));
+        }
+        if !force {
+            return Ok(());
+        }
+    }
+    if let Some(parent) = file.path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create generated test directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+    fs::write(&file.path, &file.content).map_err(|error| {
+        format!(
+            "failed to write generated file {}: {error}",
+            file.path.display()
+        )
+    })
+}
+
+fn scenario_id(node_id: &str, method_id: &str) -> String {
+    format!("scenario:{}:{}", short_hash(node_id), short_hash(method_id))
+}
+
+fn short_hash(value: &str) -> String {
+    sha256_hex(value).chars().take(12).collect()
+}
+
+fn sha256_hex(value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    let digest = hasher.finalize();
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn java_comment_text(value: &str) -> String {
+    value.replace("*/", "* /").replace('\n', " ")
+}
+
+fn java_string(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+}
+
 fn characterization_database_path(
     source_path: &Path,
     output_dir: &Path,
@@ -382,11 +771,62 @@ impl CharacterizationStore {
         Ok(changed > 0)
     }
 
+    fn persist_scenario(
+        &mut self,
+        run_id: i64,
+        behavior_id: &str,
+        scenario: &GeneratedScenario,
+    ) -> Result<(), String> {
+        self.connection
+            .execute(
+                "INSERT OR REPLACE INTO characterization_scenarios (
+                    id, run_id, behavior_id, name, scenario_kind, invocation_kind,
+                    status, diagnostic_reason
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'generated_scaffold', NULL)",
+                params![
+                    scenario.id,
+                    run_id,
+                    behavior_id,
+                    scenario.name,
+                    scenario.scenario_kind,
+                    scenario.invocation_kind,
+                ],
+            )
+            .map_err(|error| format!("failed to persist scenario {}: {error}", scenario.id))?;
+        Ok(())
+    }
+
+    fn persist_file(&mut self, file: &GeneratedFile) -> Result<(), String> {
+        self.connection
+            .execute(
+                "INSERT INTO characterization_files (
+                    scenario_id, path, class_name, package_name, content_hash,
+                    generated_marker
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    file.scenario_id,
+                    file.relative_path,
+                    file.class_name,
+                    file.package_name,
+                    file.content_hash,
+                    GENERATED_MARKER,
+                ],
+            )
+            .map_err(|error| {
+                format!(
+                    "failed to persist generated file {}: {error}",
+                    file.relative_path
+                )
+            })?;
+        Ok(())
+    }
+
     fn record_diagnostic(
         &mut self,
         run_id: i64,
         behavior_id: Option<&str>,
         kg_node_id: Option<&str>,
+        scenario_id: Option<&str>,
         severity: &str,
         category: &str,
         message: &str,
@@ -394,9 +834,18 @@ impl CharacterizationStore {
         self.connection
             .execute(
                 "INSERT INTO characterization_diagnostics (
-                    run_id, behavior_id, kg_node_id, severity, category, message
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![run_id, behavior_id, kg_node_id, severity, category, message],
+                    run_id, behavior_id, kg_node_id, scenario_id, severity,
+                    category, message
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    run_id,
+                    behavior_id,
+                    kg_node_id,
+                    scenario_id,
+                    severity,
+                    category,
+                    message,
+                ],
             )
             .map_err(|error| format!("failed to record characterization diagnostic: {error}"))?;
         Ok(())
