@@ -60,6 +60,41 @@ struct MethodContext {
 }
 
 #[derive(Debug)]
+struct EntryPointContext {
+    kind: String,
+    framework: Option<String>,
+    route: Option<String>,
+    http_method: Option<String>,
+}
+
+#[derive(Debug)]
+struct CandidateSignalContext {
+    name: String,
+    count: i64,
+    weight: i64,
+}
+
+#[derive(Debug)]
+struct RelatedTestContext {
+    suite_name: Option<String>,
+    case_name: String,
+    file: String,
+    start_line: Option<i64>,
+    end_line: Option<i64>,
+    assertions: Vec<String>,
+    fixtures: Vec<String>,
+    entry_points: Vec<EntryPointContext>,
+}
+
+#[derive(Debug)]
+struct ScaffoldContext {
+    entry_points: Vec<EntryPointContext>,
+    candidate_signals: Vec<CandidateSignalContext>,
+    related_tests: Vec<RelatedTestContext>,
+    source_excerpt: Option<String>,
+}
+
+#[derive(Debug)]
 struct GeneratedScenario {
     id: String,
     name: String,
@@ -358,6 +393,7 @@ fn generate_behavior_scaffold(
         .first()
         .ok_or_else(|| format!("behavior {} has no source methods", candidate.node_id))?;
     let method = load_method_context(business, method_id)?;
+    let context = load_scaffold_context(business, options, method_id, &method)?;
     let scenario_id = scenario_id(&candidate.node_id, method_id);
     let scenario = GeneratedScenario {
         id: scenario_id.clone(),
@@ -369,7 +405,14 @@ fn generate_behavior_scaffold(
     let class_name = generated_class_name(&candidate.name, &candidate.node_id);
     let relative_path = generated_relative_path(&method, &package_name, &class_name);
     let path = options.source_path.join(&relative_path);
-    let content = render_scaffold_test(run_id, candidate, &method, &package_name, &class_name);
+    let content = render_scaffold_test(
+        run_id,
+        candidate,
+        &method,
+        &context,
+        &package_name,
+        &class_name,
+    );
     let content_hash = sha256_hex(&content);
 
     Ok((
@@ -424,6 +467,267 @@ fn load_method_context(connection: &Connection, method_id: &str) -> Result<Metho
     })
 }
 
+fn load_scaffold_context(
+    connection: &Connection,
+    options: &GenerateCharacterizationTestsOptions,
+    method_id: &str,
+    method: &MethodContext,
+) -> Result<ScaffoldContext, String> {
+    Ok(ScaffoldContext {
+        entry_points: load_entry_points(connection, method_id)?,
+        candidate_signals: load_candidate_signals(connection, method_id)?,
+        related_tests: load_related_tests(connection, method_id)?,
+        source_excerpt: load_source_excerpt(&options.source_path, method)?,
+    })
+}
+
+fn load_entry_points(
+    connection: &Connection,
+    method_id: &str,
+) -> Result<Vec<EntryPointContext>, String> {
+    if !has_columns(
+        connection,
+        "entry_points",
+        &["method_id", "kind", "framework", "route", "http_method"],
+    )? {
+        return Ok(Vec::new());
+    }
+    let mut statement = connection
+        .prepare(
+            "SELECT kind, framework, route, http_method
+             FROM entry_points
+             WHERE method_id = ?1
+             ORDER BY kind, route, http_method
+             LIMIT 5",
+        )
+        .map_err(|error| format!("failed to prepare entry point query: {error}"))?;
+    let rows = statement
+        .query_map([method_id], |row| {
+            Ok(EntryPointContext {
+                kind: row.get(0)?,
+                framework: row.get(1)?,
+                route: row.get(2)?,
+                http_method: row.get(3)?,
+            })
+        })
+        .map_err(|error| format!("failed to query entry points: {error}"))?;
+    collect_rows(rows, "entry point")
+}
+
+fn load_candidate_signals(
+    connection: &Connection,
+    method_id: &str,
+) -> Result<Vec<CandidateSignalContext>, String> {
+    if !has_columns(
+        connection,
+        "candidate_signals",
+        &["method_id", "name", "count", "weight"],
+    )? {
+        return Ok(Vec::new());
+    }
+    let mut statement = connection
+        .prepare(
+            "SELECT name, count, weight
+             FROM candidate_signals
+             WHERE method_id = ?1
+             ORDER BY weight DESC, count DESC, name
+             LIMIT 8",
+        )
+        .map_err(|error| format!("failed to prepare candidate signal query: {error}"))?;
+    let rows = statement
+        .query_map([method_id], |row| {
+            Ok(CandidateSignalContext {
+                name: row.get(0)?,
+                count: row.get(1)?,
+                weight: row.get(2)?,
+            })
+        })
+        .map_err(|error| format!("failed to query candidate signals: {error}"))?;
+    collect_rows(rows, "candidate signal")
+}
+
+fn load_related_tests(
+    connection: &Connection,
+    method_id: &str,
+) -> Result<Vec<RelatedTestContext>, String> {
+    if !has_columns(
+        connection,
+        "test_targets",
+        &["test_case_id", "target_id", "target_kind"],
+    )? || !has_columns(
+        connection,
+        "test_cases",
+        &["id", "suite_id", "name", "file", "start_line", "end_line"],
+    )? {
+        return Ok(Vec::new());
+    }
+    let mut statement = connection
+        .prepare(
+            "SELECT c.id, c.name, c.file, c.start_line, c.end_line,
+                    s.class_name
+             FROM test_targets t
+             JOIN test_cases c ON c.id = t.test_case_id
+             LEFT JOIN test_suites s ON s.id = c.suite_id
+             WHERE t.target_kind = 'method' AND t.target_id = ?1
+             ORDER BY c.file, c.start_line
+             LIMIT 5",
+        )
+        .map_err(|error| format!("failed to prepare related test query: {error}"))?;
+    let rows = statement
+        .query_map([method_id], |row| {
+            let case_id: String = row.get(0)?;
+            Ok((
+                case_id,
+                RelatedTestContext {
+                    suite_name: row.get(5)?,
+                    case_name: row.get(1)?,
+                    file: row.get(2)?,
+                    start_line: row.get(3)?,
+                    end_line: row.get(4)?,
+                    assertions: Vec::new(),
+                    fixtures: Vec::new(),
+                    entry_points: Vec::new(),
+                },
+            ))
+        })
+        .map_err(|error| format!("failed to query related tests: {error}"))?;
+
+    let mut tests = Vec::new();
+    for row in rows {
+        let (case_id, mut test) =
+            row.map_err(|error| format!("failed to read related test row: {error}"))?;
+        test.assertions = load_test_assertions(connection, &case_id)?;
+        test.fixtures = load_test_fixtures(connection, &case_id)?;
+        test.entry_points = load_test_entry_points(connection, &case_id)?;
+        tests.push(test);
+    }
+    Ok(tests)
+}
+
+fn load_test_assertions(connection: &Connection, case_id: &str) -> Result<Vec<String>, String> {
+    if !has_columns(
+        connection,
+        "test_assertions",
+        &["test_case_id", "assertion_kind", "expression"],
+    )? {
+        return Ok(Vec::new());
+    }
+    let mut statement = connection
+        .prepare(
+            "SELECT assertion_kind, expression
+             FROM test_assertions
+             WHERE test_case_id = ?1
+             ORDER BY line, id
+             LIMIT 6",
+        )
+        .map_err(|error| format!("failed to prepare test assertion query: {error}"))?;
+    let rows = statement
+        .query_map([case_id], |row| {
+            let kind: String = row.get(0)?;
+            let expression: String = row.get(1)?;
+            Ok(format!("{kind}: {expression}"))
+        })
+        .map_err(|error| format!("failed to query test assertions: {error}"))?;
+    collect_rows(rows, "test assertion")
+}
+
+fn load_test_fixtures(connection: &Connection, case_id: &str) -> Result<Vec<String>, String> {
+    if !has_columns(
+        connection,
+        "test_fixtures",
+        &["test_case_id", "fixture_kind", "name"],
+    )? {
+        return Ok(Vec::new());
+    }
+    let mut statement = connection
+        .prepare(
+            "SELECT fixture_kind, name
+             FROM test_fixtures
+             WHERE test_case_id = ?1
+             ORDER BY line, id
+             LIMIT 6",
+        )
+        .map_err(|error| format!("failed to prepare test fixture query: {error}"))?;
+    let rows = statement
+        .query_map([case_id], |row| {
+            let kind: String = row.get(0)?;
+            let name: String = row.get(1)?;
+            Ok(format!("{kind}: {name}"))
+        })
+        .map_err(|error| format!("failed to query test fixtures: {error}"))?;
+    collect_rows(rows, "test fixture")
+}
+
+fn load_test_entry_points(
+    connection: &Connection,
+    case_id: &str,
+) -> Result<Vec<EntryPointContext>, String> {
+    if !has_columns(
+        connection,
+        "test_entry_points",
+        &["test_case_id", "kind", "framework", "route", "http_method"],
+    )? {
+        return Ok(Vec::new());
+    }
+    let mut statement = connection
+        .prepare(
+            "SELECT kind, framework, route, http_method
+             FROM test_entry_points
+             WHERE test_case_id = ?1
+             ORDER BY kind, route, http_method
+             LIMIT 4",
+        )
+        .map_err(|error| format!("failed to prepare test entry point query: {error}"))?;
+    let rows = statement
+        .query_map([case_id], |row| {
+            Ok(EntryPointContext {
+                kind: row.get(0)?,
+                framework: row.get(1)?,
+                route: row.get(2)?,
+                http_method: row.get(3)?,
+            })
+        })
+        .map_err(|error| format!("failed to query test entry points: {error}"))?;
+    collect_rows(rows, "test entry point")
+}
+
+fn load_source_excerpt(
+    source_path: &Path,
+    method: &MethodContext,
+) -> Result<Option<String>, String> {
+    let Some(file) = method.file.as_deref() else {
+        return Ok(None);
+    };
+    let Some(start_line) = method.start_line else {
+        return Ok(None);
+    };
+    let Some(end_line) = method.end_line else {
+        return Ok(None);
+    };
+    let path = source_path.join(file);
+    let Ok(source) = fs::read_to_string(&path) else {
+        return Ok(None);
+    };
+    let lines: Vec<&str> = source.lines().collect();
+    let start = start_line.max(1) as usize;
+    let end = end_line.max(start_line).min(start_line + 80) as usize;
+    let mut excerpt = String::new();
+    for line_number in start..=end {
+        if let Some(line) = lines.get(line_number - 1) {
+            excerpt.push_str(&format!("{line_number}: {}\n", java_comment_text(line)));
+        }
+    }
+    Ok((!excerpt.is_empty()).then_some(excerpt))
+}
+
+fn collect_rows<T>(
+    rows: impl Iterator<Item = rusqlite::Result<T>>,
+    label: &str,
+) -> Result<Vec<T>, String> {
+    rows.map(|row| row.map_err(|error| format!("failed to read {label} row: {error}")))
+        .collect()
+}
+
 fn query_text_column(
     connection: &Connection,
     table: &str,
@@ -458,6 +762,18 @@ fn query_i64_column(
         .query_row(&sql, [key], |row| row.get(0))
         .optional()
         .map_err(|error| format!("failed to query {table}.{column}: {error}"))
+}
+
+fn has_columns(connection: &Connection, table: &str, columns: &[&str]) -> Result<bool, String> {
+    if !table_exists(connection, table)? {
+        return Ok(false);
+    }
+    for column in columns {
+        if !column_exists(connection, table, column)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn column_exists(connection: &Connection, table: &str, column: &str) -> Result<bool, String> {
@@ -552,6 +868,7 @@ fn render_scaffold_test(
     run_id: i64,
     candidate: &BehaviorCandidate,
     method: &MethodContext,
+    context: &ScaffoldContext,
     package_name: &str,
     class_name: &str,
 ) -> String {
@@ -566,6 +883,10 @@ fn render_scaffold_test(
         (Some(start), Some(end)) => format!("{start}-{end}"),
         _ => "unknown".to_string(),
     };
+    let entry_points = render_entry_points(&context.entry_points);
+    let candidate_signals = render_candidate_signals(&context.candidate_signals);
+    let related_tests = render_related_tests(&context.related_tests);
+    let source_excerpt = render_source_excerpt(context.source_excerpt.as_deref());
 
     format!(
         r#"package {package_name};
@@ -576,15 +897,35 @@ import org.junit.Test;
 /**
  * {GENERATED_MARKER}
  * Behavior: {behavior_name}
+ * Behavior kind: {behavior_kind}
+ * Behavior statement: {behavior_statement}
  * KG node: {kg_node}
  * Characterization run: {run_id}
  * Source method: {method_id}
+ * Source class: {class_ref}
+ * Source signature: {signature}
  * Source location: {file}:{line_range}
  *
- * This scaffold is disabled until fixture generation and observation capture
- * are available for this behavior.
+ * Entry points:
+{entry_points} *
+ * Candidate signals:
+{candidate_signals} *
+ * Related existing tests:
+{related_tests} *
+ * Source excerpt:
+{source_excerpt} *
+ * Task for completing this scaffold:
+ * - Replace scaffold with executable characterization test.
+ * - Preserve observed legacy behavior.
+ * - Prefer existing test setup in same module or package.
+ * - Do not invent expected outputs. First capture current behavior, then assert it.
+ * - Keep generated marker unless file is intentionally taken over by a human.
+ *
+ * Safety:
+ * - Generated by Gluon.
+ * - Safe to overwrite only while marker remains present.
  */
-@Ignore("Generated characterization scaffold requires fixture and observation support.")
+@Ignore("Scaffold only. Convert to executable characterization test.")
 public final class {class_name} {{
     @Test
     public void characterizesBehavior() {{
@@ -593,13 +934,101 @@ public final class {class_name} {{
 }}
 "#,
         behavior_name = java_comment_text(&candidate.name),
+        behavior_kind = java_comment_text(&candidate.kind),
+        behavior_statement = java_comment_text(&candidate.statement),
         kg_node = java_comment_text(&candidate.node_id),
+        class_ref = java_comment_text(class_ref),
+        signature = java_comment_text(signature),
         method_id = java_comment_text(&method.method_id),
         message = java_string(&format!(
             "Generate fixture for {}.{} from {}",
             class_ref, signature, candidate.kind
         )),
     )
+}
+
+fn render_entry_points(entry_points: &[EntryPointContext]) -> String {
+    if entry_points.is_empty() {
+        return " * - none found\n".to_string();
+    }
+    entry_points
+        .iter()
+        .map(|entry_point| {
+            format!(
+                " * - kind={} framework={} method={} route={}\n",
+                java_comment_text(&entry_point.kind),
+                java_comment_text(entry_point.framework.as_deref().unwrap_or("unknown")),
+                java_comment_text(entry_point.http_method.as_deref().unwrap_or("unknown")),
+                java_comment_text(entry_point.route.as_deref().unwrap_or("unknown")),
+            )
+        })
+        .collect()
+}
+
+fn render_candidate_signals(signals: &[CandidateSignalContext]) -> String {
+    if signals.is_empty() {
+        return " * - none found\n".to_string();
+    }
+    signals
+        .iter()
+        .map(|signal| {
+            format!(
+                " * - {} count={} weight={}\n",
+                java_comment_text(&signal.name),
+                signal.count,
+                signal.weight
+            )
+        })
+        .collect()
+}
+
+fn render_related_tests(tests: &[RelatedTestContext]) -> String {
+    if tests.is_empty() {
+        return " * - none found\n".to_string();
+    }
+    let mut rendered = String::new();
+    for test in tests {
+        let line_range = match (test.start_line, test.end_line) {
+            (Some(start), Some(end)) => format!("{start}-{end}"),
+            _ => "unknown".to_string(),
+        };
+        rendered.push_str(&format!(
+            " * - {}#{} at {}:{}\n",
+            java_comment_text(test.suite_name.as_deref().unwrap_or("unknown suite")),
+            java_comment_text(&test.case_name),
+            java_comment_text(&test.file),
+            line_range
+        ));
+        for entry_point in &test.entry_points {
+            rendered.push_str(&format!(
+                " *   entry point: kind={} framework={} method={} route={}\n",
+                java_comment_text(&entry_point.kind),
+                java_comment_text(entry_point.framework.as_deref().unwrap_or("unknown")),
+                java_comment_text(entry_point.http_method.as_deref().unwrap_or("unknown")),
+                java_comment_text(entry_point.route.as_deref().unwrap_or("unknown")),
+            ));
+        }
+        for assertion in &test.assertions {
+            rendered.push_str(&format!(
+                " *   assertion: {}\n",
+                java_comment_text(assertion)
+            ));
+        }
+        for fixture in &test.fixtures {
+            rendered.push_str(&format!(" *   fixture: {}\n", java_comment_text(fixture)));
+        }
+    }
+    rendered
+}
+
+fn render_source_excerpt(excerpt: Option<&str>) -> String {
+    let Some(excerpt) = excerpt else {
+        return " * - unavailable\n".to_string();
+    };
+    excerpt
+        .lines()
+        .map(|line| format!(" *   {line}\n"))
+        .collect()
 }
 
 fn write_generated_file(file: &GeneratedFile, force: bool) -> Result<(), String> {

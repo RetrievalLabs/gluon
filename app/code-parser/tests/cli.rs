@@ -495,6 +495,12 @@ fn generate_characterization_tests_persists_traceable_behaviors() {
     let kg_db = root.join("business-kg.db");
     write_characterization_business_db(&business_db);
     write_characterization_kg_db(&kg_db);
+    fs::create_dir_all(root.join("src/main/java/demo")).unwrap();
+    fs::write(
+        root.join("src/main/java/demo/OrderService.java"),
+        "package demo;\nclass OrderService {\n  void approve() {\n    if (status == null) return;\n  }\n}\n",
+    )
+    .unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
         .args(["generate-characterization-tests", "--business-database"])
@@ -564,6 +570,19 @@ fn generate_characterization_tests_persists_traceable_behaviors() {
     let generated_source = fs::read_to_string(generated_file).unwrap();
     assert!(generated_source.contains("GLUON-GENERATED-CHARACTERIZATION-TEST"));
     assert!(generated_source.contains("@Ignore"));
+    assert!(generated_source.contains("Behavior statement: Pending orders can be approved."));
+    assert!(generated_source.contains("Source class: demo.OrderService"));
+    assert!(generated_source.contains("Source signature: approve()"));
+    assert!(generated_source.contains("Entry points:"));
+    assert!(generated_source.contains("route=/orders/{id}/approve"));
+    assert!(generated_source.contains("Candidate signals:"));
+    assert!(generated_source.contains("business_terms count=2 weight=3"));
+    assert!(generated_source.contains("Related existing tests:"));
+    assert!(generated_source.contains("OrderServiceTest#approvesOrder"));
+    assert!(generated_source.contains("assertion: equals: assertEquals"));
+    assert!(generated_source.contains("fixture: mock: repository"));
+    assert!(generated_source.contains("Source excerpt:"));
+    assert!(generated_source.contains("3:   void approve()"));
     let _ = fs::remove_dir_all(root);
     let _ = fs::remove_dir_all(output_root);
 }
@@ -601,10 +620,95 @@ fn write_characterization_business_db(path: &PathBuf) {
             "
             CREATE TABLE methods (
                 id TEXT PRIMARY KEY,
-                name TEXT NOT NULL
+                class_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                file TEXT NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL
             );
-            INSERT INTO methods (id, name)
-            VALUES ('method:OrderService#approve', 'approve');
+            CREATE TABLE classes (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                package_name TEXT,
+                qualified_name TEXT NOT NULL
+            );
+            CREATE TABLE entry_points (
+                id TEXT PRIMARY KEY,
+                method_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                framework TEXT,
+                route TEXT,
+                http_method TEXT,
+                source TEXT NOT NULL
+            );
+            CREATE TABLE candidate_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                method_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                count INTEGER NOT NULL,
+                weight INTEGER NOT NULL
+            );
+            CREATE TABLE test_suites (
+                id TEXT PRIMARY KEY,
+                class_name TEXT NOT NULL
+            );
+            CREATE TABLE test_cases (
+                id TEXT PRIMARY KEY,
+                suite_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                file TEXT NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL
+            );
+            CREATE TABLE test_targets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                test_case_id TEXT NOT NULL,
+                target_kind TEXT NOT NULL,
+                target_id TEXT NOT NULL
+            );
+            CREATE TABLE test_assertions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                test_case_id TEXT NOT NULL,
+                assertion_kind TEXT NOT NULL,
+                expression TEXT NOT NULL,
+                line INTEGER NOT NULL
+            );
+            CREATE TABLE test_fixtures (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                test_case_id TEXT,
+                fixture_kind TEXT NOT NULL,
+                name TEXT NOT NULL,
+                line INTEGER NOT NULL
+            );
+            CREATE TABLE test_entry_points (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                test_case_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                framework TEXT,
+                route TEXT,
+                http_method TEXT
+            );
+            INSERT INTO classes (id, name, package_name, qualified_name)
+            VALUES ('class:OrderService', 'OrderService', 'demo', 'demo.OrderService');
+            INSERT INTO methods (id, class_id, name, signature, file, start_line, end_line)
+            VALUES ('method:OrderService#approve', 'class:OrderService', 'approve', 'approve()', 'src/main/java/demo/OrderService.java', 3, 5);
+            INSERT INTO entry_points (id, method_id, kind, framework, route, http_method, source)
+            VALUES ('entry:approve', 'method:OrderService#approve', 'http', 'spring', '/orders/{id}/approve', 'POST', 'tree_sitter');
+            INSERT INTO candidate_signals (method_id, name, count, weight)
+            VALUES ('method:OrderService#approve', 'business_terms', 2, 3);
+            INSERT INTO test_suites (id, class_name)
+            VALUES ('suite:OrderServiceTest', 'OrderServiceTest');
+            INSERT INTO test_cases (id, suite_id, name, file, start_line, end_line)
+            VALUES ('case:approvesOrder', 'suite:OrderServiceTest', 'approvesOrder', 'src/test/java/demo/OrderServiceTest.java', 10, 20);
+            INSERT INTO test_targets (test_case_id, target_kind, target_id)
+            VALUES ('case:approvesOrder', 'method', 'method:OrderService#approve');
+            INSERT INTO test_assertions (test_case_id, assertion_kind, expression, line)
+            VALUES ('case:approvesOrder', 'equals', 'assertEquals', 18);
+            INSERT INTO test_fixtures (test_case_id, fixture_kind, name, line)
+            VALUES ('case:approvesOrder', 'mock', 'repository', 12);
+            INSERT INTO test_entry_points (test_case_id, kind, framework, route, http_method)
+            VALUES ('case:approvesOrder', 'http', 'mockmvc', '/orders/{id}/approve', 'POST');
             ",
         )
         .unwrap();
