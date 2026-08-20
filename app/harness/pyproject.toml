@@ -1,0 +1,7 @@
+[project]
+name = "gluon-harness"
+version = "0.1.0"
+description = "Python AI code harness for Gluon migration agents"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
