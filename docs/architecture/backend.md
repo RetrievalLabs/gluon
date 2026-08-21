@@ -1,0 +1,6 @@
+- backend server using go gin
+- User login using github
+- add github app on the workspace
+- select repo which needs migration
+- select langauge and target version
+- he can also invite other users.
