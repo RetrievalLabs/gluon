@@ -216,5 +216,6 @@ The harness should distinguish:
 ## Enviroment variables vm contains
 
 - URL to communicate with backend service.
-- JAVA TARGET - VERSION
+- Language
+- TARGET - VERSION
 - ORG/PROJECT NAME
