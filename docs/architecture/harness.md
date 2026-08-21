@@ -211,3 +211,10 @@ The harness should distinguish:
 4. Implement coordinator workflow through reports, extraction, agent migration,
    validation, and summary writing.
 5. Add resumability for completed steps and partial artifacts.
+
+
+## Enviroment variables vm contains
+
+- URL to communicate with backend service.
+- JAVA TARGET - VERSION
+- ORG/PROJECT NAME
