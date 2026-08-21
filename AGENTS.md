@@ -10,12 +10,55 @@ A Java modernization platform that migrates applications from Java 9 to Java 25 
 - `docs/` - contains architecture and planning docs
 - `skills/` contains platform skills used by agents.
 
-## Coding Rules
+## Behavioral Guidelines
 
-- Create and review a plan before editing files.
-- Make only required changes.
+These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+### Think Before Coding
+
+- State assumptions explicitly before implementation.
+- If multiple interpretations exist, present them instead of choosing silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop, name the confusion, and ask.
+- Create and review a brief plan before editing files.
+
+### Simplicity First
+
+- Write minimum code that solves the problem.
+- Add no features beyond what was asked.
+- Add no abstractions for single-use code.
+- Add no flexibility or configurability that was not requested.
+- Add no error handling for impossible scenarios.
+- If code is overcomplicated, simplify it before finishing.
+
+### Surgical Changes
+
+- Touch only lines required by the request.
+- Do not improve adjacent code, comments, or formatting.
+- Do not refactor unrelated code.
+- Match existing style, even when another style seems better.
 - Preserve existing behavior unless explicitly required otherwise.
+- Remove imports, variables, functions, and files made unused by your changes.
+- Mention unrelated dead code or issues, but do not change them unless asked.
 - Update `docs/` when architecture changes.
+
+### Goal-Driven Execution
+
+- Define verifiable success criteria before implementation.
+- For bug fixes, write or identify a repro before fixing when practical.
+- For validation changes, test invalid inputs and expected failures.
+- For refactors, verify behavior before and after when practical.
+- Loop until success criteria are met or a blocker is explicit.
+
+Plan format:
+
+```text
+1. [Step] -> verify: [check]
+2. [Step] -> verify: [check]
+3. [Step] -> verify: [check]
+```
+
+Every changed line should trace directly to the user's request.
 
 ### Comments
 
