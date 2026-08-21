@@ -18,3 +18,7 @@ bin/
 !.env.example
 
 data/nakadi/
+
+.claude
+.codex
+.agents
