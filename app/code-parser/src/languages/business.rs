@@ -1,23 +1,29 @@
 use std::path::Path;
 
+use crate::core::error::PathError;
+
 pub mod characterization;
 pub mod kg;
 pub mod model;
 
 pub use characterization::{
-    GenerateCharacterizationTestsOptions, GenerateCharacterizationTestsSummary,
-    generate_characterization_tests,
+    CharacterizationError, GenerateCharacterizationTestsOptions,
+    GenerateCharacterizationTestsSummary, generate_characterization_tests,
 };
-pub use kg::{BuildBusinessKgOptions, BuildBusinessKgSummary, Priority, build_business_kg};
+pub use kg::{
+    BuildBusinessKgOptions, BuildBusinessKgSummary, BuildError, Priority, build_business_kg,
+};
 pub use model::ExtractionSummary;
 
 pub trait BusinessExtractor {
+    type Error;
+
     fn language(&self) -> &'static str;
 
     fn extract_business(
         &self,
         options: &BusinessExtractionOptions,
-    ) -> Result<ExtractionSummary, String>;
+    ) -> Result<ExtractionSummary, Self::Error>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,5 +42,5 @@ pub trait BusinessDatabasePath {
         &self,
         project_root: &Path,
         output_dir: &Path,
-    ) -> Result<std::path::PathBuf, String>;
+    ) -> Result<std::path::PathBuf, PathError>;
 }

@@ -2,13 +2,18 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::core::error::{DatabaseError, JdtlsError, LlmError, PathError};
 use crate::languages::business::{
-    BuildBusinessKgOptions, BusinessExtractionOptions, GenerateCharacterizationTestsOptions,
-    Priority, build_business_kg, generate_characterization_tests,
+    BuildBusinessKgOptions, BuildError, BusinessExtractionOptions, CharacterizationError,
+    GenerateCharacterizationTestsOptions, Priority, build_business_kg,
+    generate_characterization_tests,
 };
 use crate::languages::java::build::model::BuildReport;
-use crate::languages::java::build::parse_build;
-use crate::languages::java::business::{TestExtractionOptions, extract_business, extract_tests};
+use crate::languages::java::build::{BuildParseError, parse_build};
+use crate::languages::java::business::{
+    BusinessExtractionError, TestExtractionError, TestExtractionOptions, extract_business,
+    extract_tests,
+};
 use crate::languages::java::compatibility::analyzer::analyze_report_with_options;
 use crate::languages::java::compatibility::jdk_tools::{DEFAULT_JDK_ROOT, JdkToolOptions};
 
@@ -117,8 +122,13 @@ where
                 }
             },
             Err(error) => {
-                command_failed("parse-build", &error);
-                2
+                let error_text = error.to_string();
+                command_failed("parse-build", &error_text);
+                if is_build_parse_usage_error(&error) {
+                    2
+                } else {
+                    1
+                }
             }
         },
         Ok(CliOptions::AnalyzeReport(options)) => run_analyze_report(options),
@@ -580,7 +590,8 @@ fn run_analyze_report(options: AnalyzeReportOptions) -> i32 {
             }
         },
         Err(error) => {
-            command_failed("analyze-report", &error);
+            let error_text = error.to_string();
+            command_failed("analyze-report", &error_text);
             2
         }
     }
@@ -615,9 +626,10 @@ fn run_extract_business(options: ExtractBusinessOptions) -> i32 {
             0
         }
         Err(error) => {
-            command_failed("extract-business", &error);
+            let error_text = error.to_string();
+            command_failed("extract-business", &error_text);
             eprintln!("  continue: {continue_command}");
-            if is_usage_or_jdtls_startup_error(&error) {
+            if is_business_extraction_usage_error(&error) {
                 2
             } else {
                 1
@@ -690,8 +702,9 @@ fn run_extract_tests(options: ExtractTestsOptions) -> i32 {
             0
         }
         Err(error) => {
-            command_failed("extract-tests", &error);
-            if is_usage_or_jdtls_startup_error(&error) {
+            let error_text = error.to_string();
+            command_failed("extract-tests", &error_text);
+            if is_test_extraction_usage_error(&error) {
                 2
             } else {
                 1
@@ -744,11 +757,9 @@ fn run_build_business_kg(options: BuildBusinessKgCliOptions) -> i32 {
             if summary.failed == 0 { 0 } else { 1 }
         }
         Err(error) => {
-            command_failed("build-business-kg", &error);
-            if error.contains("missing ANTHROPIC_API_KEY")
-                || error.contains("invalid extraction DB")
-                || error.contains("does not exist")
-            {
+            let error_text = error.to_string();
+            command_failed("build-business-kg", &error_text);
+            if is_build_business_kg_usage_error(&error) {
                 2
             } else {
                 1
@@ -781,12 +792,9 @@ fn run_generate_characterization_tests(options: GenerateCharacterizationTestsCli
             if summary.diagnostics == 0 { 0 } else { 1 }
         }
         Err(error) => {
-            command_failed("generate-characterization-tests", &error);
-            if error.contains("does not exist")
-                || error.contains("invalid business database")
-                || error.contains("invalid KG database")
-                || error.contains("unsupported --node-kind")
-            {
+            let error_text = error.to_string();
+            command_failed("generate-characterization-tests", &error_text);
+            if is_characterization_usage_error(&error) {
                 2
             } else {
                 1
@@ -861,6 +869,72 @@ fn is_usage_or_jdtls_startup_error(error: &str) -> bool {
         || error.contains("failed to start JDTLS")
         || error.contains("JDTLS initialize request failed")
         || error.contains("JDTLS initialized notification failed")
+}
+
+fn is_path_usage_error(error: &PathError) -> bool {
+    matches!(
+        error,
+        PathError::NotFound(_) | PathError::NoParent(_) | PathError::InvalidSourcePath(_)
+    )
+}
+
+fn is_jdtls_startup_error(error: &JdtlsError) -> bool {
+    match error {
+        JdtlsError::Operation(message) => is_usage_or_jdtls_startup_error(message),
+    }
+}
+
+fn is_database_usage_error(error: &DatabaseError) -> bool {
+    matches!(error, DatabaseError::InvalidSchema { .. })
+}
+
+fn is_build_parse_usage_error(error: &BuildParseError) -> bool {
+    match error {
+        BuildParseError::Path(error) => is_path_usage_error(error),
+        BuildParseError::File(_) => false,
+    }
+}
+
+fn is_business_extraction_usage_error(error: &BusinessExtractionError) -> bool {
+    match error {
+        BusinessExtractionError::Path(error) => is_path_usage_error(error),
+        BusinessExtractionError::Jdtls(error) => is_jdtls_startup_error(error),
+        BusinessExtractionError::File(_)
+        | BusinessExtractionError::Checkpoint(_)
+        | BusinessExtractionError::Parser(_) => false,
+        BusinessExtractionError::Database(error) => is_database_usage_error(error),
+    }
+}
+
+fn is_test_extraction_usage_error(error: &TestExtractionError) -> bool {
+    match error {
+        TestExtractionError::Path(error) => is_path_usage_error(error),
+        TestExtractionError::InvalidJdtlsMaxInFlight => true,
+        TestExtractionError::Jdtls(error) => is_jdtls_startup_error(error),
+        TestExtractionError::Parser(_) => false,
+        TestExtractionError::Database(error) => is_database_usage_error(error),
+    }
+}
+
+fn is_build_business_kg_usage_error(error: &BuildError) -> bool {
+    match error {
+        BuildError::Path(error) => is_path_usage_error(error),
+        BuildError::ConflictingResumeOptions | BuildError::InvalidMaxFailures => true,
+        BuildError::Llm(LlmError::MissingApiKey) => true,
+        BuildError::File(_) | BuildError::Llm(LlmError::Operation(_)) | BuildError::Kg(_) => false,
+        BuildError::Database(error) => is_database_usage_error(error),
+    }
+}
+
+fn is_characterization_usage_error(error: &CharacterizationError) -> bool {
+    match error {
+        CharacterizationError::Path(error) => is_path_usage_error(error),
+        CharacterizationError::ConflictingResumeOptions
+        | CharacterizationError::InvalidMaxBehaviors
+        | CharacterizationError::UnsupportedNodeKind(_) => true,
+        CharacterizationError::File(_) => false,
+        CharacterizationError::Database(error) => is_database_usage_error(error),
+    }
 }
 
 fn sanitize_path_segment(value: &str) -> String {

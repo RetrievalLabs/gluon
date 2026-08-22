@@ -12,6 +12,7 @@ pub struct ParseOptions {
 
 pub trait LanguageParser {
     type Report;
+    type Error;
 
     fn language(&self) -> &'static str;
 
@@ -20,5 +21,5 @@ pub trait LanguageParser {
         path: &Path,
         options: ParseOptions,
         runner: &dyn CommandRunner,
-    ) -> Result<Self::Report, String>;
+    ) -> Result<Self::Report, Self::Error>;
 }

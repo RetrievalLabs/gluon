@@ -3,7 +3,11 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
+use crate::core::error::{
+    CheckpointError, DatabaseError, FileError, JdtlsError, ParserError, PathError,
+};
 use crate::languages::business::model::{CodeModel, ExtractionSummary};
 use crate::languages::business::{
     BusinessDatabasePath, BusinessExtractionOptions, BusinessExtractor,
@@ -17,6 +21,29 @@ use crate::languages::java::business::tree_sitter::extract_structure_with_stats;
 pub struct JavaBusinessExtractor;
 
 const CHECKPOINT_VERSION: u32 = 1;
+
+pub type BusinessExtractionResult<T> = Result<T, BusinessExtractionError>;
+
+#[derive(Debug, Error)]
+pub enum BusinessExtractionError {
+    #[error(transparent)]
+    Path(#[from] PathError),
+
+    #[error(transparent)]
+    File(#[from] FileError),
+
+    #[error(transparent)]
+    Checkpoint(#[from] CheckpointError),
+
+    #[error(transparent)]
+    Parser(#[from] ParserError),
+
+    #[error(transparent)]
+    Jdtls(#[from] JdtlsError),
+
+    #[error(transparent)]
+    Database(#[from] DatabaseError),
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ExtractionCheckpoint {
@@ -35,6 +62,8 @@ enum CheckpointPhase {
 }
 
 impl BusinessExtractor for JavaBusinessExtractor {
+    type Error = BusinessExtractionError;
+
     fn language(&self) -> &'static str {
         "java"
     }
@@ -42,7 +71,7 @@ impl BusinessExtractor for JavaBusinessExtractor {
     fn extract_business(
         &self,
         options: &BusinessExtractionOptions,
-    ) -> Result<ExtractionSummary, String> {
+    ) -> BusinessExtractionResult<ExtractionSummary> {
         extract_business(options)
     }
 }
@@ -52,21 +81,23 @@ impl BusinessDatabasePath for JavaBusinessExtractor {
         &self,
         project_root: &Path,
         output_dir: &Path,
-    ) -> Result<PathBuf, String> {
+    ) -> Result<PathBuf, PathError> {
         default_database_path(project_root, output_dir)
     }
 }
 
-pub fn extract_business(options: &BusinessExtractionOptions) -> Result<ExtractionSummary, String> {
+pub fn extract_business(
+    options: &BusinessExtractionOptions,
+) -> BusinessExtractionResult<ExtractionSummary> {
     let total_started_at = Instant::now();
     if !options.path.exists() {
-        return Err(format!("path does not exist: {}", options.path.display()));
+        return Err(PathError::NotFound(options.path.clone()).into());
     }
     let project_root = if options.path.is_file() {
         options
             .path
             .parent()
-            .ok_or_else(|| format!("path has no parent: {}", options.path.display()))?
+            .ok_or_else(|| PathError::NoParent(options.path.clone()))?
             .to_path_buf()
     } else {
         options.path.clone()
@@ -85,9 +116,11 @@ pub fn extract_business(options: &BusinessExtractionOptions) -> Result<Extractio
     let checkpoint_path = checkpoint_path(&database);
 
     let mut checkpoint = if options.resume {
-        load_checkpoint(&checkpoint_path, &project_root)?
+        load_checkpoint(&checkpoint_path, &project_root)
+            .map_err(|error| CheckpointError::Operation(error))?
     } else {
-        remove_checkpoint_if_present(&checkpoint_path)?;
+        remove_checkpoint_if_present(&checkpoint_path)
+            .map_err(|error| CheckpointError::Operation(error))?;
         None
     };
 
@@ -104,7 +137,8 @@ pub fn extract_business(options: &BusinessExtractionOptions) -> Result<Extractio
             project_root.display()
         );
         let phase_started_at = Instant::now();
-        let extraction = extract_structure_with_stats(&project_root)?;
+        let extraction = extract_structure_with_stats(&project_root)
+            .map_err(|error| ParserError::Operation(error))?;
         let model = extraction.model;
         eprintln!(
             "extract-business tree-sitter: done java_seen={} parsed={} skipped_path={} skipped_generated={} modules={} classes={} methods={} invocations={} elapsed_ms={}",
@@ -123,7 +157,8 @@ pub fn extract_business(options: &BusinessExtractionOptions) -> Result<Extractio
             &project_root,
             CheckpointPhase::Structure,
             &model,
-        )?;
+        )
+        .map_err(|error| CheckpointError::Operation(error))?;
         model
     };
 
@@ -142,7 +177,8 @@ pub fn extract_business(options: &BusinessExtractionOptions) -> Result<Extractio
                 max_in_flight: options.jdtls_max_in_flight,
             },
             &mut model,
-        )?;
+        )
+        .map_err(|error| JdtlsError::Operation(error))?;
         eprintln!(
             "extract-business jdtls: done relationships={} diagnostics={} elapsed_ms={}",
             model.relationships.len(),
@@ -154,7 +190,8 @@ pub fn extract_business(options: &BusinessExtractionOptions) -> Result<Extractio
             &project_root,
             CheckpointPhase::Jdtls,
             &model,
-        )?;
+        )
+        .map_err(|error| CheckpointError::Operation(error))?;
     } else {
         eprintln!("extract-business jdtls: skipped from checkpoint phase={phase:?}");
     }
@@ -189,7 +226,8 @@ pub fn extract_business(options: &BusinessExtractionOptions) -> Result<Extractio
             &project_root,
             CheckpointPhase::Scored,
             &model,
-        )?;
+        )
+        .map_err(|error| CheckpointError::Operation(error))?;
     } else {
         eprintln!("extract-business scoring: skipped from checkpoint phase={phase:?}");
     }
@@ -202,30 +240,27 @@ pub fn extract_business(options: &BusinessExtractionOptions) -> Result<Extractio
     );
     let phase_started_at = Instant::now();
     if temp_database.exists() {
-        fs::remove_file(&temp_database).map_err(|error| {
-            format!(
-                "failed to remove stale temporary database {}: {error}",
-                temp_database.display()
-            )
+        fs::remove_file(&temp_database).map_err(|source| FileError::Remove {
+            path: temp_database.clone(),
+            source,
         })?;
     }
-    write_database(&temp_database, &model)?;
+    write_database(&temp_database, &model).map_err(DatabaseError::Operation)?;
     if database.exists() {
-        fs::remove_file(&database).map_err(|error| {
-            format!(
-                "failed to replace existing database {}: {error}",
-                database.display()
-            )
+        fs::remove_file(&database).map_err(|source| FileError::Remove {
+            path: database.clone(),
+            source,
         })?;
     }
-    fs::rename(&temp_database, &database).map_err(|error| {
-        format!(
-            "failed to move temporary database {} to {}: {error}",
+    fs::rename(&temp_database, &database).map_err(|source| {
+        DatabaseError::Operation(format!(
+            "failed to move temporary database {} to {}: {source}",
             temp_database.display(),
             database.display()
-        )
+        ))
     })?;
-    remove_checkpoint_if_present(&checkpoint_path)?;
+    remove_checkpoint_if_present(&checkpoint_path)
+        .map_err(|error| CheckpointError::Operation(error))?;
     eprintln!(
         "extract-business database: done path={} elapsed_ms={}",
         database.display(),

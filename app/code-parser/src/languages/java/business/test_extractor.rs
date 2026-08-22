@@ -5,9 +5,11 @@ use std::time::Instant;
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
+use thiserror::Error;
 use tree_sitter::{Node, Parser, TreeCursor};
 use walkdir::{DirEntry, WalkDir};
 
+use crate::core::error::{DatabaseError, JdtlsError, ParserError, PathError};
 use crate::languages::java::build::model::Diagnostic;
 use crate::languages::java::business::jdtls::{
     JdtlsDefinition, JdtlsDefinitionRequest, JdtlsOptions, resolve_test_definitions,
@@ -33,6 +35,26 @@ pub struct TestExtractionSummary {
     pub fixtures: usize,
     pub entry_points: usize,
     pub diagnostics: usize,
+}
+
+pub type TestExtractionResult<T> = Result<T, TestExtractionError>;
+
+#[derive(Debug, Error)]
+pub enum TestExtractionError {
+    #[error(transparent)]
+    Path(#[from] PathError),
+
+    #[error(transparent)]
+    Parser(#[from] ParserError),
+
+    #[error(transparent)]
+    Jdtls(#[from] JdtlsError),
+
+    #[error(transparent)]
+    Database(#[from] DatabaseError),
+
+    #[error("--jdtls-max-in-flight must be greater than 0")]
+    InvalidJdtlsMaxInFlight,
 }
 
 #[derive(Debug, Default)]
@@ -132,19 +154,21 @@ struct ClassScope {
     suite: TestSuite,
 }
 
-pub fn extract_tests(options: &TestExtractionOptions) -> Result<TestExtractionSummary, String> {
+pub fn extract_tests(
+    options: &TestExtractionOptions,
+) -> TestExtractionResult<TestExtractionSummary> {
     let started_at = Instant::now();
     if !options.path.exists() {
-        return Err(format!("path does not exist: {}", options.path.display()));
+        return Err(PathError::NotFound(options.path.clone()).into());
     }
     if options.jdtls_max_in_flight == 0 {
-        return Err("--jdtls-max-in-flight must be greater than 0".to_string());
+        return Err(TestExtractionError::InvalidJdtlsMaxInFlight);
     }
     let project_root = if options.path.is_file() {
         options
             .path
             .parent()
-            .ok_or_else(|| format!("path has no parent: {}", options.path.display()))?
+            .ok_or_else(|| PathError::NoParent(options.path.clone()))?
             .to_path_buf()
     } else {
         options.path.clone()
@@ -155,7 +179,8 @@ pub fn extract_tests(options: &TestExtractionOptions) -> Result<TestExtractionSu
         project_root.display()
     );
     let phase_started_at = Instant::now();
-    let mut model = extract_test_model(&project_root)?;
+    let mut model =
+        extract_test_model(&project_root).map_err(|error| ParserError::Operation(error))?;
     eprintln!(
         "extract-tests tree-sitter: done suites={} cases={} assertions={} fixtures={} entry_points={} diagnostics={} elapsed_ms={}",
         model.suites.len(),
@@ -167,15 +192,17 @@ pub fn extract_tests(options: &TestExtractionOptions) -> Result<TestExtractionSu
         phase_started_at.elapsed().as_millis()
     );
 
-    let mut connection = Connection::open(&options.database).map_err(|error| {
-        format!(
-            "failed to open database {}: {error}",
-            options.database.display()
-        )
-    })?;
+    let mut connection =
+        Connection::open(&options.database).map_err(|source| DatabaseError::Open {
+            label: "database",
+            path: options.database.clone(),
+            source,
+        })?;
     connection
         .execute_batch("PRAGMA foreign_keys = ON;")
-        .map_err(|error| format!("failed to enable foreign keys: {error}"))?;
+        .map_err(|error| {
+            DatabaseError::Operation(format!("failed to enable foreign keys: {error}"))
+        })?;
 
     eprintln!("extract-tests jdtls targets: start");
     let phase_started_at = Instant::now();
@@ -191,7 +218,7 @@ pub fn extract_tests(options: &TestExtractionOptions) -> Result<TestExtractionSu
         options.database.display()
     );
     let phase_started_at = Instant::now();
-    write_test_tables(&mut connection, &model)?;
+    write_test_tables(&mut connection, &model).map_err(DatabaseError::Operation)?;
     eprintln!(
         "extract-tests database: done path={} elapsed_ms={}",
         options.database.display(),
@@ -670,7 +697,7 @@ fn link_targets_with_jdtls(
     connection: &Connection,
     project_root: &Path,
     options: &TestExtractionOptions,
-) -> Result<(), String> {
+) -> TestExtractionResult<()> {
     if model.invocations.is_empty() {
         return Ok(());
     }
@@ -702,7 +729,8 @@ fn link_targets_with_jdtls(
         },
         &java_files,
         &requests,
-    )?;
+    )
+    .map_err(JdtlsError::Operation)?;
     let mut seen = HashSet::new();
     for definition in definitions {
         if let Some(target) = production_target_for_definition(connection, &definition)? {
@@ -761,7 +789,7 @@ fn push_target(
 fn production_target_for_definition(
     connection: &Connection,
     definition: &JdtlsDefinition,
-) -> Result<Option<ResolvedTarget>, String> {
+) -> Result<Option<ResolvedTarget>, DatabaseError> {
     if table_exists(connection, "methods")?
         && table_has_column(connection, "methods", "file")?
         && table_has_column(connection, "methods", "start_line")?
@@ -777,7 +805,9 @@ fn production_target_for_definition(
                 |row| row.get::<_, String>(0),
             )
             .optional()
-            .map_err(|error| format!("failed to resolve JDTLS method target: {error}"))?;
+            .map_err(|error| {
+                DatabaseError::Operation(format!("failed to resolve JDTLS method target: {error}"))
+            })?;
         if let Some(id) = method {
             return Ok(Some(ResolvedTarget {
                 kind: "method".to_string(),
@@ -797,7 +827,9 @@ fn production_target_for_definition(
                 |row| row.get::<_, String>(0),
             )
             .optional()
-            .map_err(|error| format!("failed to resolve JDTLS class target: {error}"))?;
+            .map_err(|error| {
+                DatabaseError::Operation(format!("failed to resolve JDTLS class target: {error}"))
+            })?;
         if let Some(id) = class {
             return Ok(Some(ResolvedTarget {
                 kind: "class".to_string(),
@@ -809,7 +841,10 @@ fn production_target_for_definition(
     Ok(None)
 }
 
-fn java_files_for_jdtls(connection: &Connection, model: &TestModel) -> Result<Vec<String>, String> {
+fn java_files_for_jdtls(
+    connection: &Connection,
+    model: &TestModel,
+) -> Result<Vec<String>, DatabaseError> {
     let mut files = model
         .suites
         .iter()
@@ -818,12 +853,18 @@ fn java_files_for_jdtls(connection: &Connection, model: &TestModel) -> Result<Ve
     if table_exists(connection, "methods")? && table_has_column(connection, "methods", "file")? {
         let mut statement = connection
             .prepare("SELECT DISTINCT file FROM methods")
-            .map_err(|error| format!("failed to prepare method file query: {error}"))?;
+            .map_err(|error| {
+                DatabaseError::Operation(format!("failed to prepare method file query: {error}"))
+            })?;
         let rows = statement
             .query_map([], |row| row.get::<_, String>(0))
-            .map_err(|error| format!("failed to query method files: {error}"))?;
+            .map_err(|error| {
+                DatabaseError::Operation(format!("failed to query method files: {error}"))
+            })?;
         for row in rows {
-            files.insert(row.map_err(|error| format!("failed to read method file: {error}"))?);
+            files.insert(row.map_err(|error| {
+                DatabaseError::Operation(format!("failed to read method file: {error}"))
+            })?);
         }
     }
     Ok(files.into_iter().collect())
@@ -1111,7 +1152,7 @@ fn create_test_schema(connection: &Connection) -> Result<(), String> {
         .map_err(|error| format!("failed to create test extraction schema: {error}"))
 }
 
-fn table_exists(connection: &Connection, table: &str) -> Result<bool, String> {
+fn table_exists(connection: &Connection, table: &str) -> Result<bool, DatabaseError> {
     connection
         .query_row(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1",
@@ -1120,19 +1161,30 @@ fn table_exists(connection: &Connection, table: &str) -> Result<bool, String> {
         )
         .optional()
         .map(|value| value.is_some())
-        .map_err(|error| format!("failed to inspect database schema: {error}"))
+        .map_err(|error| {
+            DatabaseError::Operation(format!("failed to inspect database schema: {error}"))
+        })
 }
 
-fn table_has_column(connection: &Connection, table: &str, column: &str) -> Result<bool, String> {
+fn table_has_column(
+    connection: &Connection,
+    table: &str,
+    column: &str,
+) -> Result<bool, DatabaseError> {
     let sql = format!("PRAGMA table_info({table})");
-    let mut statement = connection
-        .prepare(&sql)
-        .map_err(|error| format!("failed to inspect table {table}: {error}"))?;
+    let mut statement = connection.prepare(&sql).map_err(|error| {
+        DatabaseError::Operation(format!("failed to inspect table {table}: {error}"))
+    })?;
     let rows = statement
         .query_map([], |row| row.get::<_, String>(1))
-        .map_err(|error| format!("failed to read table {table} columns: {error}"))?;
+        .map_err(|error| {
+            DatabaseError::Operation(format!("failed to read table {table} columns: {error}"))
+        })?;
     for row in rows {
-        if row.map_err(|error| format!("failed to read table {table} column: {error}"))? == column {
+        if row.map_err(|error| {
+            DatabaseError::Operation(format!("failed to read table {table} column: {error}"))
+        })? == column
+        {
             return Ok(true);
         }
     }

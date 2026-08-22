@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use crate::core::error::PathError;
 pub mod extractor;
 pub mod jdtls;
 pub mod modules;
@@ -10,24 +11,21 @@ pub mod tree_sitter;
 
 pub use crate::languages::business::BusinessExtractionOptions;
 pub use crate::languages::business::kg::{
-    BuildBusinessKgOptions, BuildBusinessKgSummary, Priority, build_business_kg,
+    BuildBusinessKgOptions, BuildBusinessKgSummary, BuildError, Priority, build_business_kg,
 };
 pub use crate::languages::business::model::ExtractionSummary;
-pub use extractor::{JavaBusinessExtractor, extract_business};
-pub use test_extractor::{TestExtractionOptions, TestExtractionSummary, extract_tests};
+pub use extractor::{BusinessExtractionError, JavaBusinessExtractor, extract_business};
+pub use test_extractor::{
+    TestExtractionError, TestExtractionOptions, TestExtractionSummary, extract_tests,
+};
 
-pub fn default_database_path(project_root: &Path, output_dir: &Path) -> Result<PathBuf, String> {
+pub fn default_database_path(project_root: &Path, output_dir: &Path) -> Result<PathBuf, PathError> {
     let project_name = project_root
         .file_name()
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
         .map(sanitize_path_segment)
-        .ok_or_else(|| {
-            format!(
-                "path has no usable directory name: {}",
-                project_root.display()
-            )
-        })?;
+        .ok_or_else(|| PathError::NoUsableDirectoryName(project_root.to_path_buf()))?;
     Ok(output_dir.join(project_name).join("business-extraction.db"))
 }
 

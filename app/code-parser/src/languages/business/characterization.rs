@@ -4,6 +4,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OptionalExtension, params};
 use sha2::{Digest, Sha256};
+use thiserror::Error;
+
+use crate::core::error::{DatabaseError, FileError, PathError};
 
 const SUPPORTED_NODE_KINDS: [&str; 5] = [
     "BusinessRule",
@@ -35,6 +38,29 @@ pub struct GenerateCharacterizationTestsSummary {
     pub persisted_behaviors: usize,
     pub skipped_behaviors: usize,
     pub diagnostics: usize,
+}
+
+pub type CharacterizationResult<T> = Result<T, CharacterizationError>;
+
+#[derive(Debug, Error)]
+pub enum CharacterizationError {
+    #[error(transparent)]
+    Path(#[from] PathError),
+
+    #[error(transparent)]
+    File(#[from] FileError),
+
+    #[error(transparent)]
+    Database(#[from] DatabaseError),
+
+    #[error("--force and --continue cannot be used together")]
+    ConflictingResumeOptions,
+
+    #[error("--max-behaviors must be greater than 0")]
+    InvalidMaxBehaviors,
+
+    #[error("unsupported --node-kind: {0}")]
+    UnsupportedNodeKind(String),
 }
 
 #[derive(Debug)]
@@ -117,46 +143,48 @@ const GENERATED_MARKER: &str = "GLUON-GENERATED-CHARACTERIZATION-TEST";
 
 pub fn generate_characterization_tests(
     options: &GenerateCharacterizationTestsOptions,
-) -> Result<GenerateCharacterizationTestsSummary, String> {
+) -> CharacterizationResult<GenerateCharacterizationTestsSummary> {
     validate_options(options)?;
     let output_path = characterization_database_path(&options.source_path, &options.output_dir)?;
     if options.force && output_path.exists() {
-        fs::remove_file(&output_path).map_err(|error| {
-            format!(
-                "failed to remove characterization database {}: {error}",
-                output_path.display()
-            )
+        fs::remove_file(&output_path).map_err(|source| FileError::Remove {
+            path: output_path.clone(),
+            source,
         })?;
     }
     if let Some(parent) = output_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "failed to create output directory {}: {error}",
-                parent.display()
-            )
+        fs::create_dir_all(parent).map_err(|source| FileError::CreateDir {
+            path: parent.to_path_buf(),
+            source,
         })?;
     }
 
-    let business = Connection::open(&options.business_database).map_err(|error| {
-        format!(
-            "failed to open business database {}: {error}",
-            options.business_database.display()
-        )
+    let business =
+        Connection::open(&options.business_database).map_err(|source| DatabaseError::Open {
+            label: "business database",
+            path: options.business_database.clone(),
+            source,
+        })?;
+    validate_business_database(&business).map_err(|detail| DatabaseError::InvalidSchema {
+        label: "business database",
+        detail,
     })?;
-    validate_business_database(&business)?;
 
-    let kg = Connection::open(&options.kg_database).map_err(|error| {
-        format!(
-            "failed to open KG database {}: {error}",
-            options.kg_database.display()
-        )
+    let kg = Connection::open(&options.kg_database).map_err(|source| DatabaseError::Open {
+        label: "KG database",
+        path: options.kg_database.clone(),
+        source,
     })?;
-    validate_kg_database(&kg)?;
+    validate_kg_database(&kg).map_err(|detail| DatabaseError::InvalidSchema {
+        label: "KG database",
+        detail,
+    })?;
 
-    let mut store = CharacterizationStore::open(&output_path)?;
-    let run_id = store.start_run(options)?;
+    let mut store = CharacterizationStore::open(&output_path).map_err(DatabaseError::Operation)?;
+    let run_id = store.start_run(options).map_err(DatabaseError::Operation)?;
 
-    let candidates = select_behavior_candidates(&kg, &business, options)?;
+    let candidates =
+        select_behavior_candidates(&kg, &business, options).map_err(DatabaseError::Operation)?;
     let mut summary = GenerateCharacterizationTestsSummary {
         business_database_path: options.business_database.display().to_string(),
         kg_database_path: options.kg_database.display().to_string(),
@@ -173,40 +201,48 @@ pub fn generate_characterization_tests(
                     summary.persisted_behaviors += 1;
                     match generate_behavior_scaffold(&business, options, run_id, &candidate) {
                         Ok((scenario, file)) => {
-                            store.persist_scenario(
-                                run_id,
-                                &behavior_id(&candidate.node_id),
-                                &scenario,
-                            )?;
+                            store
+                                .persist_scenario(
+                                    run_id,
+                                    &behavior_id(&candidate.node_id),
+                                    &scenario,
+                                )
+                                .map_err(DatabaseError::Operation)?;
                             match write_generated_file(&file, options.force) {
                                 Ok(()) => {
-                                    store.persist_file(&file)?;
+                                    store
+                                        .persist_file(&file)
+                                        .map_err(DatabaseError::Operation)?;
                                 }
                                 Err(error) => {
                                     summary.diagnostics += 1;
-                                    store.record_diagnostic(
-                                        run_id,
-                                        Some(&behavior_id(&candidate.node_id)),
-                                        Some(&candidate.node_id),
-                                        Some(&scenario.id),
-                                        "error",
-                                        "write_file",
-                                        &error,
-                                    )?;
+                                    store
+                                        .record_diagnostic(
+                                            run_id,
+                                            Some(&behavior_id(&candidate.node_id)),
+                                            Some(&candidate.node_id),
+                                            Some(&scenario.id),
+                                            "error",
+                                            "write_file",
+                                            &error,
+                                        )
+                                        .map_err(DatabaseError::Operation)?;
                                 }
                             }
                         }
                         Err(error) => {
                             summary.diagnostics += 1;
-                            store.record_diagnostic(
-                                run_id,
-                                Some(&behavior_id(&candidate.node_id)),
-                                Some(&candidate.node_id),
-                                None,
-                                "error",
-                                "generate",
-                                &error,
-                            )?;
+                            store
+                                .record_diagnostic(
+                                    run_id,
+                                    Some(&behavior_id(&candidate.node_id)),
+                                    Some(&candidate.node_id),
+                                    None,
+                                    "error",
+                                    "generate",
+                                    &error,
+                                )
+                                .map_err(DatabaseError::Operation)?;
                         }
                     }
                 } else {
@@ -215,52 +251,47 @@ pub fn generate_characterization_tests(
             }
             Err(error) => {
                 summary.diagnostics += 1;
-                store.record_diagnostic(
-                    run_id,
-                    Some(&behavior_id(&candidate.node_id)),
-                    Some(&candidate.node_id),
-                    None,
-                    "error",
-                    "persist",
-                    &error,
-                )?;
+                store
+                    .record_diagnostic(
+                        run_id,
+                        Some(&behavior_id(&candidate.node_id)),
+                        Some(&candidate.node_id),
+                        None,
+                        "error",
+                        "persist",
+                        &error,
+                    )
+                    .map_err(DatabaseError::Operation)?;
             }
         }
     }
 
-    store.finish_run(run_id, &summary)?;
+    store
+        .finish_run(run_id, &summary)
+        .map_err(DatabaseError::Operation)?;
     Ok(summary)
 }
 
-fn validate_options(options: &GenerateCharacterizationTestsOptions) -> Result<(), String> {
+fn validate_options(options: &GenerateCharacterizationTestsOptions) -> CharacterizationResult<()> {
     if !options.business_database.exists() {
-        return Err(format!(
-            "business database does not exist: {}",
-            options.business_database.display()
-        ));
+        return Err(PathError::NotFound(options.business_database.clone()).into());
     }
     if !options.kg_database.exists() {
-        return Err(format!(
-            "KG database does not exist: {}",
-            options.kg_database.display()
-        ));
+        return Err(PathError::NotFound(options.kg_database.clone()).into());
     }
     if !options.source_path.exists() {
-        return Err(format!(
-            "source path does not exist: {}",
-            options.source_path.display()
-        ));
+        return Err(PathError::NotFound(options.source_path.clone()).into());
     }
     if options.force && options.resume {
-        return Err("--force and --continue cannot be used together".to_string());
+        return Err(CharacterizationError::ConflictingResumeOptions);
     }
     if options.max_behaviors == Some(0) {
-        return Err("--max-behaviors must be greater than 0".to_string());
+        return Err(CharacterizationError::InvalidMaxBehaviors);
     }
     if let Some(kind) = &options.node_kind
         && !SUPPORTED_NODE_KINDS.contains(&kind.as_str())
     {
-        return Err(format!("unsupported --node-kind: {kind}"));
+        return Err(CharacterizationError::UnsupportedNodeKind(kind.clone()));
     }
     Ok(())
 }
@@ -288,7 +319,7 @@ fn validate_tables(connection: &Connection, label: &str, tables: &[&str]) -> Res
             .optional()
             .map_err(|error| format!("failed to inspect {label}: {error}"))?;
         if exists.is_none() {
-            return Err(format!("invalid {label}: missing table {table}"));
+            return Err(format!("missing table {table}"));
         }
     }
     Ok(())
@@ -1094,18 +1125,13 @@ fn java_string(value: &str) -> String {
 fn characterization_database_path(
     source_path: &Path,
     output_dir: &Path,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, PathError> {
     let project_name = source_path
         .file_name()
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
         .map(sanitize_path_segment)
-        .ok_or_else(|| {
-            format!(
-                "path has no usable directory name: {}",
-                source_path.display()
-            )
-        })?;
+        .ok_or_else(|| PathError::NoUsableDirectoryName(source_path.to_path_buf()))?;
     Ok(output_dir
         .join(project_name)
         .join("characterization-tests.db"))

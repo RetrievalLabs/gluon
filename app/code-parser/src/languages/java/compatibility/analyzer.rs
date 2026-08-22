@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use thiserror::Error;
+
+use crate::core::error::KnowledgeBaseError;
 use crate::languages::java::build::model::{
     BuildReport, BuildToolInfo, DependencyInfo, PluginInfo,
 };
@@ -16,11 +19,19 @@ use crate::languages::java::compatibility::source_scan::scan_java_sources;
 
 const UNKNOWN_MESSAGE: &str = "No KB rule; verify via official docs or ask LLM/research agent.";
 
+pub type CompatibilityResult<T> = Result<T, CompatibilityError>;
+
+#[derive(Debug, Error)]
+pub enum CompatibilityError {
+    #[error("failed to load Java compatibility knowledge base: {0}")]
+    KnowledgeBase(#[from] KnowledgeBaseError),
+}
+
 pub fn analyze_report(
     build_report: &BuildReport,
     target_java: u32,
     source_path: &Path,
-) -> Result<CompatibilityReport, String> {
+) -> CompatibilityResult<CompatibilityReport> {
     analyze_report_with_options(
         build_report,
         target_java,
@@ -34,8 +45,9 @@ pub fn analyze_report_with_options(
     target_java: u32,
     source_path: &Path,
     jdk_tool_options: &JdkToolOptions,
-) -> Result<CompatibilityReport, String> {
-    let kb = JavaCompatibilityKnowledgeBase::load_default()?;
+) -> CompatibilityResult<CompatibilityReport> {
+    let kb = JavaCompatibilityKnowledgeBase::load_default()
+        .map_err(|error| KnowledgeBaseError::Load(error))?;
     let mut diagnostics = Vec::new();
     let source_java = detect_source_java(build_report);
 

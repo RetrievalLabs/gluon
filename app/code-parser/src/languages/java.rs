@@ -10,6 +10,7 @@ pub struct JavaLanguageParser;
 
 impl LanguageParser for JavaLanguageParser {
     type Report = build::model::BuildReport;
+    type Error = build::BuildParseError;
 
     fn language(&self) -> &'static str {
         "java"
@@ -20,7 +21,7 @@ impl LanguageParser for JavaLanguageParser {
         path: &Path,
         options: ParseOptions,
         runner: &dyn build::resolver::CommandRunner,
-    ) -> Result<Self::Report, String> {
+    ) -> Result<Self::Report, Self::Error> {
         build::parse_build_with_runner(path, options.resolve, runner)
     }
 }

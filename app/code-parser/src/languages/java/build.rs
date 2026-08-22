@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 
+use thiserror::Error;
 use walkdir::{DirEntry, WalkDir};
 
+use crate::core::error::{FileError, PathError};
 use crate::languages::java::build::gradle::{
     GradleBuildParser, GradleVersionCatalogParser, GradleWrapperParser,
 };
@@ -20,7 +22,18 @@ pub trait BuildSystemParser {
     fn parse_file(&self, project_root: &Path, file: &Path, report: &mut BuildReport);
 }
 
-pub fn parse_build(path: &Path, resolve: bool) -> Result<BuildReport, String> {
+pub type BuildParseResult<T> = Result<T, BuildParseError>;
+
+#[derive(Debug, Error)]
+pub enum BuildParseError {
+    #[error(transparent)]
+    Path(#[from] PathError),
+
+    #[error(transparent)]
+    File(#[from] FileError),
+}
+
+pub fn parse_build(path: &Path, resolve: bool) -> BuildParseResult<BuildReport> {
     parse_build_with_runner(path, resolve, &SystemCommandRunner)
 }
 
@@ -28,14 +41,14 @@ pub fn parse_build_with_runner(
     path: &Path,
     resolve: bool,
     runner: &dyn CommandRunner,
-) -> Result<BuildReport, String> {
+) -> BuildParseResult<BuildReport> {
     if !path.exists() {
-        return Err(format!("path does not exist: {}", path.display()));
+        return Err(PathError::NotFound(path.to_path_buf()).into());
     }
 
     let project_root = if path.is_file() {
         path.parent()
-            .ok_or_else(|| format!("path has no parent: {}", path.display()))?
+            .ok_or_else(|| PathError::NoParent(path.to_path_buf()))?
             .to_path_buf()
     } else {
         path.to_path_buf()
@@ -77,7 +90,7 @@ pub fn parse_build_with_runner(
     Ok(report)
 }
 
-fn discover_build_files(path: &Path) -> Result<Vec<PathBuf>, String> {
+fn discover_build_files(path: &Path) -> BuildParseResult<Vec<PathBuf>> {
     if path.is_file() {
         return Ok(vec![path.to_path_buf()]);
     }
@@ -87,7 +100,7 @@ fn discover_build_files(path: &Path) -> Result<Vec<PathBuf>, String> {
         .into_iter()
         .filter_entry(|entry| !is_ignored_dir(entry))
     {
-        let entry = entry.map_err(|error| error.to_string())?;
+        let entry = entry.map_err(|error| FileError::Walk(error.to_string()))?;
         if !entry.file_type().is_file() {
             continue;
         }

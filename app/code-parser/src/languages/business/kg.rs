@@ -9,6 +9,9 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use thiserror::Error;
+
+use crate::core::error::{DatabaseError, FileError, KgError, LlmError, PathError};
 
 pub const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-5";
 pub const BUSINESS_KG_PROMPT_VERSION: &str = "v1";
@@ -23,6 +26,32 @@ pub struct BuildBusinessKgOptions {
     pub force: bool,
     pub resume: bool,
     pub max_failures: Option<usize>,
+}
+
+pub type BuildResult<T> = Result<T, BuildError>;
+
+#[derive(Debug, Error)]
+pub enum BuildError {
+    #[error(transparent)]
+    Path(#[from] PathError),
+
+    #[error(transparent)]
+    File(#[from] FileError),
+
+    #[error(transparent)]
+    Database(#[from] DatabaseError),
+
+    #[error("--force and --continue cannot be used together")]
+    ConflictingResumeOptions,
+
+    #[error("--max-failures must be greater than 0")]
+    InvalidMaxFailures,
+
+    #[error("LLM request failed: {0}")]
+    Llm(#[from] LlmError),
+
+    #[error(transparent)]
+    Kg(#[from] KgError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -272,9 +301,8 @@ pub struct AnthropicLlmClient {
 }
 
 impl AnthropicLlmClient {
-    pub fn from_env() -> Result<Self, String> {
-        let api_key = std::env::var("ANTHROPIC_API_KEY")
-            .map_err(|_| "missing ANTHROPIC_API_KEY".to_string())?;
+    pub fn from_env() -> BuildResult<Self> {
+        let api_key = std::env::var("ANTHROPIC_API_KEY").map_err(|_| LlmError::MissingApiKey)?;
         let api_base = std::env::var("ANTHROPIC_API_BASE")
             .unwrap_or_else(|_| "https://api.anthropic.com".to_string());
         let model = std::env::var("ANTHROPIC_MODEL")
@@ -282,7 +310,9 @@ impl AnthropicLlmClient {
         let http = Client::builder()
             .timeout(Duration::from_secs(600))
             .build()
-            .map_err(|error| format!("failed to create Anthropic HTTP client: {error}"))?;
+            .map_err(|error| {
+                LlmError::Operation(format!("failed to create Anthropic HTTP client: {error}"))
+            })?;
         Ok(Self {
             api_key,
             api_base,
@@ -565,18 +595,16 @@ struct ToolUse {
     input: Value,
 }
 
-pub fn build_business_kg(
-    options: &BuildBusinessKgOptions,
-) -> Result<BuildBusinessKgSummary, String> {
+pub fn build_business_kg(options: &BuildBusinessKgOptions) -> BuildResult<BuildBusinessKgSummary> {
     validate_build_options(options)?;
-    let client = AnthropicLlmClient::from_env()?;
+    let client: AnthropicLlmClient = AnthropicLlmClient::from_env()?;
     build_business_kg_with_client(options, &client)
 }
 
 pub fn build_business_kg_with_client(
     options: &BuildBusinessKgOptions,
     client: &dyn LlmClient,
-) -> Result<BuildBusinessKgSummary, String> {
+) -> BuildResult<BuildBusinessKgSummary> {
     build_business_kg_with_input(options, client, &CommonSqliteBusinessKgInput)
 }
 
@@ -584,7 +612,7 @@ fn build_business_kg_with_input(
     options: &BuildBusinessKgOptions,
     client: &dyn LlmClient,
     input: &dyn BusinessKgInput,
-) -> Result<BuildBusinessKgSummary, String> {
+) -> BuildResult<BuildBusinessKgSummary> {
     validate_build_options(options)?;
     let output = options.output.clone().unwrap_or_else(|| {
         options
@@ -594,28 +622,38 @@ fn build_business_kg_with_input(
             .join("business-kg.db")
     });
     if options.force && output.exists() {
-        fs::remove_file(&output)
-            .map_err(|error| format!("failed to remove {}: {error}", output.display()))?;
+        fs::remove_file(&output).map_err(|source| FileError::Remove {
+            path: output.clone(),
+            source,
+        })?;
     }
     if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+        fs::create_dir_all(parent).map_err(|source| FileError::CreateDir {
+            path: parent.to_path_buf(),
+            source,
+        })?;
     }
 
-    let extraction = Connection::open(&options.database).map_err(|error| {
-        format!(
-            "failed to open extraction database {}: {error}",
-            options.database.display()
-        )
+    let extraction = Connection::open(&options.database).map_err(|source| DatabaseError::Open {
+        label: "extraction database",
+        path: options.database.clone(),
+        source,
     })?;
-    input.validate_extraction_db(&extraction)?;
+    input
+        .validate_extraction_db(&extraction)
+        .map_err(|detail| DatabaseError::InvalidSchema {
+            label: "extraction DB",
+            detail,
+        })?;
 
-    let mut selected = input.select_methods(&extraction, &options.source_path, options)?;
+    let mut selected = input
+        .select_methods(&extraction, &options.source_path, options)
+        .map_err(DatabaseError::Operation)?;
     if let Some(max_methods) = options.max_methods {
         selected.truncate(max_methods);
     }
 
-    let mut store = KgStore::open(&output)?;
+    let mut store = KgStore::open(&output).map_err(KgError::Operation)?;
     if options.resume {
         let before = selected.len();
         selected.retain(|method| {
@@ -632,12 +670,18 @@ fn build_business_kg_with_input(
     let mut summary = BuildBusinessKgSummary {
         database_path: options.database.display().to_string(),
         output_path: output.display().to_string(),
-        candidates: input.count_candidates(&extraction)?,
-        high_priority_candidates: input.count_priority(&extraction, "high")?,
+        candidates: input
+            .count_candidates(&extraction)
+            .map_err(DatabaseError::Operation)?,
+        high_priority_candidates: input
+            .count_priority(&extraction, "high")
+            .map_err(DatabaseError::Operation)?,
         selected: selected.len(),
         ..BuildBusinessKgSummary::default()
     };
-    let run_id = store.start_run(client.model(), summary.selected)?;
+    let run_id = store
+        .start_run(client.model(), summary.selected)
+        .map_err(KgError::Operation)?;
 
     eprintln!(
         "build-business-kg: selected {} methods from {} candidates; output={}",
@@ -662,7 +706,9 @@ fn build_business_kg_with_input(
         );
         let request = MethodRequest {
             method: method.clone(),
-            existing_nodes: store.find_nodes_for_prompt(20)?,
+            existing_nodes: store
+                .find_nodes_for_prompt(20)
+                .map_err(KgError::Operation)?,
         };
         let (analysis_result, tool_calls) = {
             let mut tools =
@@ -699,7 +745,9 @@ fn build_business_kg_with_input(
                     summary.cache_creation_input_tokens += result.usage.cache_creation_input_tokens;
                     summary.cache_read_input_tokens += result.usage.cache_read_input_tokens;
                     summary.total_tokens += result.usage.total_tokens();
-                    store.record_method_failure(run_id, &method.id, &error)?;
+                    store
+                        .record_method_failure(run_id, &method.id, &error)
+                        .map_err(KgError::Operation)?;
                     let reason = short_error(&error);
                     last_error = Some(format!("{}: {}", method.id, reason));
                     eprintln!(
@@ -720,7 +768,9 @@ fn build_business_kg_with_input(
             },
             Err(error) => {
                 summary.failed += 1;
-                store.record_method_failure(run_id, &method.id, &error)?;
+                store
+                    .record_method_failure(run_id, &method.id, &error)
+                    .map_err(KgError::Operation)?;
                 let reason = short_error(&error);
                 last_error = Some(format!("{}: {}", method.id, reason));
                 eprintln!(
@@ -737,7 +787,9 @@ fn build_business_kg_with_input(
             }
         }
         summary.tool_calls += tool_calls;
-        store.update_run_progress(run_id, &summary)?;
+        store
+            .update_run_progress(run_id, &summary)
+            .map_err(KgError::Operation)?;
         if let Some(error) = &last_error {
             eprintln!(
                 "build-business-kg: progress {}/{} complete failed={} total_tool_calls={} total_tokens={} elapsed_ms={} last_error={}",
@@ -771,11 +823,13 @@ fn build_business_kg_with_input(
         }
     }
 
-    let counts = store.counts()?;
+    let counts = store.counts().map_err(KgError::Operation)?;
     summary.nodes = counts.nodes;
     summary.edges = counts.edges;
     summary.evidence = counts.evidence;
-    store.finish_run(run_id, &summary)?;
+    store
+        .finish_run(run_id, &summary)
+        .map_err(KgError::Operation)?;
     eprintln!(
         "build-business-kg: done status={} methods_processed={} failed={} input_tokens={} output_tokens={} total_tokens={} nodes={} edges={} evidence={} elapsed_ms={}",
         if summary.failed == 0 {
@@ -806,24 +860,18 @@ fn short_error(error: &str) -> String {
     }
 }
 
-fn validate_build_options(options: &BuildBusinessKgOptions) -> Result<(), String> {
+fn validate_build_options(options: &BuildBusinessKgOptions) -> BuildResult<()> {
     if !options.database.exists() {
-        return Err(format!(
-            "extraction database does not exist: {}",
-            options.database.display()
-        ));
+        return Err(PathError::NotFound(options.database.clone()).into());
     }
     if !options.source_path.exists() {
-        return Err(format!(
-            "source path does not exist: {}",
-            options.source_path.display()
-        ));
+        return Err(PathError::InvalidSourcePath(options.source_path.clone()).into());
     }
     if options.force && options.resume {
-        return Err("--force and --continue cannot be used together".to_string());
+        return Err(BuildError::ConflictingResumeOptions);
     }
     if options.max_failures == Some(0) {
-        return Err("--max-failures must be greater than 0".to_string());
+        return Err(BuildError::InvalidMaxFailures);
     }
     Ok(())
 }
@@ -839,7 +887,7 @@ fn validate_extraction_db(connection: &Connection) -> Result<(), String> {
             .optional()
             .map_err(|error| format!("failed to inspect extraction database: {error}"))?;
         if exists.is_none() {
-            return Err(format!("invalid extraction DB: missing table {table}"));
+            return Err(format!("missing table {table}"));
         }
     }
     Ok(())
