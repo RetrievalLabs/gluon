@@ -345,8 +345,8 @@ impl LlmClient for AnthropicLlmClient {
                 "model": self.model,
                 "max_tokens": 8192,
                 "stream": true,
-                "system": system_prompt(),
-                "tools": tool_schemas(),
+                "system": cached_system_prompt(),
+                "tools": cached_tool_schemas(),
                 "messages": messages
             });
             let message = self.post_message(&url, &body)?;
@@ -442,7 +442,7 @@ impl AnthropicLlmClient {
             "model": self.model,
             "max_tokens": 8192,
             "stream": true,
-            "system": system_prompt(),
+            "system": cached_system_prompt(),
             "messages": messages
         });
         let message = self.post_message(url, &body)?;
@@ -1209,6 +1209,20 @@ fn system_prompt() -> &'static str {
     "You are a business logic analyst. Extract only business meaning supported by source evidence. Never invent requirements. Ignore technical plumbing, logging, configuration, and CRUD-only code unless it encodes a business rule. Every node and edge must have evidence and confidence. Return only valid JSON that exactly follows the requested schema."
 }
 
+fn prompt_cache_control() -> Value {
+    serde_json::json!({ "type": "ephemeral" })
+}
+
+fn cached_system_prompt() -> Value {
+    serde_json::json!([
+        {
+            "type": "text",
+            "text": system_prompt(),
+            "cache_control": prompt_cache_control()
+        }
+    ])
+}
+
 fn anthropic_text_from_content(content: &[Value]) -> Option<String> {
     let mut text = String::new();
     for item in content {
@@ -1328,6 +1342,16 @@ fn tool_schemas() -> Vec<Value> {
             &[("test_case_id", "string")],
         ),
     ]
+}
+
+fn cached_tool_schemas() -> Vec<Value> {
+    let mut tools = tool_schemas();
+    if let Some(last) = tools.last_mut()
+        && let Some(object) = last.as_object_mut()
+    {
+        object.insert("cache_control".to_string(), prompt_cache_control());
+    }
+    tools
 }
 
 fn tool_schema(name: &str, description: &str, required: &[(&str, &str)]) -> Value {
@@ -3110,6 +3134,28 @@ mod tests {
         let path = std::env::temp_dir().join(format!("code-parser-{name}-{}", timestamp()));
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    #[test]
+    fn cached_system_prompt_marks_static_prompt_cacheable() {
+        let system = cached_system_prompt();
+
+        assert_eq!(system[0]["type"], "text");
+        assert_eq!(system[0]["text"], system_prompt());
+        assert_eq!(system[0]["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn cached_tool_schemas_marks_last_tool_cacheable() {
+        let tools = cached_tool_schemas();
+
+        assert!(tools.len() > 1);
+        assert!(
+            tools[..tools.len() - 1]
+                .iter()
+                .all(|tool| tool.get("cache_control").is_none())
+        );
+        assert_eq!(tools.last().unwrap()["cache_control"]["type"], "ephemeral");
     }
 
     #[test]
