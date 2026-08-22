@@ -1,0 +1,2 @@
+"""Integration adapter tests."""
+
