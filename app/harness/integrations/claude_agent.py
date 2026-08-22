@@ -146,8 +146,11 @@ Gluon CLI skill:
 """
 
     def gluon_cli_skill(self) -> str:
+        configured_path = os.environ.get("GLUON_CLI_SKILL_PATH")
         skill_path = (
-            Path(__file__).resolve().parents[3]
+            Path(configured_path)
+            if configured_path
+            else Path(__file__).resolve().parents[3]
             / "skills"
             / "gluon-cli"
             / "SKILL.md"
