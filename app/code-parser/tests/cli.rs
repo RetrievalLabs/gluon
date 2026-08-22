@@ -6,6 +6,388 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::Connection;
 use serde_json::Value;
 
+fn write_characterization_business_db(path: &PathBuf) {
+    let connection = Connection::open(path).unwrap();
+    connection
+        .execute_batch(
+            "
+            CREATE TABLE methods (
+                id TEXT PRIMARY KEY,
+                class_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                file TEXT NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL
+            );
+            CREATE TABLE classes (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                package_name TEXT,
+                qualified_name TEXT NOT NULL
+            );
+            CREATE TABLE entry_points (
+                id TEXT PRIMARY KEY,
+                method_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                framework TEXT,
+                route TEXT,
+                http_method TEXT,
+                source TEXT NOT NULL
+            );
+            CREATE TABLE candidate_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                method_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                count INTEGER NOT NULL,
+                weight INTEGER NOT NULL
+            );
+            CREATE TABLE test_suites (
+                id TEXT PRIMARY KEY,
+                class_name TEXT NOT NULL
+            );
+            CREATE TABLE test_cases (
+                id TEXT PRIMARY KEY,
+                suite_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                file TEXT NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL
+            );
+            CREATE TABLE test_targets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                test_case_id TEXT NOT NULL,
+                target_kind TEXT NOT NULL,
+                target_id TEXT NOT NULL
+            );
+            CREATE TABLE test_assertions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                test_case_id TEXT NOT NULL,
+                assertion_kind TEXT NOT NULL,
+                expression TEXT NOT NULL,
+                line INTEGER NOT NULL
+            );
+            CREATE TABLE test_fixtures (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                test_case_id TEXT,
+                fixture_kind TEXT NOT NULL,
+                name TEXT NOT NULL,
+                line INTEGER NOT NULL
+            );
+            CREATE TABLE test_entry_points (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                test_case_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                framework TEXT,
+                route TEXT,
+                http_method TEXT
+            );
+            INSERT INTO classes (id, name, package_name, qualified_name)
+            VALUES ('class:OrderService', 'OrderService', 'demo', 'demo.OrderService');
+            INSERT INTO methods (id, class_id, name, signature, file, start_line, end_line)
+            VALUES ('method:OrderService#approve', 'class:OrderService', 'approve', 'approve()', 'src/main/java/demo/OrderService.java', 3, 5);
+            INSERT INTO entry_points (id, method_id, kind, framework, route, http_method, source)
+            VALUES ('entry:approve', 'method:OrderService#approve', 'http', 'spring', '/orders/{id}/approve', 'POST', 'tree_sitter');
+            INSERT INTO candidate_signals (method_id, name, count, weight)
+            VALUES ('method:OrderService#approve', 'business_terms', 2, 3);
+            INSERT INTO test_suites (id, class_name)
+            VALUES ('suite:OrderServiceTest', 'OrderServiceTest');
+            INSERT INTO test_cases (id, suite_id, name, file, start_line, end_line)
+            VALUES ('case:approvesOrder', 'suite:OrderServiceTest', 'approvesOrder', 'src/test/java/demo/OrderServiceTest.java', 10, 20);
+            INSERT INTO test_targets (test_case_id, target_kind, target_id)
+            VALUES ('case:approvesOrder', 'method', 'method:OrderService#approve');
+            INSERT INTO test_assertions (test_case_id, assertion_kind, expression, line)
+            VALUES ('case:approvesOrder', 'equals', 'assertEquals', 18);
+            INSERT INTO test_fixtures (test_case_id, fixture_kind, name, line)
+            VALUES ('case:approvesOrder', 'mock', 'repository', 12);
+            INSERT INTO test_entry_points (test_case_id, kind, framework, route, http_method)
+            VALUES ('case:approvesOrder', 'http', 'mockmvc', '/orders/{id}/approve', 'POST');
+            ",
+        )
+        .unwrap();
+}
+
+fn write_characterization_kg_db(path: &PathBuf) {
+    let connection = Connection::open(path).unwrap();
+    connection
+        .execute_batch(
+            "
+            CREATE TABLE business_nodes (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                name TEXT NOT NULL,
+                statement TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE business_evidence (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                node_id TEXT,
+                edge_id INTEGER,
+                method_id TEXT NOT NULL,
+                source_lines_json TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            INSERT INTO business_nodes (
+                id, kind, name, statement, confidence, created_at
+            ) VALUES (
+                'node:approve-pending', 'BusinessRule', 'Approve pending order',
+                'Pending orders can be approved.', 0.9, '1'
+            );
+            INSERT INTO business_evidence (
+                node_id, method_id, source_lines_json, reason, created_at
+            ) VALUES (
+                'node:approve-pending', 'method:OrderService#approve',
+                '[{\"file\":\"OrderService.java\",\"start_line\":1,\"end_line\":3}]',
+                'method enforces rule', '1'
+            );
+            ",
+        )
+        .unwrap();
+}
+
+fn write_build_report(root: &PathBuf, dependency_fragment: &str) -> PathBuf {
+    let report_path = root.join("build-report.json");
+    fs::write(
+        &report_path,
+        format!(
+            r#"{{
+              "project_root":"{}",
+              "build_tools":[],
+              "java_versions":[{{"version":"17","kind":"release","file":"pom.xml","source":"maven:property"}}],
+              "declared_dependencies":[],
+              {},
+              "declared_plugins":[],
+              "resolved_plugins":[],
+              "diagnostics":[]
+            }}"#,
+            root.display(),
+            dependency_fragment
+        ),
+    )
+    .unwrap();
+    report_path
+}
+
+fn write_fake_jdtls(root: &PathBuf) -> PathBuf {
+    let script = root.join("fake-jdtls.py");
+    fs::write(
+        &script,
+        r#"#!/usr/bin/env python3
+import json
+import sys
+
+def read_message():
+    length = None
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return None
+        line = line.decode("utf-8").strip()
+        if not line:
+            break
+        if line.lower().startswith("content-length:"):
+            length = int(line.split(":", 1)[1].strip())
+    if length is None:
+        return None
+    return json.loads(sys.stdin.buffer.read(length).decode("utf-8"))
+
+def write_message(value):
+    body = json.dumps(value).encode("utf-8")
+    sys.stdout.buffer.write(b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body)
+    sys.stdout.buffer.flush()
+
+while True:
+    message = read_message()
+    if message is None:
+        break
+    method = message.get("method")
+    if "id" not in message:
+        if method == "exit":
+            break
+        continue
+    if method == "initialize":
+        result = {"capabilities": {"definitionProvider": True, "referencesProvider": True, "documentSymbolProvider": True}}
+    elif method == "shutdown":
+        result = None
+    elif method in ("textDocument/documentSymbol", "textDocument/definition", "textDocument/references", "textDocument/implementation"):
+        result = []
+    else:
+        result = None
+    write_message({"jsonrpc": "2.0", "id": message["id"], "result": result})
+"#,
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(&script).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script, permissions).unwrap();
+    }
+    script
+}
+
+fn write_business_extraction_db(path: &PathBuf, file: &str) {
+    let connection = Connection::open(path).unwrap();
+    connection
+        .execute_batch(
+            "
+            CREATE TABLE classes (
+                id TEXT PRIMARY KEY,
+                qualified_name TEXT NOT NULL
+            );
+            CREATE TABLE methods (
+                id TEXT PRIMARY KEY,
+                class_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                file TEXT NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL
+            );
+            CREATE TABLE candidate_scores (
+                method_id TEXT PRIMARY KEY,
+                score INTEGER NOT NULL,
+                priority TEXT NOT NULL
+            );
+            ",
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO classes (id, qualified_name) VALUES ('class:OrderService', 'OrderService')",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO methods (
+                id, class_id, name, signature, file, start_line, end_line
+             ) VALUES (
+                'method:OrderService#approve', 'class:OrderService', 'approve', 'approve()', ?1, 2, 4
+             )",
+            [file],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO candidate_scores (method_id, score, priority)
+             VALUES ('method:OrderService#approve', 10, 'high')",
+            [],
+        )
+        .unwrap();
+}
+
+fn write_test_target_business_db(path: &PathBuf) {
+    let connection = Connection::open(path).unwrap();
+    connection
+        .execute_batch(
+            "
+            CREATE TABLE classes (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                qualified_name TEXT NOT NULL,
+                file TEXT NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL
+            );
+            CREATE TABLE methods (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                file TEXT NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL
+            );
+            INSERT INTO classes (id, name, qualified_name, file, start_line, end_line)
+            VALUES ('class:demo.OrderService@src/main/java/demo/OrderService.java:1', 'OrderService', 'demo.OrderService', 'src/main/java/demo/OrderService.java', 1, 1);
+            INSERT INTO methods (id, name, file, start_line, end_line)
+            VALUES ('method:demo.OrderService#approve()@src/main/java/demo/OrderService.java:1', 'approve', 'src/main/java/demo/OrderService.java', 1, 1);
+            ",
+        )
+        .unwrap();
+}
+
+fn write_definition_fake_jdtls(root: &PathBuf) -> PathBuf {
+    let script = root.join("fake-definition-jdtls.py");
+    let target = root
+        .join("src/main/java/demo/OrderService.java")
+        .display()
+        .to_string();
+    fs::write(
+        &script,
+        format!(
+            r#"#!/usr/bin/env python3
+import json
+import sys
+
+target_uri = "file://{target}"
+
+def read_message():
+    length = None
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return None
+        line = line.decode("utf-8").strip()
+        if not line:
+            break
+        if line.lower().startswith("content-length:"):
+            length = int(line.split(":", 1)[1].strip())
+    if length is None:
+        return None
+    return json.loads(sys.stdin.buffer.read(length).decode("utf-8"))
+
+def write_message(value):
+    body = json.dumps(value).encode("utf-8")
+    sys.stdout.buffer.write(b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body)
+    sys.stdout.buffer.flush()
+
+while True:
+    message = read_message()
+    if message is None:
+        break
+    method = message.get("method")
+    if "id" not in message:
+        if method == "exit":
+            break
+        continue
+    if method == "initialize":
+        result = {{"capabilities": {{"definitionProvider": True}}}}
+    elif method == "shutdown":
+        result = None
+    elif method == "textDocument/definition":
+        result = [{{"uri": target_uri, "range": {{"start": {{"line": 0, "character": 43}}, "end": {{"line": 0, "character": 50}}}}}}]
+    else:
+        result = None
+    write_message({{"jsonrpc": "2.0", "id": message["id"], "result": result}})
+"#,
+            target = target.replace('\\', "\\\\").replace('"', "\\\"")
+        ),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(&script).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script, permissions).unwrap();
+    }
+    script
+}
+
+fn test_dir(name: &str) -> PathBuf {
+    let path = std::env::temp_dir().join(format!(
+        "code-parser-{name}-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&path).unwrap();
+    path
+}
 #[test]
 fn parse_build_outputs_json_for_project_root() {
     let root = test_dir("cli-success");
@@ -611,387 +993,4 @@ fn build_business_kg_rejects_missing_api_key() {
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("missing ANTHROPIC_API_KEY"));
     let _ = fs::remove_dir_all(root);
-}
-
-fn write_characterization_business_db(path: &PathBuf) {
-    let connection = Connection::open(path).unwrap();
-    connection
-        .execute_batch(
-            "
-            CREATE TABLE methods (
-                id TEXT PRIMARY KEY,
-                class_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                file TEXT NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL
-            );
-            CREATE TABLE classes (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                package_name TEXT,
-                qualified_name TEXT NOT NULL
-            );
-            CREATE TABLE entry_points (
-                id TEXT PRIMARY KEY,
-                method_id TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                framework TEXT,
-                route TEXT,
-                http_method TEXT,
-                source TEXT NOT NULL
-            );
-            CREATE TABLE candidate_signals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                method_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                count INTEGER NOT NULL,
-                weight INTEGER NOT NULL
-            );
-            CREATE TABLE test_suites (
-                id TEXT PRIMARY KEY,
-                class_name TEXT NOT NULL
-            );
-            CREATE TABLE test_cases (
-                id TEXT PRIMARY KEY,
-                suite_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                file TEXT NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL
-            );
-            CREATE TABLE test_targets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                test_case_id TEXT NOT NULL,
-                target_kind TEXT NOT NULL,
-                target_id TEXT NOT NULL
-            );
-            CREATE TABLE test_assertions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                test_case_id TEXT NOT NULL,
-                assertion_kind TEXT NOT NULL,
-                expression TEXT NOT NULL,
-                line INTEGER NOT NULL
-            );
-            CREATE TABLE test_fixtures (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                test_case_id TEXT,
-                fixture_kind TEXT NOT NULL,
-                name TEXT NOT NULL,
-                line INTEGER NOT NULL
-            );
-            CREATE TABLE test_entry_points (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                test_case_id TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                framework TEXT,
-                route TEXT,
-                http_method TEXT
-            );
-            INSERT INTO classes (id, name, package_name, qualified_name)
-            VALUES ('class:OrderService', 'OrderService', 'demo', 'demo.OrderService');
-            INSERT INTO methods (id, class_id, name, signature, file, start_line, end_line)
-            VALUES ('method:OrderService#approve', 'class:OrderService', 'approve', 'approve()', 'src/main/java/demo/OrderService.java', 3, 5);
-            INSERT INTO entry_points (id, method_id, kind, framework, route, http_method, source)
-            VALUES ('entry:approve', 'method:OrderService#approve', 'http', 'spring', '/orders/{id}/approve', 'POST', 'tree_sitter');
-            INSERT INTO candidate_signals (method_id, name, count, weight)
-            VALUES ('method:OrderService#approve', 'business_terms', 2, 3);
-            INSERT INTO test_suites (id, class_name)
-            VALUES ('suite:OrderServiceTest', 'OrderServiceTest');
-            INSERT INTO test_cases (id, suite_id, name, file, start_line, end_line)
-            VALUES ('case:approvesOrder', 'suite:OrderServiceTest', 'approvesOrder', 'src/test/java/demo/OrderServiceTest.java', 10, 20);
-            INSERT INTO test_targets (test_case_id, target_kind, target_id)
-            VALUES ('case:approvesOrder', 'method', 'method:OrderService#approve');
-            INSERT INTO test_assertions (test_case_id, assertion_kind, expression, line)
-            VALUES ('case:approvesOrder', 'equals', 'assertEquals', 18);
-            INSERT INTO test_fixtures (test_case_id, fixture_kind, name, line)
-            VALUES ('case:approvesOrder', 'mock', 'repository', 12);
-            INSERT INTO test_entry_points (test_case_id, kind, framework, route, http_method)
-            VALUES ('case:approvesOrder', 'http', 'mockmvc', '/orders/{id}/approve', 'POST');
-            ",
-        )
-        .unwrap();
-}
-
-fn write_characterization_kg_db(path: &PathBuf) {
-    let connection = Connection::open(path).unwrap();
-    connection
-        .execute_batch(
-            "
-            CREATE TABLE business_nodes (
-                id TEXT PRIMARY KEY,
-                kind TEXT NOT NULL,
-                name TEXT NOT NULL,
-                statement TEXT NOT NULL,
-                confidence REAL NOT NULL,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE business_evidence (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                node_id TEXT,
-                edge_id INTEGER,
-                method_id TEXT NOT NULL,
-                source_lines_json TEXT NOT NULL,
-                reason TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-            INSERT INTO business_nodes (
-                id, kind, name, statement, confidence, created_at
-            ) VALUES (
-                'node:approve-pending', 'BusinessRule', 'Approve pending order',
-                'Pending orders can be approved.', 0.9, '1'
-            );
-            INSERT INTO business_evidence (
-                node_id, method_id, source_lines_json, reason, created_at
-            ) VALUES (
-                'node:approve-pending', 'method:OrderService#approve',
-                '[{\"file\":\"OrderService.java\",\"start_line\":1,\"end_line\":3}]',
-                'method enforces rule', '1'
-            );
-            ",
-        )
-        .unwrap();
-}
-
-fn write_build_report(root: &PathBuf, dependency_fragment: &str) -> PathBuf {
-    let report_path = root.join("build-report.json");
-    fs::write(
-        &report_path,
-        format!(
-            r#"{{
-              "project_root":"{}",
-              "build_tools":[],
-              "java_versions":[{{"version":"17","kind":"release","file":"pom.xml","source":"maven:property"}}],
-              "declared_dependencies":[],
-              {},
-              "declared_plugins":[],
-              "resolved_plugins":[],
-              "diagnostics":[]
-            }}"#,
-            root.display(),
-            dependency_fragment
-        ),
-    )
-    .unwrap();
-    report_path
-}
-
-fn write_fake_jdtls(root: &PathBuf) -> PathBuf {
-    let script = root.join("fake-jdtls.py");
-    fs::write(
-        &script,
-        r#"#!/usr/bin/env python3
-import json
-import sys
-
-def read_message():
-    length = None
-    while True:
-        line = sys.stdin.buffer.readline()
-        if not line:
-            return None
-        line = line.decode("utf-8").strip()
-        if not line:
-            break
-        if line.lower().startswith("content-length:"):
-            length = int(line.split(":", 1)[1].strip())
-    if length is None:
-        return None
-    return json.loads(sys.stdin.buffer.read(length).decode("utf-8"))
-
-def write_message(value):
-    body = json.dumps(value).encode("utf-8")
-    sys.stdout.buffer.write(b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body)
-    sys.stdout.buffer.flush()
-
-while True:
-    message = read_message()
-    if message is None:
-        break
-    method = message.get("method")
-    if "id" not in message:
-        if method == "exit":
-            break
-        continue
-    if method == "initialize":
-        result = {"capabilities": {"definitionProvider": True, "referencesProvider": True, "documentSymbolProvider": True}}
-    elif method == "shutdown":
-        result = None
-    elif method in ("textDocument/documentSymbol", "textDocument/definition", "textDocument/references", "textDocument/implementation"):
-        result = []
-    else:
-        result = None
-    write_message({"jsonrpc": "2.0", "id": message["id"], "result": result})
-"#,
-    )
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = fs::metadata(&script).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&script, permissions).unwrap();
-    }
-    script
-}
-
-fn write_business_extraction_db(path: &PathBuf, file: &str) {
-    let connection = Connection::open(path).unwrap();
-    connection
-        .execute_batch(
-            "
-            CREATE TABLE classes (
-                id TEXT PRIMARY KEY,
-                qualified_name TEXT NOT NULL
-            );
-            CREATE TABLE methods (
-                id TEXT PRIMARY KEY,
-                class_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                file TEXT NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL
-            );
-            CREATE TABLE candidate_scores (
-                method_id TEXT PRIMARY KEY,
-                score INTEGER NOT NULL,
-                priority TEXT NOT NULL
-            );
-            ",
-        )
-        .unwrap();
-    connection
-        .execute(
-            "INSERT INTO classes (id, qualified_name) VALUES ('class:OrderService', 'OrderService')",
-            [],
-        )
-        .unwrap();
-    connection
-        .execute(
-            "INSERT INTO methods (
-                id, class_id, name, signature, file, start_line, end_line
-             ) VALUES (
-                'method:OrderService#approve', 'class:OrderService', 'approve', 'approve()', ?1, 2, 4
-             )",
-            [file],
-        )
-        .unwrap();
-    connection
-        .execute(
-            "INSERT INTO candidate_scores (method_id, score, priority)
-             VALUES ('method:OrderService#approve', 10, 'high')",
-            [],
-        )
-        .unwrap();
-}
-
-fn write_test_target_business_db(path: &PathBuf) {
-    let connection = Connection::open(path).unwrap();
-    connection
-        .execute_batch(
-            "
-            CREATE TABLE classes (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                qualified_name TEXT NOT NULL,
-                file TEXT NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL
-            );
-            CREATE TABLE methods (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                file TEXT NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL
-            );
-            INSERT INTO classes (id, name, qualified_name, file, start_line, end_line)
-            VALUES ('class:demo.OrderService@src/main/java/demo/OrderService.java:1', 'OrderService', 'demo.OrderService', 'src/main/java/demo/OrderService.java', 1, 1);
-            INSERT INTO methods (id, name, file, start_line, end_line)
-            VALUES ('method:demo.OrderService#approve()@src/main/java/demo/OrderService.java:1', 'approve', 'src/main/java/demo/OrderService.java', 1, 1);
-            ",
-        )
-        .unwrap();
-}
-
-fn write_definition_fake_jdtls(root: &PathBuf) -> PathBuf {
-    let script = root.join("fake-definition-jdtls.py");
-    let target = root
-        .join("src/main/java/demo/OrderService.java")
-        .display()
-        .to_string();
-    fs::write(
-        &script,
-        format!(
-            r#"#!/usr/bin/env python3
-import json
-import sys
-
-target_uri = "file://{target}"
-
-def read_message():
-    length = None
-    while True:
-        line = sys.stdin.buffer.readline()
-        if not line:
-            return None
-        line = line.decode("utf-8").strip()
-        if not line:
-            break
-        if line.lower().startswith("content-length:"):
-            length = int(line.split(":", 1)[1].strip())
-    if length is None:
-        return None
-    return json.loads(sys.stdin.buffer.read(length).decode("utf-8"))
-
-def write_message(value):
-    body = json.dumps(value).encode("utf-8")
-    sys.stdout.buffer.write(b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body)
-    sys.stdout.buffer.flush()
-
-while True:
-    message = read_message()
-    if message is None:
-        break
-    method = message.get("method")
-    if "id" not in message:
-        if method == "exit":
-            break
-        continue
-    if method == "initialize":
-        result = {{"capabilities": {{"definitionProvider": True}}}}
-    elif method == "shutdown":
-        result = None
-    elif method == "textDocument/definition":
-        result = [{{"uri": target_uri, "range": {{"start": {{"line": 0, "character": 43}}, "end": {{"line": 0, "character": 50}}}}}}]
-    else:
-        result = None
-    write_message({{"jsonrpc": "2.0", "id": message["id"], "result": result}})
-"#,
-            target = target.replace('\\', "\\\\").replace('"', "\\\"")
-        ),
-    )
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = fs::metadata(&script).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&script, permissions).unwrap();
-    }
-    script
-}
-
-fn test_dir(name: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "code-parser-{name}-{}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    fs::create_dir_all(&path).unwrap();
-    path
 }

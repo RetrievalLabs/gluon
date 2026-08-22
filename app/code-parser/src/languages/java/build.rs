@@ -142,6 +142,14 @@ mod tests {
 
     use super::*;
 
+    fn test_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("code-parser-{name}-{nanos}"))
+    }
+
     #[test]
     fn discovers_build_files_deterministically() {
         let root = test_dir("discover");
@@ -159,13 +167,5 @@ mod tests {
 
         assert_eq!(relative, vec!["a/build.gradle", "pom.xml"]);
         let _ = fs::remove_dir_all(root);
-    }
-
-    fn test_dir(name: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("code-parser-{name}-{nanos}"))
     }
 }

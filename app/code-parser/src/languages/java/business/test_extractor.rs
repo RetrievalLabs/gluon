@@ -1488,87 +1488,6 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn includes_integration_e2e_and_acceptance_tests_only() {
-        assert!(is_included_test_source(
-            "src/integrationTest/java/demo/OrderServiceIT.java"
-        ));
-        assert!(is_included_test_source(
-            "src/e2e/java/demo/CheckoutE2ETest.java"
-        ));
-        assert!(is_included_test_source(
-            "src/acceptanceTest/java/demo/OrderAcceptanceTest.java"
-        ));
-        assert!(!is_included_test_source(
-            "src/test/java/demo/OrderServiceTest.java"
-        ));
-        assert!(!is_included_test_source(
-            "src/main/java/demo/OrderService.java"
-        ));
-    }
-
-    #[test]
-    fn extracts_test_tables_and_replaces_old_rows() {
-        let root = test_dir("test-extraction");
-        fs::create_dir_all(root.join("src/main/java/demo")).unwrap();
-        fs::create_dir_all(root.join("src/integrationTest/java/demo")).unwrap();
-        fs::create_dir_all(root.join("src/test/java/demo")).unwrap();
-        fs::write(
-            root.join("src/main/java/demo/OrderService.java"),
-            "package demo; public class OrderService { public void approve() {} }\n",
-        )
-        .unwrap();
-        fs::write(
-            root.join("src/integrationTest/java/demo/OrderServiceIT.java"),
-            r#"package demo;
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-@SpringBootTest
-class OrderServiceIT {
-  @Test
-  void approvesOrder() {
-    OrderService service = new OrderService();
-    service.approve();
-    assertEquals("ok", "ok");
-  }
-}
-"#,
-        )
-        .unwrap();
-        fs::write(
-            root.join("src/test/java/demo/OrderServiceTest.java"),
-            "package demo; class OrderServiceTest { @org.junit.jupiter.api.Test void unit() {} }\n",
-        )
-        .unwrap();
-        let db = root.join("business-extraction.db");
-        seed_business_db(&db);
-        let fake_jdtls = write_fake_jdtls(&root);
-
-        let options = TestExtractionOptions {
-            path: root.clone(),
-            database: db.clone(),
-            jdtls_command: fake_jdtls.display().to_string(),
-            jdtls_workspace: None,
-            jdtls_max_in_flight: 32,
-        };
-        let summary = extract_tests(&options).unwrap();
-        assert_eq!(summary.suites, 1);
-        assert_eq!(summary.cases, 1);
-        assert_eq!(summary.assertions, 1);
-        assert!(summary.fixtures >= 1);
-        assert!(summary.targets >= 1);
-
-        let second = extract_tests(&options).unwrap();
-        assert_eq!(second.suites, 1);
-        let connection = Connection::open(&db).unwrap();
-        assert_eq!(count(&connection, "test_suites"), 1);
-        assert_eq!(count(&connection, "test_cases"), 1);
-        assert_eq!(count(&connection, "test_assertions"), 1);
-        assert!(count(&connection, "test_targets") >= 1);
-
-        let _ = fs::remove_dir_all(root);
-    }
-
     fn seed_business_db(path: &Path) {
         let connection = Connection::open(path).unwrap();
         connection
@@ -1681,5 +1600,86 @@ while True:
                 .unwrap()
                 .as_nanos()
         ))
+    }
+
+    #[test]
+    fn includes_integration_e2e_and_acceptance_tests_only() {
+        assert!(is_included_test_source(
+            "src/integrationTest/java/demo/OrderServiceIT.java"
+        ));
+        assert!(is_included_test_source(
+            "src/e2e/java/demo/CheckoutE2ETest.java"
+        ));
+        assert!(is_included_test_source(
+            "src/acceptanceTest/java/demo/OrderAcceptanceTest.java"
+        ));
+        assert!(!is_included_test_source(
+            "src/test/java/demo/OrderServiceTest.java"
+        ));
+        assert!(!is_included_test_source(
+            "src/main/java/demo/OrderService.java"
+        ));
+    }
+
+    #[test]
+    fn extracts_test_tables_and_replaces_old_rows() {
+        let root = test_dir("test-extraction");
+        fs::create_dir_all(root.join("src/main/java/demo")).unwrap();
+        fs::create_dir_all(root.join("src/integrationTest/java/demo")).unwrap();
+        fs::create_dir_all(root.join("src/test/java/demo")).unwrap();
+        fs::write(
+            root.join("src/main/java/demo/OrderService.java"),
+            "package demo; public class OrderService { public void approve() {} }\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("src/integrationTest/java/demo/OrderServiceIT.java"),
+            r#"package demo;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+@SpringBootTest
+class OrderServiceIT {
+  @Test
+  void approvesOrder() {
+    OrderService service = new OrderService();
+    service.approve();
+    assertEquals("ok", "ok");
+  }
+}
+"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("src/test/java/demo/OrderServiceTest.java"),
+            "package demo; class OrderServiceTest { @org.junit.jupiter.api.Test void unit() {} }\n",
+        )
+        .unwrap();
+        let db = root.join("business-extraction.db");
+        seed_business_db(&db);
+        let fake_jdtls = write_fake_jdtls(&root);
+
+        let options = TestExtractionOptions {
+            path: root.clone(),
+            database: db.clone(),
+            jdtls_command: fake_jdtls.display().to_string(),
+            jdtls_workspace: None,
+            jdtls_max_in_flight: 32,
+        };
+        let summary = extract_tests(&options).unwrap();
+        assert_eq!(summary.suites, 1);
+        assert_eq!(summary.cases, 1);
+        assert_eq!(summary.assertions, 1);
+        assert!(summary.fixtures >= 1);
+        assert!(summary.targets >= 1);
+
+        let second = extract_tests(&options).unwrap();
+        assert_eq!(second.suites, 1);
+        let connection = Connection::open(&db).unwrap();
+        assert_eq!(count(&connection, "test_suites"), 1);
+        assert_eq!(count(&connection, "test_cases"), 1);
+        assert_eq!(count(&connection, "test_assertions"), 1);
+        assert!(count(&connection, "test_targets") >= 1);
+
+        let _ = fs::remove_dir_all(root);
     }
 }

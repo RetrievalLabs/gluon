@@ -687,6 +687,18 @@ mod tests {
 
     use super::*;
 
+    fn test_dir(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "code-parser-{name}-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
     #[test]
     fn extracts_classes_methods_entry_points_and_calls() {
         let root = test_dir("business-structure");
@@ -835,17 +847,5 @@ mod tests {
         assert_eq!(model.diagnostics.len(), 1);
         assert_eq!(model.diagnostics[0].severity, "warning");
         let _ = fs::remove_dir_all(root);
-    }
-
-    fn test_dir(name: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "code-parser-{name}-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        path
     }
 }

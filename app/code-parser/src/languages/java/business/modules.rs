@@ -290,6 +290,18 @@ mod tests {
 
     use super::*;
 
+    fn test_dir(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "code-parser-{name}-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
     #[test]
     fn discovers_maven_modules_and_assigns_parent() {
         let root = test_dir("business-maven-modules");
@@ -338,17 +350,5 @@ mod tests {
                 .any(|module| module.id == "module:service/impl")
         );
         let _ = fs::remove_dir_all(root);
-    }
-
-    fn test_dir(name: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "code-parser-{name}-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        path
     }
 }

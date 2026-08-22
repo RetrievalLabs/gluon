@@ -62,6 +62,18 @@ mod tests {
         }
     }
 
+    fn test_dir(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "code-parser-{name}-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
     #[test]
     fn resolver_adds_maven_dependency_list_results() {
         let root = test_dir("maven-resolve");
@@ -137,17 +149,5 @@ mod tests {
                 .any(|diagnostic| diagnostic.category == "repository_or_auth_failure")
         );
         let _ = fs::remove_dir_all(root);
-    }
-
-    fn test_dir(name: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "code-parser-{name}-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        path
     }
 }

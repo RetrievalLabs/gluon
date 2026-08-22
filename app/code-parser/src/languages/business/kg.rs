@@ -2869,6 +2869,249 @@ mod tests {
         }
     }
 
+    fn write_extraction_db(path: &Path, file: &str) {
+        let connection = Connection::open(path).unwrap();
+        connection
+            .execute_batch(
+                "
+                CREATE TABLE classes (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    module_id TEXT NOT NULL,
+                    qualified_name TEXT NOT NULL
+                );
+                CREATE TABLE methods (
+                    id TEXT PRIMARY KEY,
+                    module_id TEXT NOT NULL,
+                    class_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    signature TEXT NOT NULL,
+                    annotations_json TEXT NOT NULL,
+                    file TEXT NOT NULL,
+                    start_line INTEGER NOT NULL,
+                    end_line INTEGER NOT NULL
+                );
+                CREATE TABLE candidate_scores (
+                    method_id TEXT PRIMARY KEY,
+                    score INTEGER NOT NULL,
+                    priority TEXT NOT NULL
+                );
+                CREATE TABLE relationships (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_id TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    confidence REAL NOT NULL,
+                    source TEXT NOT NULL
+                );
+                CREATE TABLE entry_points (
+                    id TEXT PRIMARY KEY,
+                    method_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    framework TEXT,
+                    route TEXT,
+                    http_method TEXT
+                );
+                CREATE TABLE test_suites (
+                    id TEXT PRIMARY KEY,
+                    module_id TEXT,
+                    class_name TEXT NOT NULL,
+                    package_name TEXT,
+                    qualified_name TEXT NOT NULL,
+                    test_kind TEXT NOT NULL,
+                    file TEXT NOT NULL,
+                    start_line INTEGER NOT NULL,
+                    end_line INTEGER NOT NULL,
+                    annotations_json TEXT NOT NULL
+                );
+                CREATE TABLE test_cases (
+                    id TEXT PRIMARY KEY,
+                    suite_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    display_name TEXT,
+                    test_kind TEXT NOT NULL,
+                    file TEXT NOT NULL,
+                    start_line INTEGER NOT NULL,
+                    end_line INTEGER NOT NULL,
+                    annotations_json TEXT NOT NULL,
+                    body_text TEXT NOT NULL
+                );
+                CREATE TABLE test_targets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    test_case_id TEXT NOT NULL,
+                    target_kind TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    relationship TEXT NOT NULL,
+                    confidence REAL NOT NULL,
+                    source TEXT NOT NULL
+                );
+                CREATE TABLE test_assertions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    test_case_id TEXT NOT NULL,
+                    assertion_kind TEXT NOT NULL,
+                    expression TEXT NOT NULL,
+                    expected_value TEXT,
+                    file TEXT NOT NULL,
+                    line INTEGER NOT NULL
+                );
+                CREATE TABLE test_fixtures (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    suite_id TEXT,
+                    test_case_id TEXT,
+                    fixture_kind TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    details_json TEXT NOT NULL,
+                    file TEXT NOT NULL,
+                    line INTEGER NOT NULL
+                );
+                CREATE TABLE test_entry_points (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    test_case_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    framework TEXT,
+                    route TEXT,
+                    http_method TEXT,
+                    topic TEXT,
+                    command TEXT,
+                    source TEXT NOT NULL
+                );
+                ",
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO classes (id, name, module_id, qualified_name)
+                 VALUES ('class:OrderService', 'OrderService', 'module:.', 'OrderService')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO methods (
+                    id, module_id, class_id, name, signature, annotations_json, file, start_line, end_line
+                 ) VALUES (
+                    'method:OrderService#approve', 'module:.', 'class:OrderService', 'approve',
+                    'approve()', '[]', ?1, 2, 4
+                 )",
+                [file],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO methods (
+                    id, module_id, class_id, name, signature, annotations_json, file, start_line, end_line
+                 ) VALUES (
+                    'method:OrderService#validate', 'module:.', 'class:OrderService', 'validate',
+                    'validate()', '[]', ?1, 5, 7
+                 )",
+                [file],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO candidate_scores (method_id, score, priority)
+                 VALUES ('method:OrderService#approve', 10, 'high')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO relationships (source_id, target_id, kind, confidence, source)
+                 VALUES ('method:OrderService#approve', 'method:OrderService#validate', 'CALLS', 0.9, 'tree-sitter')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO test_suites (
+                    id, module_id, class_name, package_name, qualified_name, test_kind,
+                    file, start_line, end_line, annotations_json
+                 ) VALUES (
+                    'test-suite:OrderServiceIT', 'module:.', 'OrderServiceIT', NULL,
+                    'OrderServiceIT', 'integration', 'OrderServiceIT.java', 1, 20, '[]'
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO test_cases (
+                    id, suite_id, name, display_name, test_kind, file, start_line,
+                    end_line, annotations_json, body_text
+                 ) VALUES (
+                    'test-case:OrderServiceIT#approvePending', 'test-suite:OrderServiceIT',
+                    'approvePending', 'approves pending orders', 'integration',
+                    'OrderServiceIT.java', 5, 12, '[]',
+                    'void approvePending() { approve(); assertThat(status).isEqualTo(APPROVED); }'
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO test_targets (
+                    test_case_id, target_kind, target_id, relationship, confidence, source
+                 ) VALUES (
+                    'test-case:OrderServiceIT#approvePending', 'method',
+                    'method:OrderService#approve', 'exercises', 0.95, 'jdtls_definition'
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO test_assertions (
+                    test_case_id, assertion_kind, expression, expected_value, file, line
+                 ) VALUES (
+                    'test-case:OrderServiceIT#approvePending', 'assertThat',
+                    'assertThat(status).isEqualTo(APPROVED)', 'APPROVED',
+                    'OrderServiceIT.java', 10
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO test_fixtures (
+                    suite_id, test_case_id, fixture_kind, name, details_json, file, line
+                 ) VALUES (
+                    'test-suite:OrderServiceIT', NULL, 'setup', 'createPendingOrder',
+                    '{\"status\":\"PENDING\"}', 'OrderServiceIT.java', 3
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO test_fixtures (
+                    suite_id, test_case_id, fixture_kind, name, details_json, file, line
+                 ) VALUES (
+                    'test-suite:OrderServiceIT', 'test-case:OrderServiceIT#approvePending',
+                    'given', 'pendingOrder', '{\"status\":\"PENDING\"}',
+                    'OrderServiceIT.java', 6
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO test_entry_points (
+                    test_case_id, kind, framework, route, http_method, topic, command, source
+                 ) VALUES (
+                    'test-case:OrderServiceIT#approvePending', 'http', 'spring',
+                    '/orders/{id}/approve', 'POST', NULL, NULL, 'mockMvc'
+                 )",
+                [],
+            )
+            .unwrap();
+    }
+
+    fn test_dir(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!("code-parser-{name}-{}", timestamp()));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
     #[test]
     fn deterministic_node_id_normalizes_content() {
         assert_eq!(
@@ -3364,248 +3607,5 @@ mod tests {
         assert_eq!(fixtures["fixtures"][0]["scope"], "suite");
 
         let _ = fs::remove_dir_all(root);
-    }
-
-    fn write_extraction_db(path: &Path, file: &str) {
-        let connection = Connection::open(path).unwrap();
-        connection
-            .execute_batch(
-                "
-                CREATE TABLE classes (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    module_id TEXT NOT NULL,
-                    qualified_name TEXT NOT NULL
-                );
-                CREATE TABLE methods (
-                    id TEXT PRIMARY KEY,
-                    module_id TEXT NOT NULL,
-                    class_id TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    signature TEXT NOT NULL,
-                    annotations_json TEXT NOT NULL,
-                    file TEXT NOT NULL,
-                    start_line INTEGER NOT NULL,
-                    end_line INTEGER NOT NULL
-                );
-                CREATE TABLE candidate_scores (
-                    method_id TEXT PRIMARY KEY,
-                    score INTEGER NOT NULL,
-                    priority TEXT NOT NULL
-                );
-                CREATE TABLE relationships (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    source_id TEXT NOT NULL,
-                    target_id TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    confidence REAL NOT NULL,
-                    source TEXT NOT NULL
-                );
-                CREATE TABLE entry_points (
-                    id TEXT PRIMARY KEY,
-                    method_id TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    framework TEXT,
-                    route TEXT,
-                    http_method TEXT
-                );
-                CREATE TABLE test_suites (
-                    id TEXT PRIMARY KEY,
-                    module_id TEXT,
-                    class_name TEXT NOT NULL,
-                    package_name TEXT,
-                    qualified_name TEXT NOT NULL,
-                    test_kind TEXT NOT NULL,
-                    file TEXT NOT NULL,
-                    start_line INTEGER NOT NULL,
-                    end_line INTEGER NOT NULL,
-                    annotations_json TEXT NOT NULL
-                );
-                CREATE TABLE test_cases (
-                    id TEXT PRIMARY KEY,
-                    suite_id TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    display_name TEXT,
-                    test_kind TEXT NOT NULL,
-                    file TEXT NOT NULL,
-                    start_line INTEGER NOT NULL,
-                    end_line INTEGER NOT NULL,
-                    annotations_json TEXT NOT NULL,
-                    body_text TEXT NOT NULL
-                );
-                CREATE TABLE test_targets (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    test_case_id TEXT NOT NULL,
-                    target_kind TEXT NOT NULL,
-                    target_id TEXT NOT NULL,
-                    relationship TEXT NOT NULL,
-                    confidence REAL NOT NULL,
-                    source TEXT NOT NULL
-                );
-                CREATE TABLE test_assertions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    test_case_id TEXT NOT NULL,
-                    assertion_kind TEXT NOT NULL,
-                    expression TEXT NOT NULL,
-                    expected_value TEXT,
-                    file TEXT NOT NULL,
-                    line INTEGER NOT NULL
-                );
-                CREATE TABLE test_fixtures (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    suite_id TEXT,
-                    test_case_id TEXT,
-                    fixture_kind TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    details_json TEXT NOT NULL,
-                    file TEXT NOT NULL,
-                    line INTEGER NOT NULL
-                );
-                CREATE TABLE test_entry_points (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    test_case_id TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    framework TEXT,
-                    route TEXT,
-                    http_method TEXT,
-                    topic TEXT,
-                    command TEXT,
-                    source TEXT NOT NULL
-                );
-                ",
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO classes (id, name, module_id, qualified_name)
-                 VALUES ('class:OrderService', 'OrderService', 'module:.', 'OrderService')",
-                [],
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO methods (
-                    id, module_id, class_id, name, signature, annotations_json, file, start_line, end_line
-                 ) VALUES (
-                    'method:OrderService#approve', 'module:.', 'class:OrderService', 'approve',
-                    'approve()', '[]', ?1, 2, 4
-                 )",
-                [file],
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO methods (
-                    id, module_id, class_id, name, signature, annotations_json, file, start_line, end_line
-                 ) VALUES (
-                    'method:OrderService#validate', 'module:.', 'class:OrderService', 'validate',
-                    'validate()', '[]', ?1, 5, 7
-                 )",
-                [file],
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO candidate_scores (method_id, score, priority)
-                 VALUES ('method:OrderService#approve', 10, 'high')",
-                [],
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO relationships (source_id, target_id, kind, confidence, source)
-                 VALUES ('method:OrderService#approve', 'method:OrderService#validate', 'CALLS', 0.9, 'tree-sitter')",
-                [],
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO test_suites (
-                    id, module_id, class_name, package_name, qualified_name, test_kind,
-                    file, start_line, end_line, annotations_json
-                 ) VALUES (
-                    'test-suite:OrderServiceIT', 'module:.', 'OrderServiceIT', NULL,
-                    'OrderServiceIT', 'integration', 'OrderServiceIT.java', 1, 20, '[]'
-                 )",
-                [],
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO test_cases (
-                    id, suite_id, name, display_name, test_kind, file, start_line,
-                    end_line, annotations_json, body_text
-                 ) VALUES (
-                    'test-case:OrderServiceIT#approvePending', 'test-suite:OrderServiceIT',
-                    'approvePending', 'approves pending orders', 'integration',
-                    'OrderServiceIT.java', 5, 12, '[]',
-                    'void approvePending() { approve(); assertThat(status).isEqualTo(APPROVED); }'
-                 )",
-                [],
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO test_targets (
-                    test_case_id, target_kind, target_id, relationship, confidence, source
-                 ) VALUES (
-                    'test-case:OrderServiceIT#approvePending', 'method',
-                    'method:OrderService#approve', 'exercises', 0.95, 'jdtls_definition'
-                 )",
-                [],
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO test_assertions (
-                    test_case_id, assertion_kind, expression, expected_value, file, line
-                 ) VALUES (
-                    'test-case:OrderServiceIT#approvePending', 'assertThat',
-                    'assertThat(status).isEqualTo(APPROVED)', 'APPROVED',
-                    'OrderServiceIT.java', 10
-                 )",
-                [],
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO test_fixtures (
-                    suite_id, test_case_id, fixture_kind, name, details_json, file, line
-                 ) VALUES (
-                    'test-suite:OrderServiceIT', NULL, 'setup', 'createPendingOrder',
-                    '{\"status\":\"PENDING\"}', 'OrderServiceIT.java', 3
-                 )",
-                [],
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO test_fixtures (
-                    suite_id, test_case_id, fixture_kind, name, details_json, file, line
-                 ) VALUES (
-                    'test-suite:OrderServiceIT', 'test-case:OrderServiceIT#approvePending',
-                    'given', 'pendingOrder', '{\"status\":\"PENDING\"}',
-                    'OrderServiceIT.java', 6
-                 )",
-                [],
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO test_entry_points (
-                    test_case_id, kind, framework, route, http_method, topic, command, source
-                 ) VALUES (
-                    'test-case:OrderServiceIT#approvePending', 'http', 'spring',
-                    '/orders/{id}/approve', 'POST', NULL, NULL, 'mockMvc'
-                 )",
-                [],
-            )
-            .unwrap();
-    }
-
-    fn test_dir(name: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!("code-parser-{name}-{}", timestamp()));
-        fs::create_dir_all(&path).unwrap();
-        path
     }
 }
