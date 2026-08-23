@@ -92,6 +92,15 @@ COMPLETED_SCENARIO_STATUSES = {
         characterization_tests_pb2.CHARACTERIZATION_SCENARIO_STATUS_SKIPPED
     ),
 }
+ACCEPTED_SCENARIO_STATUS = characterization_scenario_status(
+    characterization_tests_pb2.CHARACTERIZATION_SCENARIO_STATUS_ACCEPTED
+)
+COMMITTED_SCENARIO_STATUS = characterization_scenario_status(
+    characterization_tests_pb2.CHARACTERIZATION_SCENARIO_STATUS_COMMITTED
+)
+SKIPPED_SCENARIO_STATUS = characterization_scenario_status(
+    characterization_tests_pb2.CHARACTERIZATION_SCENARIO_STATUS_SKIPPED
+)
 
 
 def run_characterization_agent_loop(
@@ -160,13 +169,30 @@ def select_next_scenario(
 
 
 def incomplete_scenarios_sql(select_clause: str) -> str:
-    placeholders = ", ".join(f"'{status}'" for status in COMPLETED_SCENARIO_STATUSES)
     return f"""
         SELECT {select_clause}
         FROM {SCENARIOS_TABLE} s
         JOIN {BEHAVIORS_TABLE} b ON b.{BEHAVIOR_ID} = s.{SCENARIO_BEHAVIOR_ID}
         LEFT JOIN {FILES_TABLE} f ON f.{FILE_SCENARIO_ID} = s.{SCENARIO_ID}
-        WHERE s.{SCENARIO_STATUS} NOT IN ({placeholders})
+        LEFT JOIN {INPUTS_TABLE} i ON i.{INPUT_SCENARIO_ID} = s.{SCENARIO_ID}
+        LEFT JOIN {OBSERVATIONS_TABLE} o ON o.{OBSERVATION_SCENARIO_ID} = s.{SCENARIO_ID}
+        WHERE NOT {completed_scenario_sql()}
+    """
+
+
+def completed_scenario_sql() -> str:
+    return f"""
+        (
+            s.{SCENARIO_STATUS} = '{SKIPPED_SCENARIO_STATUS}'
+            OR (
+                s.{SCENARIO_STATUS} IN (
+                    '{ACCEPTED_SCENARIO_STATUS}',
+                    '{COMMITTED_SCENARIO_STATUS}'
+                )
+                AND i.rowid IS NOT NULL
+                AND o.rowid IS NOT NULL
+            )
+        )
     """
 
 

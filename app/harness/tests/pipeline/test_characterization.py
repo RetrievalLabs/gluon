@@ -273,8 +273,20 @@ class CharacterizationLoopTests(unittest.TestCase):
             ):
                 run_characterization_agent_loop(paths, agent, FakeRunner())
 
+    def test_retries_accepted_scenario_missing_inputs_and_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = HarnessPaths.from_org_project("org/project", Path(directory))
+            paths.characterization_db.parent.mkdir(parents=True)
+            write_characterization_db(paths.characterization_db, status=ACCEPTED)
+            agent = FakeAgent()
 
-def write_characterization_db(path: Path) -> None:
+            completed = run_characterization_agent_loop(paths, agent, FakeRunner())
+
+        self.assertEqual(completed, ["scenario:one"])
+        self.assertEqual(len(agent.calls), 1)
+
+
+def write_characterization_db(path: Path, status: str = GENERATED_SCAFFOLD) -> None:
     with closing(sqlite3.connect(path)) as connection:
         with connection:
             connection.executescript(
@@ -325,7 +337,7 @@ def write_characterization_db(path: Path) -> None:
                     {SCENARIO_DIAGNOSTIC_REASON}
                 ) VALUES (
                     'scenario:one', 'behavior:one', 'Approve', 'happy_path',
-                    'method', '{GENERATED_SCAFFOLD}', NULL
+                    'method', '{status}', NULL
                 );
                 INSERT INTO {FILES_TABLE} ({FILE_SCENARIO_ID}, {FILE_PATH})
                 VALUES ('scenario:one', 'gluon/tests/Test.java');
