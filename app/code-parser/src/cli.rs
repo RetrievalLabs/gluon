@@ -16,6 +16,8 @@ use crate::languages::java::business::{
 };
 use crate::languages::java::compatibility::analyzer::analyze_report_with_options;
 use crate::languages::java::compatibility::jdk_tools::{DEFAULT_JDK_ROOT, JdkToolOptions};
+use rusqlite::{Connection, params_from_iter, types::ValueRef};
+use serde_json::{Value, json};
 
 #[derive(Debug, PartialEq, Eq)]
 enum CliOptions {
@@ -25,6 +27,7 @@ enum CliOptions {
     ExtractTests(ExtractTestsOptions),
     BuildBusinessKg(BuildBusinessKgCliOptions),
     GenerateCharacterizationTests(GenerateCharacterizationTestsCliOptions),
+    Database(DatabaseOptions),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -90,6 +93,31 @@ struct GenerateCharacterizationTestsCliOptions {
     resume: bool,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct DatabaseOptions {
+    operation: DatabaseOperation,
+    database: PathBuf,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum DatabaseOperation {
+    Tables,
+    Schema {
+        table: Option<String>,
+    },
+    Rows {
+        table: String,
+        limit: usize,
+        offset: usize,
+    },
+    Update {
+        table: String,
+        id_column: String,
+        id: String,
+        set_values: Vec<(String, String)>,
+    },
+}
+
 pub fn run_cli<I, S>(args: I) -> i32
 where
     I: IntoIterator<Item = S>,
@@ -138,6 +166,7 @@ where
         Ok(CliOptions::GenerateCharacterizationTests(options)) => {
             run_generate_characterization_tests(options)
         }
+        Ok(CliOptions::Database(options)) => run_database_command(options),
         Err(error) => {
             command_failed("arguments", &error);
             print_usage();
@@ -167,6 +196,7 @@ where
         "build-business-kg" => parse_build_business_kg_args(args).map(CliOptions::BuildBusinessKg),
         "generate-characterization-tests" => parse_generate_characterization_tests_args(args)
             .map(CliOptions::GenerateCharacterizationTests),
+        "db" => parse_database_args(args).map(CliOptions::Database),
         _ => Err(format!("unsupported command: {command}")),
     }
 }
@@ -539,6 +569,132 @@ fn parse_generate_characterization_tests_args(
     })
 }
 
+fn parse_database_args(mut args: impl Iterator<Item = String>) -> Result<DatabaseOptions, String> {
+    let operation_name = args.next().ok_or("missing db operation")?;
+    let mut database = None;
+    let operation = match operation_name.as_str() {
+        "tables" => {
+            while let Some(arg) = args.next() {
+                match arg.as_str() {
+                    "--database" => {
+                        let value = args.next().ok_or("--database requires a value")?;
+                        database = Some(PathBuf::from(value));
+                    }
+                    "--help" | "-h" => return Err("help requested".to_string()),
+                    other => return Err(format!("unsupported argument: {other}")),
+                }
+            }
+            DatabaseOperation::Tables
+        }
+        "schema" => {
+            let mut table = None;
+            while let Some(arg) = args.next() {
+                match arg.as_str() {
+                    "--database" => {
+                        let value = args.next().ok_or("--database requires a value")?;
+                        database = Some(PathBuf::from(value));
+                    }
+                    "--table" => {
+                        table = Some(args.next().ok_or("--table requires a value")?);
+                    }
+                    "--help" | "-h" => return Err("help requested".to_string()),
+                    other => return Err(format!("unsupported argument: {other}")),
+                }
+            }
+            DatabaseOperation::Schema { table }
+        }
+        "rows" => {
+            let mut table = None;
+            let mut limit = 20;
+            let mut offset = 0;
+            while let Some(arg) = args.next() {
+                match arg.as_str() {
+                    "--database" => {
+                        let value = args.next().ok_or("--database requires a value")?;
+                        database = Some(PathBuf::from(value));
+                    }
+                    "--table" => {
+                        table = Some(args.next().ok_or("--table requires a value")?);
+                    }
+                    "--limit" => {
+                        let value = args.next().ok_or("--limit requires a value")?;
+                        limit = value
+                            .parse::<usize>()
+                            .map_err(|_| format!("invalid --limit: {value}"))?;
+                        if limit == 0 || limit > 100 {
+                            return Err("--limit must be between 1 and 100".to_string());
+                        }
+                    }
+                    "--offset" => {
+                        let value = args.next().ok_or("--offset requires a value")?;
+                        offset = value
+                            .parse::<usize>()
+                            .map_err(|_| format!("invalid --offset: {value}"))?;
+                    }
+                    "--help" | "-h" => return Err("help requested".to_string()),
+                    other => return Err(format!("unsupported argument: {other}")),
+                }
+            }
+            DatabaseOperation::Rows {
+                table: table.ok_or("missing required --table")?,
+                limit,
+                offset,
+            }
+        }
+        "update" => {
+            let mut table = None;
+            let mut id_column = None;
+            let mut id = None;
+            let mut set_values = Vec::new();
+            while let Some(arg) = args.next() {
+                match arg.as_str() {
+                    "--database" => {
+                        let value = args.next().ok_or("--database requires a value")?;
+                        database = Some(PathBuf::from(value));
+                    }
+                    "--table" => {
+                        table = Some(args.next().ok_or("--table requires a value")?);
+                    }
+                    "--id-column" => {
+                        id_column = Some(args.next().ok_or("--id-column requires a value")?);
+                    }
+                    "--id" => {
+                        id = Some(args.next().ok_or("--id requires a value")?);
+                    }
+                    "--set" => {
+                        let value = args.next().ok_or("--set requires a value")?;
+                        let (column, field_value) = value
+                            .split_once('=')
+                            .ok_or("--set must be formatted as column=value")?;
+                        if column.is_empty() {
+                            return Err("--set column cannot be empty".to_string());
+                        }
+                        set_values.push((column.to_string(), field_value.to_string()));
+                    }
+                    "--help" | "-h" => return Err("help requested".to_string()),
+                    other => return Err(format!("unsupported argument: {other}")),
+                }
+            }
+            if set_values.is_empty() {
+                return Err("missing required --set".to_string());
+            }
+            DatabaseOperation::Update {
+                table: table.ok_or("missing required --table")?,
+                id_column: id_column.ok_or("missing required --id-column")?,
+                id: id.ok_or("missing required --id")?,
+                set_values,
+            }
+        }
+        "--help" | "-h" => return Err("help requested".to_string()),
+        other => return Err(format!("unsupported db operation: {other}")),
+    };
+
+    Ok(DatabaseOptions {
+        operation,
+        database: database.ok_or("missing required --database")?,
+    })
+}
+
 fn run_analyze_report(options: AnalyzeReportOptions) -> i32 {
     let build_report = match read_build_report(&options.report) {
         Ok(report) => report,
@@ -803,9 +959,258 @@ fn run_generate_characterization_tests(options: GenerateCharacterizationTestsCli
     }
 }
 
+fn run_database_command(options: DatabaseOptions) -> i32 {
+    match execute_database_command(options) {
+        Ok(value) => match serde_json::to_string_pretty(&value) {
+            Ok(json) => {
+                println!("{json}");
+                0
+            }
+            Err(error) => {
+                command_failed(
+                    "db",
+                    &format!("failed to serialize database result: {error}"),
+                );
+                1
+            }
+        },
+        Err(error) => {
+            command_failed("db", &error);
+            1
+        }
+    }
+}
+
+fn execute_database_command(options: DatabaseOptions) -> Result<Value, String> {
+    let connection = Connection::open(&options.database).map_err(|error| {
+        format!(
+            "failed to open database {}: {error}",
+            options.database.display()
+        )
+    })?;
+    match options.operation {
+        DatabaseOperation::Tables => database_tables(&connection),
+        DatabaseOperation::Schema { table } => database_schema(&connection, table.as_deref()),
+        DatabaseOperation::Rows {
+            table,
+            limit,
+            offset,
+        } => database_rows(&connection, &table, limit, offset),
+        DatabaseOperation::Update {
+            table,
+            id_column,
+            id,
+            set_values,
+        } => database_update(&connection, &table, &id_column, &id, &set_values),
+    }
+}
+
+fn database_tables(connection: &Connection) -> Result<Value, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT name
+             FROM sqlite_schema
+             WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+             ORDER BY name",
+        )
+        .map_err(|error| format!("failed to prepare tables query: {error}"))?;
+    let rows = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| format!("failed to query tables: {error}"))?;
+    let tables = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to read tables: {error}"))?;
+    Ok(json!({ "tables": tables }))
+}
+
+fn database_schema(connection: &Connection, table: Option<&str>) -> Result<Value, String> {
+    let table_names = match table {
+        Some(table) => {
+            validate_table(connection, table)?;
+            vec![table.to_string()]
+        }
+        None => list_tables(connection)?,
+    };
+    let mut tables = Vec::new();
+    for table_name in table_names {
+        let columns = table_columns(connection, &table_name)?;
+        tables.push(json!({
+            "table": table_name,
+            "columns": columns,
+        }));
+    }
+    Ok(json!({ "tables": tables }))
+}
+
+fn database_rows(
+    connection: &Connection,
+    table: &str,
+    limit: usize,
+    offset: usize,
+) -> Result<Value, String> {
+    validate_table(connection, table)?;
+    let columns = table_column_names(connection, table)?;
+    let sql = format!(
+        "SELECT * FROM {} LIMIT ?1 OFFSET ?2",
+        quote_identifier(table)
+    );
+    let mut statement = connection
+        .prepare(&sql)
+        .map_err(|error| format!("failed to prepare rows query: {error}"))?;
+    let rows = statement
+        .query_map([limit as i64, offset as i64], |row| {
+            let mut object = serde_json::Map::new();
+            for (index, column) in columns.iter().enumerate() {
+                object.insert(column.clone(), sqlite_value(row.get_ref(index)?));
+            }
+            Ok(Value::Object(object))
+        })
+        .map_err(|error| format!("failed to query rows: {error}"))?;
+    let rows = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to read rows: {error}"))?;
+    Ok(json!({
+        "table": table,
+        "limit": limit,
+        "offset": offset,
+        "rows": rows,
+    }))
+}
+
+fn database_update(
+    connection: &Connection,
+    table: &str,
+    id_column: &str,
+    id: &str,
+    set_values: &[(String, String)],
+) -> Result<Value, String> {
+    validate_table(connection, table)?;
+    let column_names = table_column_names(connection, table)?;
+    validate_column(&column_names, id_column)?;
+    for (column, _) in set_values {
+        validate_column(&column_names, column)?;
+    }
+
+    let assignments = set_values
+        .iter()
+        .map(|(column, _)| format!("{} = ?", quote_identifier(column)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "UPDATE {} SET {} WHERE {} = ?",
+        quote_identifier(table),
+        assignments,
+        quote_identifier(id_column),
+    );
+    let mut parameters = set_values
+        .iter()
+        .map(|(_, value)| value.as_str())
+        .collect::<Vec<_>>();
+    parameters.push(id);
+    let rows_updated = connection
+        .execute(&sql, params_from_iter(parameters))
+        .map_err(|error| format!("failed to update row: {error}"))?;
+    Ok(json!({
+        "table": table,
+        "id_column": id_column,
+        "id": id,
+        "rows_updated": rows_updated,
+    }))
+}
+
+fn list_tables(connection: &Connection) -> Result<Vec<String>, String> {
+    let value = database_tables(connection)?;
+    let tables = value
+        .get("tables")
+        .and_then(|value| value.as_array())
+        .ok_or("failed to read table list")?;
+    Ok(tables
+        .iter()
+        .filter_map(|value| value.as_str().map(ToString::to_string))
+        .collect())
+}
+
+fn validate_table(connection: &Connection, table: &str) -> Result<(), String> {
+    let exists = connection
+        .query_row(
+            "SELECT EXISTS (
+                SELECT 1 FROM sqlite_schema
+                WHERE type = 'table' AND name = ?1 AND name NOT LIKE 'sqlite_%'
+             )",
+            [table],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| format!("failed to validate table {table}: {error}"))?;
+    if exists == 1 {
+        Ok(())
+    } else {
+        Err(format!("unknown table: {table}"))
+    }
+}
+
+fn validate_column(columns: &[String], column: &str) -> Result<(), String> {
+    if columns.iter().any(|candidate| candidate == column) {
+        Ok(())
+    } else {
+        Err(format!("unknown column: {column}"))
+    }
+}
+
+fn table_columns(connection: &Connection, table: &str) -> Result<Vec<Value>, String> {
+    let sql = format!("PRAGMA table_info({})", quote_identifier(table));
+    let mut statement = connection
+        .prepare(&sql)
+        .map_err(|error| format!("failed to prepare schema query: {error}"))?;
+    let columns = statement
+        .query_map([], |row| {
+            Ok(json!({
+                "name": row.get::<_, String>(1)?,
+                "type": row.get::<_, String>(2)?,
+                "not_null": row.get::<_, i64>(3)? == 1,
+                "default": sqlite_value(row.get_ref(4)?),
+                "primary_key": row.get::<_, i64>(5)? > 0,
+            }))
+        })
+        .map_err(|error| format!("failed to query schema: {error}"))?;
+    columns
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to read schema: {error}"))
+}
+
+fn table_column_names(connection: &Connection, table: &str) -> Result<Vec<String>, String> {
+    let columns = table_columns(connection, table)?;
+    Ok(columns
+        .iter()
+        .filter_map(|column| {
+            column
+                .get("name")
+                .and_then(|name| name.as_str())
+                .map(ToString::to_string)
+        })
+        .collect())
+}
+
+fn sqlite_value(value: ValueRef<'_>) -> Value {
+    match value {
+        ValueRef::Null => Value::Null,
+        ValueRef::Integer(value) => json!(value),
+        ValueRef::Real(value) => json!(value),
+        ValueRef::Text(value) => json!(String::from_utf8_lossy(value).to_string()),
+        ValueRef::Blob(value) => json!(hex_string(value)),
+    }
+}
+
+fn quote_identifier(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
+fn hex_string(value: &[u8]) -> String {
+    value.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 fn print_usage() {
     eprintln!(
-        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--continue]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]\n       code-parser generate-characterization-tests --business-database <business-extraction.db> --kg-database <business-kg.db> --source-path <legacy-project-root> --output-dir <gluon-output-dir> [--max-behaviors <count>] [--node-kind BusinessRule|Workflow|Invariant|StateTransition|SideEffect] [--continue] [--force]"
+        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--continue]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]\n       code-parser generate-characterization-tests --business-database <business-extraction.db> --kg-database <business-kg.db> --source-path <legacy-project-root> --output-dir <gluon-output-dir> [--max-behaviors <count>] [--node-kind BusinessRule|Workflow|Invariant|StateTransition|SideEffect] [--continue] [--force]\n       code-parser db tables --database <database.db>\n       code-parser db schema --database <database.db> [--table <table>]\n       code-parser db rows --database <database.db> --table <table> [--limit <1-100>] [--offset <count>]\n       code-parser db update --database <database.db> --table <table> --id-column <column> --id <value> --set <column=value> [--set <column=value> ...]"
     );
 }
 
@@ -1368,5 +1773,53 @@ mod tests {
         .expect_err("conflicting resume options");
 
         assert!(error.contains("--force and --continue cannot be used together"));
+    }
+
+    #[test]
+    fn parses_database_rows_arguments() {
+        let options = parse_args([
+            "code-parser",
+            "db",
+            "rows",
+            "--database",
+            "business-extraction.db",
+            "--table",
+            "methods",
+            "--limit",
+            "5",
+            "--offset",
+            "10",
+        ])
+        .expect("valid arguments");
+
+        assert_eq!(
+            options,
+            CliOptions::Database(DatabaseOptions {
+                database: PathBuf::from("business-extraction.db"),
+                operation: DatabaseOperation::Rows {
+                    table: "methods".to_string(),
+                    limit: 5,
+                    offset: 10,
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn database_rows_rejects_large_limit() {
+        let error = parse_args([
+            "code-parser",
+            "db",
+            "rows",
+            "--database",
+            "business-extraction.db",
+            "--table",
+            "methods",
+            "--limit",
+            "101",
+        ])
+        .expect_err("invalid limit");
+
+        assert!(error.contains("--limit must be between 1 and 100"));
     }
 }

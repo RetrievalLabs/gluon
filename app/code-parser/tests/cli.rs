@@ -147,6 +147,23 @@ fn write_characterization_kg_db(path: &PathBuf) {
         .unwrap();
 }
 
+fn write_characterization_tests_db(path: &PathBuf) {
+    let connection = Connection::open(path).unwrap();
+    connection
+        .execute_batch(
+            "
+            CREATE TABLE characterization_scenarios (
+                id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                diagnostic_reason TEXT
+            );
+            INSERT INTO characterization_scenarios (id, status, diagnostic_reason)
+            VALUES ('scenario:approve', 'generated_scaffold', NULL);
+            ",
+        )
+        .unwrap();
+}
+
 fn write_build_report(root: &PathBuf, dependency_fragment: &str) -> PathBuf {
     let report_path = root.join("build-report.json");
     fs::write(
@@ -967,6 +984,118 @@ fn generate_characterization_tests_persists_traceable_behaviors() {
     assert!(generated_source.contains("3:   void approve()"));
     let _ = fs::remove_dir_all(root);
     let _ = fs::remove_dir_all(output_root);
+}
+
+#[test]
+fn db_tables_lists_extraction_database_tables() {
+    let root = test_dir("db-tables-extraction");
+    let db = root.join("business-extraction.db");
+    write_characterization_business_db(&db);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["db", "tables", "--database"])
+        .arg(&db)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let tables = payload["tables"].as_array().unwrap();
+    assert!(tables.iter().any(|table| table == "methods"));
+    assert!(tables.iter().any(|table| table == "test_cases"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn db_schema_reads_extraction_database_columns() {
+    let root = test_dir("db-schema-extraction");
+    let db = root.join("business-extraction.db");
+    write_characterization_business_db(&db);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["db", "schema", "--database"])
+        .arg(&db)
+        .args(["--table", "methods"])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["tables"][0]["table"], "methods");
+    let columns = payload["tables"][0]["columns"].as_array().unwrap();
+    assert!(columns.iter().any(|column| column["name"] == "id"));
+    assert!(columns.iter().any(|column| column["name"] == "signature"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn db_rows_reads_kg_database_rows() {
+    let root = test_dir("db-rows-kg");
+    let db = root.join("business-kg.db");
+    write_characterization_kg_db(&db);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["db", "rows", "--database"])
+        .arg(&db)
+        .args(["--table", "business_nodes", "--limit", "1"])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["table"], "business_nodes");
+    assert_eq!(
+        payload["rows"][0]["statement"],
+        "Pending orders can be approved."
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn db_update_edits_characterization_tests_database_rows() {
+    let root = test_dir("db-update-characterization");
+    let db = root.join("characterization-tests.db");
+    write_characterization_tests_db(&db);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["db", "update", "--database"])
+        .arg(&db)
+        .args([
+            "--table",
+            "characterization_scenarios",
+            "--id-column",
+            "id",
+            "--id",
+            "scenario:approve",
+            "--set",
+            "status=ready",
+            "--set",
+            "diagnostic_reason=reviewed",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["rows_updated"], 1);
+    let connection = Connection::open(&db).unwrap();
+    let status: String = connection
+        .query_row(
+            "SELECT status FROM characterization_scenarios WHERE id = 'scenario:approve'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let reason: String = connection
+        .query_row(
+            "SELECT diagnostic_reason FROM characterization_scenarios WHERE id = 'scenario:approve'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "ready");
+    assert_eq!(reason, "reviewed");
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]

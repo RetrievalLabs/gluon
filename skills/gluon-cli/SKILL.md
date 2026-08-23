@@ -218,3 +218,95 @@ gluon-cli code-parser build-business-kg \
   --source-path /path/to/project \
   --max-methods 5
 ```
+
+### `code-parser db tables`
+
+Lists user tables in a Gluon SQLite database.
+
+Required input:
+
+- `--database <database.db>`: `business-extraction.db`, `business-kg.db`, or `characterization-tests.db`.
+
+Outputs:
+
+- JSON object with a `tables` array.
+- Internal SQLite tables such as `sqlite_sequence` are omitted.
+
+Example:
+
+```bash
+gluon-cli code-parser db tables --database /path/to/gluon/data/project/business-extraction.db
+```
+
+### `code-parser db schema`
+
+Reads table schemas from a Gluon SQLite database.
+
+Required input:
+
+- `--database <database.db>`: database to inspect.
+
+Flags:
+
+- `--table <table>`: limit output to one table. When omitted, all user tables are returned.
+
+Outputs:
+
+- JSON object with `tables`; each table includes column name, SQLite type, nullability, default value, and primary-key status.
+
+Example:
+
+```bash
+gluon-cli code-parser db schema --database /path/to/gluon/data/project/business-kg.db --table business_nodes
+```
+
+### `code-parser db rows`
+
+Reads a bounded page of rows from a Gluon SQLite database table.
+
+Required input:
+
+- `--database <database.db>`: database to inspect.
+- `--table <table>`: table to read.
+
+Flags:
+
+- `--limit <count>`: row limit from `1` to `100`. Defaults to `20`.
+- `--offset <count>`: zero-based row offset. Defaults to `0`.
+
+Outputs:
+
+- JSON object with table, limit, offset, and rows.
+
+Example:
+
+```bash
+gluon-cli code-parser db rows --database /path/to/gluon/data/project/business-kg.db --table business_nodes --limit 10
+```
+
+### `code-parser db update`
+
+Updates existing rows in a Gluon SQLite database using table and column names validated against the database schema. This is for focused repair/edit workflows; it does not execute arbitrary SQL.
+
+Required input:
+
+- `--database <database.db>`: database to edit.
+- `--table <table>`: table to update.
+- `--id-column <column>`: column used to select rows.
+- `--id <value>`: value matched against `--id-column`.
+- `--set <column=value>`: value to write. May be repeated.
+
+Outputs:
+
+- JSON object with table, id column, id value, and `rows_updated`.
+
+Example:
+
+```bash
+gluon-cli code-parser db update \
+  --database /path/to/gluon/data/project/characterization-tests.db \
+  --table characterization_scenarios \
+  --id-column id \
+  --id scenario:approve \
+  --set status=ready
+```
