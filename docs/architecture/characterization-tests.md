@@ -7,6 +7,15 @@ They are generated from the Business Knowledge Graph, run once against the
 legacy application to capture current behavior, and then reused against the
 modernized application to verify behavior has not changed.
 
+The system has two phases:
+
+1. `code-parser generate-characterization-tests` deterministically selects
+   behavior abstracts, writes scaffold metadata, and initializes
+   `characterization-tests.db`.
+2. The Python harness runs a multi-agent workflow that turns those abstracts
+   into executable characterization tests, observes legacy outputs, stores
+   snapshots, and commits accepted tests.
+
 The system uses:
 
 - `business-extraction.db` for source structure, methods, entry points,
@@ -14,13 +23,15 @@ The system uses:
 - `business-kg.db` for business behaviors, rules, workflows, state transitions,
   and source evidence.
 - Raw source code and LSP/JDTLS for precise symbol context.
-- LLM reasoning for scenario and testcase input generation.
+- Harness agents for context collection, testcase input generation,
+  observation, implementation, and verification.
 - Existing Java build tools to compile and run generated tests.
 
 Generated characterization tests are added as new files in the legacy
-repository. Existing source and existing tests must not be modified.
-The LLM must not directly edit or create files. It returns structured scenario
-JSON, and Rust renders owned Java/JUnit files from validated templates.
+repository. Existing source and existing tests must not be modified. The Rust
+code-parser runtime does not directly call a multi-agent workflow or edit full
+tests; harness agents own that work after code-parser creates traceable
+abstracts and database rows.
 
 ## Goal
 
@@ -29,16 +40,17 @@ For each selected business behavior:
 1. Generate deterministic inputs that cover happy paths, edge cases, and
    boundary cases.
 2. Generate executable tests that invoke the legacy behavior.
-3. Run those tests against the legacy code in observe mode.
-4. Store generated inputs and observed outputs.
-5. Re-run the same tests against modernized code in assert mode.
+3. Use mocks or fakes for external dependencies.
+4. Run those tests against the legacy code in observe mode.
+5. Store generated inputs and observed outputs in `characterization-tests.db`.
+6. Re-run the same tests against modernized code in assert mode.
 
 The output is not guessed by the LLM. The legacy application is the source of
 truth for expected behavior.
 
 ## CLI
 
-Planned command:
+Code-parser command:
 
 ```bash
 code-parser generate-characterization-tests \
@@ -60,12 +72,14 @@ Optional flags:
 `--force` may replace previously generated Gluon characterization files and
 snapshot rows. It must not overwrite user-authored tests.
 
-`--continue` resumes an interrupted generation or observation run by skipping
+`--continue` resumes interrupted abstract/scaffold generation by skipping
 completed behavior scenarios.
 
-If generation, compilation, or test execution fails, the command should print a
-verbose error and stop. The user can fix the issue manually or adjust inputs,
-then rerun with `--continue` to resume from the last completed scenario.
+If abstract generation fails, the command should print a verbose error and
+stop. The user can fix the issue manually or adjust inputs, then rerun with
+`--continue` to resume from the last completed scenario. Full test
+implementation, observation, verification, and commits happen in the harness
+multi-agent phase after this command succeeds.
 
 ## Behavior Selection
 
@@ -115,32 +129,43 @@ overwritten.
 
 ## Generation Flow
 
-1. Select KG behaviors.
-2. Build bounded context from KG, extraction DB, source, and existing tests.
-3. Ask the LLM for scenario intent and testcase inputs:
-   - scenario name
-   - setup requirements
-   - generated inputs
-   - invocation path
-   - observable outputs
-   - required fakes
-   - side-effect capture points
-4. Validate the LLM JSON proposal.
-5. Render Java/JUnit characterization test source from Rust-owned templates.
-6. Compile tests with the project build tool.
-7. Run generated tests in observe mode against legacy code.
-8. Capture observed behavior.
-9. Persist snapshots.
-10. Run generated tests in assert mode against modernized code.
+### Code-parser phase
 
-There is no automatic LLM repair loop. Failures stop the run after recording
-diagnostics.
+1. Select KG behaviors.
+2. Build bounded abstract context from KG, extraction DB, source, and existing
+   tests.
+3. Persist selected behavior rows, scenario rows, scaffold file metadata, and
+   diagnostics in `characterization-tests.db`.
+4. Write traceable abstract/scaffold files under the generated test output
+   area.
+
+Code-parser does not implement full tests, run observe/assert execution, call
+multi-agent workflows, or commit repository changes.
+
+### Harness multi-agent phase
+
+1. Main harness agent selects one pending scenario from
+   `characterization-tests.db`.
+2. Context agent builds a context packet from the abstract, KG rows, extraction
+   rows, source, existing tests, and JDTLS.
+3. Input/output agent generates deterministic inputs, including happy path,
+   edge, boundary, and failure cases, then captures observed legacy outputs.
+4. Implementation agent writes the full executable project-native test using
+   mocks or fakes for external dependencies.
+5. Harness verifies the test with the project build/test command.
+6. Harness stores inputs, observations, fake boundary calls, and scenario status
+   in `characterization-tests.db`.
+7. Harness commits the accepted test and related snapshot DB update, then moves
+   to the next scenario.
+
+Failures stop the current scenario after recording diagnostics. The next run
+resumes from unfinished or failed scenarios.
 
 ## Testcase Inputs
 
 Testcase inputs are first-class artifacts.
 
-The LLM proposes input candidates for each selected behavior:
+The input/output agent proposes input candidates for each selected behavior:
 
 - happy-path inputs
 - edge-case inputs
@@ -150,7 +175,7 @@ The LLM proposes input candidates for each selected behavior:
 - fake dependency responses
 - invocation parameters
 
-Rust validates proposed inputs before any file is generated:
+The harness validates proposed inputs before they are stored or used:
 
 - input shape must match the invocation type
 - required fields must be present
@@ -159,53 +184,59 @@ Rust validates proposed inputs before any file is generated:
 - external dependency configuration must point to fakes only
 - generated fixtures must be safe for isolated test execution
 
-The LLM must not provide expected outputs. Expected outputs are observed by
-running the generated test against the legacy application.
+Agents must not invent expected outputs. Expected outputs are observed by
+running the generated test path against the legacy application.
 
 ```text
-LLM proposes input -> Rust validates input -> legacy code produces output
+agent proposes input -> harness validates input -> legacy code produces output
 ```
 
-Both generated inputs and observed outputs are stored in the snapshot database.
-Assert mode reuses the stored inputs exactly and compares modernized outputs
-against stored legacy observations.
+Both generated inputs and observed outputs are stored in
+`characterization-tests.db`. Assert mode reuses the stored inputs exactly and
+compares modernized outputs against stored legacy observations.
 
-## LLM And Rust Ownership
+## Agent And Runtime Ownership
 
-The LLM is a bounded planner, not a filesystem actor.
+Code-parser is a deterministic abstract/scaffold generator. Harness agents own
+full test implementation and observation.
 
-LLM may propose:
+Agents may:
 
-- scenario names
-- testcase inputs
-- fixtures
-- fake requirements
-- invocation paths
-- observation points
+- build context packets from bounded database rows, source, existing tests, and
+  JDTLS results
+- propose deterministic testcase inputs, fixtures, fake requirements,
+  invocation paths, and observation points
+- write generated characterization test files
+- run project-local build/test commands for verification
+- use git status, diff, add, and commit for accepted generated tests
+- use Gluon CLI database commands documented in the `gluon-cli` skill for
+  bounded DB inspection and focused snapshot/status updates
 
-LLM must not:
+Agents must not:
 
-- create files
-- edit files
-- choose arbitrary output paths
-- run build commands
-- write SQLite rows
-- call arbitrary shell commands
+- modify production source or user-authored tests
+- call real external services from generated tests
+- invent expected outputs
+- run harness-owned Gluon pipeline stages
 - query arbitrary SQL
 
-Rust owns:
+Code-parser owns:
 
-- schema validation
-- generated file paths
-- package and class names
-- Java/JUnit templates
-- imports
-- generated markers
-- overwrite rules
-- snapshot IDs
-- database writes
-- build/test commands
-- traceability enforcement
+- behavior selection from `business-kg.db`
+- abstract/scaffold metadata
+- `characterization-tests.db` schema
+- generated markers and user-file overwrite protection
+- traceability from behavior/scenario rows to KG and extraction evidence
+
+Harness owns:
+
+- context packet orchestration
+- input and observation capture
+- full test file edits
+- mocks/fakes for external dependencies
+- project build/test verification
+- snapshot/status writes to `characterization-tests.db`
+- one git commit per accepted verified test
 
 ## External Dependencies
 
@@ -368,11 +399,15 @@ Every behavior, scenario, generated file, fake, and observation must trace back
 to `business_nodes.id`, `business_evidence.method_id`, and source file/line
 evidence where available.
 
-## LLM Tooling
+## Agent Tooling
 
-Do not expose arbitrary SQL or unrestricted repository writes to the LLM.
+Do not expose arbitrary SQL or unrestricted repository writes to agents.
 
-Use bounded tools:
+Context and input/output agents use bounded database and source access. The
+preferred database interface is the public Gluon CLI DB command set documented
+in the `gluon-cli` skill.
+
+Use bounded conceptual tools or equivalent Gluon CLI DB reads:
 
 ```text
 get_business_node(node_id)
@@ -384,7 +419,7 @@ get_tests_for_method(method_id, limit)
 get_test_case(test_case_id)
 ```
 
-Expose LSP/JDTLS through bounded tools when source context is not enough to
+Expose JDTLS through bounded tools when source context is not enough to
 choose a correct invocation path, fixture, fake, or observation point:
 
 ```text
@@ -395,12 +430,12 @@ lsp_document_symbols(file, limit)
 lsp_call_hierarchy(method_id, direction, limit)
 ```
 
-LSP tool inputs must be anchored to files, methods, call sites, or symbols that
-Rust already selected from KG evidence, extraction tables, or prior bounded tool
-results. Do not expose broad workspace symbol search, raw arbitrary LSP
-requests, or unbounded reference scans to the LLM.
+JDTLS tool inputs must be anchored to files, methods, call sites, or symbols
+that code-parser selected from KG evidence, extraction tables, or prior bounded
+tool results. Do not expose broad workspace symbol search, raw arbitrary LSP
+requests, or unbounded reference scans to agents.
 
-LSP tool results must be normalized before returning to the LLM:
+JDTLS tool results must be normalized before returning to agents:
 
 - stable symbol ID where available
 - symbol kind
@@ -410,9 +445,9 @@ LSP tool results must be normalized before returning to the LLM:
 - short source excerpt when needed
 - relationship to the selected behavior context
 
-The LLM produces structured scenario and input proposals. Rust validates the
-proposal, renders owned files, runs approved build commands, and stores
-snapshots.
+Agents produce context packets, input proposals, observations, and full test
+edits. Harness validates proposed inputs, writes snapshots, runs approved
+project test commands, and commits accepted generated tests.
 
 ## Determinism Rules
 
@@ -434,46 +469,51 @@ diagnostic instead of generating a flaky test.
 
 ## Failure Handling
 
-The runtime must fail fast on generation, compile, or execution errors.
+Code-parser must fail fast on abstract/scaffold generation errors. Harness must
+fail the current scenario on full-test implementation, compile, observe, or
+assert errors after recording diagnostics.
 
 On failure, print verbose diagnostics:
 
 - behavior ID and scenario ID
 - KG node ID and evidence method IDs
 - generated file path
-- phase: `generate`, `compile`, `observe`, or `assert`
+- phase: `abstract`, `context`, `input`, `implementation`, `compile`,
+  `observe`, or `assert`
 - failing command when applicable
 - exit status
 - concise stdout/stderr excerpt
 - full diagnostic path or DB row ID when persisted
 
-The command must persist run progress before stopping. A later invocation with
-`--continue` resumes by skipping completed scenarios and starting at the first
-incomplete or failed scenario.
+Code-parser and harness must persist run progress before stopping. A later run
+resumes by skipping completed scenarios and starting at the first incomplete or
+failed scenario.
 
-Do not ask the LLM to repair failed generated code automatically. Do not modify
-production source or user-authored tests during failure handling.
+Do not modify production source or user-authored tests during failure handling.
+Harness may invoke repair agents only for generated characterization files and
+snapshot metadata owned by Gluon.
 
-## Runtime LLM Loop
+## Harness Multi-Agent Loop
 
-Do not use multi-agent orchestration inside the
-`generate-characterization-tests` runtime.
+Do not use multi-agent orchestration inside the Rust
+`generate-characterization-tests` runtime. Multi-agent orchestration belongs in
+the Python harness after code-parser produces abstracts and database rows.
 
-Runtime generation should use one bounded LLM loop per behavior:
+Harness uses one bounded loop per scenario:
 
 ```text
-Rust selects behavior
-Rust builds bounded context
-LLM proposes scenario/input JSON
-Rust validates proposal
-Rust renders Java/JUnit files
-Rust runs observe/assert mode
-Rust stores snapshots
+main harness agent selects pending scenario
+context agent builds context packet
+input/output agent generates inputs and captures legacy outputs
+implementation agent writes full test with mocks/fakes
+harness verifies project test command
+harness stores snapshots in characterization-tests.db
+harness commits accepted generated test
 ```
 
-This keeps generation deterministic, traceable, token-efficient, and easier to
-audit. Runtime verification comes from compiling and running generated tests,
-not from another LLM agent.
+This keeps code-parser deterministic while allowing agents to do repository-
+specific implementation work. Verification comes from compiling and running
+generated tests against the legacy project.
 
 ## Acceptance Criteria
 
@@ -486,3 +526,5 @@ A mature implementation is complete when:
 - All generated artifacts trace to KG nodes and extraction DB evidence.
 - Unsafe or under-specified scenarios are skipped with diagnostics instead of
   producing weak tests.
+- Each accepted generated test is committed separately with related
+  `characterization-tests.db` snapshot updates.

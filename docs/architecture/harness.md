@@ -56,15 +56,36 @@ Do not skip stages after failure.
 
 ## Characterization Test Generation
 
-- gluon command has given abstract for characterization teast
-- Now we have to generate full tests using that abstract
-- We have to use mocks for external depedencies
-- We have to capture business behaviour
-- We will use a multi-agent setup for this,
-- One agent will collect the important context and create a context packet for a test.
-- The context packet is passed to implementation agent.
-- The implementation agent writes the test, and verifies it.
-- The input output agent -> the main agent pass the context to this agent, this agent generate inputs, including bounday conditions, the give this inputs to the test, the test gives output
-- this agent store input and output for the test, in the extraction db.
-- again do the same for other tests.
-- gluon-cli has commands to interact with database.
+`gluon-cli code-parser generate-characterization-tests` creates behavior
+abstracts, scaffold files, and `characterization-tests.db`. Harness then owns
+the full-test generation workflow that turns those abstracts into executable
+tests.
+
+Full-test generation uses a multi-agent workflow:
+
+1. Main harness agent selects one pending characterization scenario from
+   `characterization-tests.db`.
+2. Context agent reads the behavior abstract, `business-kg.db`,
+   `business-extraction.db`, source files, existing tests, and JDTLS symbol
+   context. It returns a bounded context packet for one test.
+3. Input/output agent receives the context packet, generates deterministic
+   inputs including happy path, edge, boundary, and failure cases, runs the
+   test path against the legacy behavior, and stores generated inputs plus
+   observed outputs in `characterization-tests.db`.
+4. Implementation agent receives the context packet and stored observations,
+   writes the executable project-native test, uses mocks or fakes for external
+   dependencies, and verifies it with the project build/test command.
+5. Main harness agent checks `git status`, commits the accepted test and
+   related `characterization-tests.db` changes, then moves to the next
+   scenario.
+
+Agents may use:
+
+- Git status, diff, add, and commit for generated characterization work.
+- Java build and test commands needed to verify the generated test.
+- JDTLS from `PATH` for Java symbol context.
+- Gluon CLI database commands documented in the `gluon-cli` skill for bounded
+  database inspection and focused edits.
+
+Agents must not run harness-owned Gluon stages. Harness runs `gluon-cli`
+pipeline commands and resumes failed stages after repair.
