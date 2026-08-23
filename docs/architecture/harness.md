@@ -82,11 +82,14 @@ Full-test generation uses a multi-agent workflow:
    Agent.
 8. Input/Output Agent generates deterministic inputs including happy path,
    edge, boundary, and failure cases, runs the written test with those inputs,
-   captures observed outputs, and updates `characterization-tests.db`.
+   captures observed outputs, inserts input and observation rows through Gluon
+   CLI database commands, and updates the scenario status to `accepted`.
 9. Main agent returns control to harness after the test is accepted.
-10. Harness checks `git status`, commits the accepted test and related
-   `characterization-tests.db` changes, selects the next pending scenario,
-   collects fresh seed context, and gives control back to the main agent.
+10. Harness verifies that the scenario is accepted and has stored input and
+   observation rows, then checks `git status`, commits the accepted test and
+   related `characterization-tests.db` changes, selects the next pending
+   scenario, collects fresh seed context, and gives control back to the main
+   agent.
 
 Agents may use:
 

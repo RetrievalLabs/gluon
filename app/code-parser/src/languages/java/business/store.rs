@@ -3,6 +3,12 @@ use std::path::Path;
 use rusqlite::{Connection, params};
 
 use crate::languages::business::model::CodeModel;
+use crate::proto::extraction_table;
+use crate::proto::gluon::db::v1::{
+    CandidateScoreRow, CandidateSignalRow, ClassRow, ContextPacketRow, DiagnosticRow,
+    EntryPointRow, EvidenceRangeRow, ExtractionTable, MethodRow, ModuleRow, RelationshipRow,
+};
+use crate::proto_field;
 
 pub fn write_database(path: &Path, model: &CodeModel) -> Result<(), String> {
     if let Some(parent) = path.parent() {
@@ -23,9 +29,18 @@ pub fn write_database(path: &Path, model: &CodeModel) -> Result<(), String> {
     for module in &model.modules {
         transaction
             .execute(
-                "INSERT INTO modules (
-                    id, name, path, build_system, build_file, parent_id
+                &format!(
+                    "INSERT INTO {} (
+                    {}, {}, {}, {}, {}, {}
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    extraction_table(ExtractionTable::Modules),
+                    proto_field!(ModuleRow, id),
+                    proto_field!(ModuleRow, name),
+                    proto_field!(ModuleRow, path),
+                    proto_field!(ModuleRow, build_system),
+                    proto_field!(ModuleRow, build_file),
+                    proto_field!(ModuleRow, parent_id),
+                ),
                 params![
                     module.id,
                     module.name,
@@ -41,10 +56,25 @@ pub fn write_database(path: &Path, model: &CodeModel) -> Result<(), String> {
     for class in &model.classes {
         transaction
             .execute(
-                "INSERT INTO classes (
-                    id, module_id, name, package_name, qualified_name, kind, file,
-                    start_line, end_line, superclass, interfaces_json, annotations_json
+                &format!(
+                    "INSERT INTO {} (
+                    {}, {}, {}, {}, {}, {}, {},
+                    {}, {}, {}, {}, {}
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                    extraction_table(ExtractionTable::Classes),
+                    proto_field!(ClassRow, id),
+                    proto_field!(ClassRow, module_id),
+                    proto_field!(ClassRow, name),
+                    proto_field!(ClassRow, package_name),
+                    proto_field!(ClassRow, qualified_name),
+                    proto_field!(ClassRow, kind),
+                    proto_field!(ClassRow, file),
+                    proto_field!(ClassRow, start_line),
+                    proto_field!(ClassRow, end_line),
+                    proto_field!(ClassRow, superclass),
+                    proto_field!(ClassRow, interfaces_json),
+                    proto_field!(ClassRow, annotations_json),
+                ),
                 params![
                     class.id,
                     class.module_id,
@@ -66,10 +96,26 @@ pub fn write_database(path: &Path, model: &CodeModel) -> Result<(), String> {
     for method in &model.methods {
         transaction
             .execute(
-                "INSERT INTO methods (
-                    id, module_id, class_id, name, signature, return_type, parameters_json,
-                    annotations_json, file, start_line, end_line, name_line, name_column
+                &format!(
+                    "INSERT INTO {} (
+                    {}, {}, {}, {}, {}, {}, {},
+                    {}, {}, {}, {}, {}, {}
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                    extraction_table(ExtractionTable::Methods),
+                    proto_field!(MethodRow, id),
+                    proto_field!(MethodRow, module_id),
+                    proto_field!(MethodRow, class_id),
+                    proto_field!(MethodRow, name),
+                    proto_field!(MethodRow, signature),
+                    proto_field!(MethodRow, return_type),
+                    proto_field!(MethodRow, parameters_json),
+                    proto_field!(MethodRow, annotations_json),
+                    proto_field!(MethodRow, file),
+                    proto_field!(MethodRow, start_line),
+                    proto_field!(MethodRow, end_line),
+                    proto_field!(MethodRow, name_line),
+                    proto_field!(MethodRow, name_column),
+                ),
                 params![
                     method.id,
                     method.module_id,
@@ -92,9 +138,17 @@ pub fn write_database(path: &Path, model: &CodeModel) -> Result<(), String> {
     for relationship in &model.relationships {
         transaction
             .execute(
-                "INSERT INTO relationships (
-                    source_id, target_id, kind, confidence, source
+                &format!(
+                    "INSERT INTO {} (
+                    {}, {}, {}, {}, {}
                  ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    extraction_table(ExtractionTable::Relationships),
+                    proto_field!(RelationshipRow, source_id),
+                    proto_field!(RelationshipRow, target_id),
+                    proto_field!(RelationshipRow, kind),
+                    proto_field!(RelationshipRow, confidence),
+                    proto_field!(RelationshipRow, source),
+                ),
                 params![
                     relationship.source_id,
                     relationship.target_id,
@@ -114,9 +168,19 @@ pub fn write_database(path: &Path, model: &CodeModel) -> Result<(), String> {
     for entry_point in &model.entry_points {
         transaction
             .execute(
-                "INSERT INTO entry_points (
-                    id, method_id, kind, framework, route, http_method, source
+                &format!(
+                    "INSERT INTO {} (
+                    {}, {}, {}, {}, {}, {}, {}
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    extraction_table(ExtractionTable::EntryPoints),
+                    proto_field!(EntryPointRow, id),
+                    proto_field!(EntryPointRow, method_id),
+                    proto_field!(EntryPointRow, kind),
+                    proto_field!(EntryPointRow, framework),
+                    proto_field!(EntryPointRow, route),
+                    proto_field!(EntryPointRow, http_method),
+                    proto_field!(EntryPointRow, source),
+                ),
                 params![
                     entry_point.id,
                     entry_point.method_id,
@@ -133,8 +197,14 @@ pub fn write_database(path: &Path, model: &CodeModel) -> Result<(), String> {
     for score in &model.candidate_scores {
         transaction
             .execute(
-                "INSERT INTO candidate_scores (method_id, score, priority)
+                &format!(
+                    "INSERT INTO {} ({}, {}, {})
                  VALUES (?1, ?2, ?3)",
+                    extraction_table(ExtractionTable::CandidateScores),
+                    proto_field!(CandidateScoreRow, method_id),
+                    proto_field!(CandidateScoreRow, score),
+                    proto_field!(CandidateScoreRow, priority),
+                ),
                 params![score.method_id, score.score, score.priority],
             )
             .map_err(|error| {
@@ -148,8 +218,15 @@ pub fn write_database(path: &Path, model: &CodeModel) -> Result<(), String> {
     for signal in &model.candidate_signals {
         transaction
             .execute(
-                "INSERT INTO candidate_signals (method_id, name, count, weight)
+                &format!(
+                    "INSERT INTO {} ({}, {}, {}, {})
                  VALUES (?1, ?2, ?3, ?4)",
+                    extraction_table(ExtractionTable::CandidateSignals),
+                    proto_field!(CandidateSignalRow, method_id),
+                    proto_field!(CandidateSignalRow, name),
+                    proto_field!(CandidateSignalRow, count),
+                    proto_field!(CandidateSignalRow, weight),
+                ),
                 params![signal.method_id, signal.name, signal.count, signal.weight],
             )
             .map_err(|error| {
@@ -163,8 +240,16 @@ pub fn write_database(path: &Path, model: &CodeModel) -> Result<(), String> {
     for evidence in &model.evidence_ranges {
         transaction
             .execute(
-                "INSERT INTO evidence_ranges (method_id, file, start_line, end_line, source)
+                &format!(
+                    "INSERT INTO {} ({}, {}, {}, {}, {})
                  VALUES (?1, ?2, ?3, ?4, ?5)",
+                    extraction_table(ExtractionTable::EvidenceRanges),
+                    proto_field!(EvidenceRangeRow, method_id),
+                    proto_field!(EvidenceRangeRow, file),
+                    proto_field!(EvidenceRangeRow, start_line),
+                    proto_field!(EvidenceRangeRow, end_line),
+                    proto_field!(EvidenceRangeRow, source),
+                ),
                 params![
                     evidence.method_id,
                     evidence.file,
@@ -184,8 +269,13 @@ pub fn write_database(path: &Path, model: &CodeModel) -> Result<(), String> {
     for packet in &model.context_packets {
         transaction
             .execute(
-                "INSERT INTO context_packets (method_id, summary)
+                &format!(
+                    "INSERT INTO {} ({}, {})
                  VALUES (?1, ?2)",
+                    extraction_table(ExtractionTable::ContextPackets),
+                    proto_field!(ContextPacketRow, method_id),
+                    proto_field!(ContextPacketRow, summary),
+                ),
                 params![packet.method_id, packet.summary],
             )
             .map_err(|error| {
@@ -199,9 +289,19 @@ pub fn write_database(path: &Path, model: &CodeModel) -> Result<(), String> {
     for diagnostic in &model.diagnostics {
         transaction
             .execute(
-                "INSERT INTO diagnostics (
-                    severity, category, message, file, command_json, exit_code, stderr
+                &format!(
+                    "INSERT INTO {} (
+                    {}, {}, {}, {}, {}, {}, {}
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    extraction_table(ExtractionTable::Diagnostics),
+                    proto_field!(DiagnosticRow, severity),
+                    proto_field!(DiagnosticRow, category),
+                    proto_field!(DiagnosticRow, message),
+                    proto_field!(DiagnosticRow, file),
+                    proto_field!(DiagnosticRow, command_json),
+                    proto_field!(DiagnosticRow, exit_code),
+                    proto_field!(DiagnosticRow, stderr),
+                ),
                 params![
                     diagnostic.severity,
                     diagnostic.category,
@@ -228,109 +328,187 @@ pub fn write_database(path: &Path, model: &CodeModel) -> Result<(), String> {
 
 fn create_schema(connection: &Connection) -> Result<(), String> {
     connection
-        .execute_batch(
+        .execute_batch(&format!(
             "
             PRAGMA foreign_keys = ON;
 
-            CREATE TABLE modules (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                path TEXT NOT NULL,
-                build_system TEXT,
-                build_file TEXT,
-                parent_id TEXT
+            CREATE TABLE {modules} (
+                {module_id} TEXT PRIMARY KEY,
+                {module_name} TEXT NOT NULL,
+                {module_path} TEXT NOT NULL,
+                {module_build_system} TEXT,
+                {module_build_file} TEXT,
+                {module_parent_id} TEXT
             );
 
-            CREATE TABLE classes (
-                id TEXT PRIMARY KEY,
-                module_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                package_name TEXT,
-                qualified_name TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                file TEXT NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL,
-                superclass TEXT,
-                interfaces_json TEXT NOT NULL,
-                annotations_json TEXT NOT NULL
+            CREATE TABLE {classes} (
+                {class_id} TEXT PRIMARY KEY,
+                {class_module_id} TEXT NOT NULL,
+                {class_name} TEXT NOT NULL,
+                {class_package_name} TEXT,
+                {class_qualified_name} TEXT NOT NULL,
+                {class_kind} TEXT NOT NULL,
+                {class_file} TEXT NOT NULL,
+                {class_start_line} INTEGER NOT NULL,
+                {class_end_line} INTEGER NOT NULL,
+                {class_superclass} TEXT,
+                {class_interfaces_json} TEXT NOT NULL,
+                {class_annotations_json} TEXT NOT NULL
             );
 
-            CREATE TABLE methods (
-                id TEXT PRIMARY KEY,
-                module_id TEXT NOT NULL,
-                class_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                return_type TEXT,
-                parameters_json TEXT NOT NULL,
-                annotations_json TEXT NOT NULL,
-                file TEXT NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL,
-                name_line INTEGER NOT NULL,
-                name_column INTEGER NOT NULL
+            CREATE TABLE {methods} (
+                {method_id} TEXT PRIMARY KEY,
+                {method_module_id} TEXT NOT NULL,
+                {method_class_id} TEXT NOT NULL,
+                {method_name} TEXT NOT NULL,
+                {method_signature} TEXT NOT NULL,
+                {method_return_type} TEXT,
+                {method_parameters_json} TEXT NOT NULL,
+                {method_annotations_json} TEXT NOT NULL,
+                {method_file} TEXT NOT NULL,
+                {method_start_line} INTEGER NOT NULL,
+                {method_end_line} INTEGER NOT NULL,
+                {method_name_line} INTEGER NOT NULL,
+                {method_name_column} INTEGER NOT NULL
             );
 
-            CREATE TABLE relationships (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source_id TEXT NOT NULL,
-                target_id TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                confidence REAL NOT NULL,
-                source TEXT NOT NULL
+            CREATE TABLE {relationships} (
+                {relationship_id} INTEGER PRIMARY KEY AUTOINCREMENT,
+                {relationship_source_id} TEXT NOT NULL,
+                {relationship_target_id} TEXT NOT NULL,
+                {relationship_kind} TEXT NOT NULL,
+                {relationship_confidence} REAL NOT NULL,
+                {relationship_source} TEXT NOT NULL
             );
 
-            CREATE TABLE entry_points (
-                id TEXT PRIMARY KEY,
-                method_id TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                framework TEXT,
-                route TEXT,
-                http_method TEXT,
-                source TEXT NOT NULL
+            CREATE TABLE {entry_points} (
+                {entry_point_id} TEXT PRIMARY KEY,
+                {entry_point_method_id} TEXT NOT NULL,
+                {entry_point_kind} TEXT NOT NULL,
+                {entry_point_framework} TEXT,
+                {entry_point_route} TEXT,
+                {entry_point_http_method} TEXT,
+                {entry_point_source} TEXT NOT NULL
             );
 
-            CREATE TABLE candidate_scores (
-                method_id TEXT PRIMARY KEY,
-                score INTEGER NOT NULL,
-                priority TEXT NOT NULL
+            CREATE TABLE {candidate_scores} (
+                {candidate_score_method_id} TEXT PRIMARY KEY,
+                {candidate_score_score} INTEGER NOT NULL,
+                {candidate_score_priority} TEXT NOT NULL
             );
 
-            CREATE TABLE candidate_signals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                method_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                count INTEGER NOT NULL,
-                weight INTEGER NOT NULL
+            CREATE TABLE {candidate_signals} (
+                {candidate_signal_id} INTEGER PRIMARY KEY AUTOINCREMENT,
+                {candidate_signal_method_id} TEXT NOT NULL,
+                {candidate_signal_name} TEXT NOT NULL,
+                {candidate_signal_count} INTEGER NOT NULL,
+                {candidate_signal_weight} INTEGER NOT NULL
             );
 
-            CREATE TABLE evidence_ranges (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                method_id TEXT NOT NULL,
-                file TEXT NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL,
-                source TEXT NOT NULL
+            CREATE TABLE {evidence_ranges} (
+                {evidence_range_id} INTEGER PRIMARY KEY AUTOINCREMENT,
+                {evidence_range_method_id} TEXT NOT NULL,
+                {evidence_range_file} TEXT NOT NULL,
+                {evidence_range_start_line} INTEGER NOT NULL,
+                {evidence_range_end_line} INTEGER NOT NULL,
+                {evidence_range_source} TEXT NOT NULL
             );
 
-            CREATE TABLE context_packets (
-                method_id TEXT PRIMARY KEY,
-                summary TEXT NOT NULL
+            CREATE TABLE {context_packets} (
+                {context_packet_method_id} TEXT PRIMARY KEY,
+                {context_packet_summary} TEXT NOT NULL
             );
 
-            CREATE TABLE diagnostics (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                severity TEXT NOT NULL,
-                category TEXT NOT NULL,
-                message TEXT NOT NULL,
-                file TEXT,
-                command_json TEXT,
-                exit_code INTEGER,
-                stderr TEXT
+            CREATE TABLE {diagnostics} (
+                {diagnostic_id} INTEGER PRIMARY KEY AUTOINCREMENT,
+                {diagnostic_severity} TEXT NOT NULL,
+                {diagnostic_category} TEXT NOT NULL,
+                {diagnostic_message} TEXT NOT NULL,
+                {diagnostic_file} TEXT,
+                {diagnostic_command_json} TEXT,
+                {diagnostic_exit_code} INTEGER,
+                {diagnostic_stderr} TEXT
             );
             ",
-        )
+            modules = extraction_table(ExtractionTable::Modules),
+            module_id = proto_field!(ModuleRow, id),
+            module_name = proto_field!(ModuleRow, name),
+            module_path = proto_field!(ModuleRow, path),
+            module_build_system = proto_field!(ModuleRow, build_system),
+            module_build_file = proto_field!(ModuleRow, build_file),
+            module_parent_id = proto_field!(ModuleRow, parent_id),
+            classes = extraction_table(ExtractionTable::Classes),
+            class_id = proto_field!(ClassRow, id),
+            class_module_id = proto_field!(ClassRow, module_id),
+            class_name = proto_field!(ClassRow, name),
+            class_package_name = proto_field!(ClassRow, package_name),
+            class_qualified_name = proto_field!(ClassRow, qualified_name),
+            class_kind = proto_field!(ClassRow, kind),
+            class_file = proto_field!(ClassRow, file),
+            class_start_line = proto_field!(ClassRow, start_line),
+            class_end_line = proto_field!(ClassRow, end_line),
+            class_superclass = proto_field!(ClassRow, superclass),
+            class_interfaces_json = proto_field!(ClassRow, interfaces_json),
+            class_annotations_json = proto_field!(ClassRow, annotations_json),
+            methods = extraction_table(ExtractionTable::Methods),
+            method_id = proto_field!(MethodRow, id),
+            method_module_id = proto_field!(MethodRow, module_id),
+            method_class_id = proto_field!(MethodRow, class_id),
+            method_name = proto_field!(MethodRow, name),
+            method_signature = proto_field!(MethodRow, signature),
+            method_return_type = proto_field!(MethodRow, return_type),
+            method_parameters_json = proto_field!(MethodRow, parameters_json),
+            method_annotations_json = proto_field!(MethodRow, annotations_json),
+            method_file = proto_field!(MethodRow, file),
+            method_start_line = proto_field!(MethodRow, start_line),
+            method_end_line = proto_field!(MethodRow, end_line),
+            method_name_line = proto_field!(MethodRow, name_line),
+            method_name_column = proto_field!(MethodRow, name_column),
+            relationships = extraction_table(ExtractionTable::Relationships),
+            relationship_id = proto_field!(RelationshipRow, id),
+            relationship_source_id = proto_field!(RelationshipRow, source_id),
+            relationship_target_id = proto_field!(RelationshipRow, target_id),
+            relationship_kind = proto_field!(RelationshipRow, kind),
+            relationship_confidence = proto_field!(RelationshipRow, confidence),
+            relationship_source = proto_field!(RelationshipRow, source),
+            entry_points = extraction_table(ExtractionTable::EntryPoints),
+            entry_point_id = proto_field!(EntryPointRow, id),
+            entry_point_method_id = proto_field!(EntryPointRow, method_id),
+            entry_point_kind = proto_field!(EntryPointRow, kind),
+            entry_point_framework = proto_field!(EntryPointRow, framework),
+            entry_point_route = proto_field!(EntryPointRow, route),
+            entry_point_http_method = proto_field!(EntryPointRow, http_method),
+            entry_point_source = proto_field!(EntryPointRow, source),
+            candidate_scores = extraction_table(ExtractionTable::CandidateScores),
+            candidate_score_method_id = proto_field!(CandidateScoreRow, method_id),
+            candidate_score_score = proto_field!(CandidateScoreRow, score),
+            candidate_score_priority = proto_field!(CandidateScoreRow, priority),
+            candidate_signals = extraction_table(ExtractionTable::CandidateSignals),
+            candidate_signal_id = proto_field!(CandidateSignalRow, id),
+            candidate_signal_method_id = proto_field!(CandidateSignalRow, method_id),
+            candidate_signal_name = proto_field!(CandidateSignalRow, name),
+            candidate_signal_count = proto_field!(CandidateSignalRow, count),
+            candidate_signal_weight = proto_field!(CandidateSignalRow, weight),
+            evidence_ranges = extraction_table(ExtractionTable::EvidenceRanges),
+            evidence_range_id = proto_field!(EvidenceRangeRow, id),
+            evidence_range_method_id = proto_field!(EvidenceRangeRow, method_id),
+            evidence_range_file = proto_field!(EvidenceRangeRow, file),
+            evidence_range_start_line = proto_field!(EvidenceRangeRow, start_line),
+            evidence_range_end_line = proto_field!(EvidenceRangeRow, end_line),
+            evidence_range_source = proto_field!(EvidenceRangeRow, source),
+            context_packets = extraction_table(ExtractionTable::ContextPackets),
+            context_packet_method_id = proto_field!(ContextPacketRow, method_id),
+            context_packet_summary = proto_field!(ContextPacketRow, summary),
+            diagnostics = extraction_table(ExtractionTable::Diagnostics),
+            diagnostic_id = proto_field!(DiagnosticRow, id),
+            diagnostic_severity = proto_field!(DiagnosticRow, severity),
+            diagnostic_category = proto_field!(DiagnosticRow, category),
+            diagnostic_message = proto_field!(DiagnosticRow, message),
+            diagnostic_file = proto_field!(DiagnosticRow, file),
+            diagnostic_command_json = proto_field!(DiagnosticRow, command_json),
+            diagnostic_exit_code = proto_field!(DiagnosticRow, exit_code),
+            diagnostic_stderr = proto_field!(DiagnosticRow, stderr),
+        ))
         .map_err(|error| format!("failed to create database schema: {error}"))
 }
 

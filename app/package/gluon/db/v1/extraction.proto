@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package gluon.db.v1;
 
+import "gluon/db/v1/sqlite.proto";
+
 // Shared contract for extraction.db.
 
 enum ExtractionTable {
@@ -26,177 +28,210 @@ enum ExtractionTable {
 }
 
 message ModuleRow {
-  string id = 1;
-  string name = 2;
-  string path = 3;
-  optional string build_system = 4;
-  optional string build_file = 5;
-  optional string parent_id = 6;
+  option (sqlite_table).name = "modules";
+
+  string id = 1 [(sqlite_column) = { sql_type: "TEXT" primary_key: true }];
+  string name = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string path = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string build_system = 4 [(sqlite_column).sql_type = "TEXT"];
+  optional string build_file = 5 [(sqlite_column).sql_type = "TEXT"];
+  optional string parent_id = 6 [(sqlite_column).sql_type = "TEXT"];
 }
 
 message ClassRow {
-  string id = 1;
-  string module_id = 2;
-  string name = 3;
-  optional string package_name = 4;
-  string qualified_name = 5;
-  string kind = 6;
-  string file = 7;
-  int64 start_line = 8;
-  int64 end_line = 9;
-  optional string superclass = 10;
-  string interfaces_json = 11;
-  string annotations_json = 12;
+  option (sqlite_table).name = "classes";
+
+  string id = 1 [(sqlite_column) = { sql_type: "TEXT" primary_key: true }];
+  string module_id = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string name = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string package_name = 4 [(sqlite_column).sql_type = "TEXT"];
+  string qualified_name = 5 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string kind = 6 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string file = 7 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  int64 start_line = 8 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
+  int64 end_line = 9 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
+  optional string superclass = 10 [(sqlite_column).sql_type = "TEXT"];
+  string interfaces_json = 11 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string annotations_json = 12 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message MethodRow {
-  string id = 1;
-  string module_id = 2;
-  string class_id = 3;
-  string name = 4;
-  string signature = 5;
-  optional string return_type = 6;
-  string parameters_json = 7;
-  string annotations_json = 8;
-  string file = 9;
-  int64 start_line = 10;
-  int64 end_line = 11;
-  int64 name_line = 12;
-  int64 name_column = 13;
+  option (sqlite_table).name = "methods";
+
+  string id = 1 [(sqlite_column) = { sql_type: "TEXT" primary_key: true }];
+  string module_id = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string class_id = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string name = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string signature = 5 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string return_type = 6 [(sqlite_column).sql_type = "TEXT"];
+  string parameters_json = 7 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string annotations_json = 8 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string file = 9 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  int64 start_line = 10 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
+  int64 end_line = 11 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
+  int64 name_line = 12 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
+  int64 name_column = 13 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
 }
 
 message RelationshipRow {
-  int64 id = 1;
-  string source_id = 2;
-  string target_id = 3;
-  string kind = 4;
-  double confidence = 5;
-  string source = 6;
+  option (sqlite_table).name = "relationships";
+
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  string source_id = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string target_id = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string kind = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  double confidence = 5 [(sqlite_column) = { sql_type: "REAL" not_null: true }];
+  string source = 6 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message EntryPointRow {
-  string id = 1;
-  string method_id = 2;
-  string kind = 3;
-  optional string framework = 4;
-  optional string route = 5;
-  optional string http_method = 6;
-  string source = 7;
+  option (sqlite_table).name = "entry_points";
+
+  string id = 1 [(sqlite_column) = { sql_type: "TEXT" primary_key: true }];
+  string method_id = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string kind = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string framework = 4 [(sqlite_column).sql_type = "TEXT"];
+  optional string route = 5 [(sqlite_column).sql_type = "TEXT"];
+  optional string http_method = 6 [(sqlite_column).sql_type = "TEXT"];
+  string source = 7 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message CandidateScoreRow {
-  string method_id = 1;
-  int64 score = 2;
-  string priority = 3;
+  option (sqlite_table).name = "candidate_scores";
+
+  string method_id = 1 [(sqlite_column) = { sql_type: "TEXT" primary_key: true }];
+  int64 score = 2 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
+  string priority = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message CandidateSignalRow {
-  int64 id = 1;
-  string method_id = 2;
-  string name = 3;
-  int64 count = 4;
-  int64 weight = 5;
+  option (sqlite_table).name = "candidate_signals";
+
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  string method_id = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string name = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  int64 count = 4 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
+  int64 weight = 5 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
 }
 
 message EvidenceRangeRow {
-  int64 id = 1;
-  string method_id = 2;
-  string file = 3;
-  int64 start_line = 4;
-  int64 end_line = 5;
-  string source = 6;
+  option (sqlite_table).name = "evidence_ranges";
+
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  string method_id = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string file = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  int64 start_line = 4 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
+  int64 end_line = 5 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
+  string source = 6 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message ContextPacketRow {
-  string method_id = 1;
-  string summary = 2;
+  option (sqlite_table).name = "context_packets";
+
+  string method_id = 1 [(sqlite_column) = { sql_type: "TEXT" primary_key: true }];
+  string summary = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message DiagnosticRow {
-  int64 id = 1;
-  string severity = 2;
-  string category = 3;
-  string message = 4;
-  optional string file = 5;
-  optional string command_json = 6;
-  optional int64 exit_code = 7;
-  optional string stderr = 8;
+  option (sqlite_table).name = "diagnostics";
+
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  string severity = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string category = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string message = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string file = 5 [(sqlite_column).sql_type = "TEXT"];
+  optional string command_json = 6 [(sqlite_column).sql_type = "TEXT"];
+  optional int64 exit_code = 7 [(sqlite_column).sql_type = "INTEGER"];
+  optional string stderr = 8 [(sqlite_column).sql_type = "TEXT"];
 }
 
 message TestSuiteRow {
-  string id = 1;
-  optional string module_id = 2;
-  string class_name = 3;
-  optional string package_name = 4;
-  string qualified_name = 5;
-  string test_kind = 6;
-  string file = 7;
-  int64 start_line = 8;
-  int64 end_line = 9;
-  string annotations_json = 10;
+  option (sqlite_table).name = "test_suites";
+
+  string id = 1 [(sqlite_column) = { sql_type: "TEXT" primary_key: true }];
+  optional string module_id = 2 [(sqlite_column).sql_type = "TEXT"];
+  string class_name = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string package_name = 4 [(sqlite_column).sql_type = "TEXT"];
+  string qualified_name = 5 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string test_kind = 6 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string file = 7 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  int64 start_line = 8 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
+  int64 end_line = 9 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
+  string annotations_json = 10 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message TestCaseRow {
-  string id = 1;
-  string suite_id = 2;
-  string name = 3;
-  optional string display_name = 4;
-  string test_kind = 5;
-  string file = 6;
-  int64 start_line = 7;
-  int64 end_line = 8;
-  string annotations_json = 9;
-  string body_text = 10;
+  option (sqlite_table).name = "test_cases";
+
+  string id = 1 [(sqlite_column) = { sql_type: "TEXT" primary_key: true }];
+  string suite_id = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true references_table: "test_suites" references_column: "id" }];
+  string name = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string display_name = 4 [(sqlite_column).sql_type = "TEXT"];
+  string test_kind = 5 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string file = 6 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  int64 start_line = 7 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
+  int64 end_line = 8 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
+  string annotations_json = 9 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string body_text = 10 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message TestTargetRow {
-  int64 id = 1;
-  string test_case_id = 2;
-  string target_kind = 3;
-  string target_id = 4;
-  string relationship = 5;
-  double confidence = 6;
-  string source = 7;
+  option (sqlite_table).name = "test_targets";
+
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  string test_case_id = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true references_table: "test_cases" references_column: "id" }];
+  string target_kind = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string target_id = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string relationship = 5 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  double confidence = 6 [(sqlite_column) = { sql_type: "REAL" not_null: true }];
+  string source = 7 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message TestAssertionRow {
-  int64 id = 1;
-  string test_case_id = 2;
-  string assertion_kind = 3;
-  string expression = 4;
-  optional string expected_value = 5;
-  string file = 6;
-  int64 line = 7;
+  option (sqlite_table).name = "test_assertions";
+
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  string test_case_id = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true references_table: "test_cases" references_column: "id" }];
+  string assertion_kind = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string expression = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string expected_value = 5 [(sqlite_column).sql_type = "TEXT"];
+  string file = 6 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  int64 line = 7 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
 }
 
 message TestFixtureRow {
-  int64 id = 1;
-  optional string suite_id = 2;
-  optional string test_case_id = 3;
-  string fixture_kind = 4;
-  string name = 5;
-  string details_json = 6;
-  string file = 7;
-  int64 line = 8;
+  option (sqlite_table).name = "test_fixtures";
+
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  optional string suite_id = 2 [(sqlite_column) = { sql_type: "TEXT" references_table: "test_suites" references_column: "id" }];
+  optional string test_case_id = 3 [(sqlite_column) = { sql_type: "TEXT" references_table: "test_cases" references_column: "id" }];
+  string fixture_kind = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string name = 5 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string details_json = 6 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string file = 7 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  int64 line = 8 [(sqlite_column) = { sql_type: "INTEGER" not_null: true }];
 }
 
 message TestEntryPointRow {
-  int64 id = 1;
-  string test_case_id = 2;
-  string kind = 3;
-  optional string framework = 4;
-  optional string route = 5;
-  optional string http_method = 6;
-  optional string topic = 7;
-  optional string command = 8;
-  string source = 9;
+  option (sqlite_table).name = "test_entry_points";
+
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  string test_case_id = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true references_table: "test_cases" references_column: "id" }];
+  string kind = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string framework = 4 [(sqlite_column).sql_type = "TEXT"];
+  optional string route = 5 [(sqlite_column).sql_type = "TEXT"];
+  optional string http_method = 6 [(sqlite_column).sql_type = "TEXT"];
+  optional string topic = 7 [(sqlite_column).sql_type = "TEXT"];
+  optional string command = 8 [(sqlite_column).sql_type = "TEXT"];
+  string source = 9 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message TestDiagnosticRow {
-  int64 id = 1;
-  string severity = 2;
-  string category = 3;
-  string message = 4;
-  optional string file = 5;
-}
+  option (sqlite_table).name = "test_diagnostics";
 
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  string severity = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string category = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string message = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string file = 5 [(sqlite_column).sql_type = "TEXT"];
+}

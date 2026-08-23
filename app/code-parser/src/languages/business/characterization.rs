@@ -8,13 +8,17 @@ use thiserror::Error;
 
 use crate::core::error::{DatabaseError, FileError, PathError};
 use crate::proto::gluon::db::v1::{
-    BusinessKgTable, CharacterizationBehaviorStatus, CharacterizationRunStatus,
-    CharacterizationScenarioStatus, ExtractionTable,
+    BusinessKgTable, CharacterizationBehaviorRow, CharacterizationBehaviorStatus,
+    CharacterizationDiagnosticRow, CharacterizationFileRow, CharacterizationRunRow,
+    CharacterizationRunStatus, CharacterizationScenarioRow, CharacterizationScenarioStatus,
+    CharacterizationTable, ExtractionTable,
 };
 use crate::proto::{
     business_kg_table, characterization_behavior_status, characterization_run_status,
-    characterization_scenario_status, extraction_table,
+    characterization_scenario_status, characterization_schema_ddl, characterization_table,
+    extraction_table,
 };
+use crate::proto_field;
 
 const SUPPORTED_NODE_KINDS: [&str; 5] = [
     "BusinessRule",
@@ -1197,10 +1201,19 @@ impl CharacterizationStore {
     fn start_run(&mut self, options: &GenerateCharacterizationTestsOptions) -> Result<i64, String> {
         self.connection
             .execute(
-                "INSERT INTO characterization_runs (
-                    mode, source_path, business_database_path, kg_database_path,
-                    status, started_at
+                &format!(
+                    "INSERT INTO {} (
+                    {}, {}, {}, {},
+                    {}, {}
                  ) VALUES ('generate', ?1, ?2, ?3, ?4, ?5)",
+                    characterization_table(CharacterizationTable::Runs),
+                    proto_field!(CharacterizationRunRow, mode),
+                    proto_field!(CharacterizationRunRow, source_path),
+                    proto_field!(CharacterizationRunRow, business_database_path),
+                    proto_field!(CharacterizationRunRow, kg_database_path),
+                    proto_field!(CharacterizationRunRow, status),
+                    proto_field!(CharacterizationRunRow, started_at),
+                ),
                 params![
                     options.source_path.display().to_string(),
                     options.business_database.display().to_string(),
@@ -1221,10 +1234,21 @@ impl CharacterizationStore {
         let changed = self
             .connection
             .execute(
-                "INSERT OR IGNORE INTO characterization_behaviors (
-                    id, run_id, kg_node_id, node_kind, node_name, node_statement,
-                    source_method_ids_json, status
+                &format!(
+                    "INSERT OR IGNORE INTO {} (
+                    {}, {}, {}, {}, {}, {},
+                    {}, {}
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    characterization_table(CharacterizationTable::Behaviors),
+                    proto_field!(CharacterizationBehaviorRow, id),
+                    proto_field!(CharacterizationBehaviorRow, run_id),
+                    proto_field!(CharacterizationBehaviorRow, kg_node_id),
+                    proto_field!(CharacterizationBehaviorRow, node_kind),
+                    proto_field!(CharacterizationBehaviorRow, node_name),
+                    proto_field!(CharacterizationBehaviorRow, node_statement),
+                    proto_field!(CharacterizationBehaviorRow, source_method_ids_json),
+                    proto_field!(CharacterizationBehaviorRow, status),
+                ),
                 params![
                     behavior_id(&candidate.node_id),
                     run_id,
@@ -1251,10 +1275,21 @@ impl CharacterizationStore {
     ) -> Result<(), String> {
         self.connection
             .execute(
-                "INSERT OR REPLACE INTO characterization_scenarios (
-                    id, run_id, behavior_id, name, scenario_kind, invocation_kind,
-                    status, diagnostic_reason
+                &format!(
+                    "INSERT OR REPLACE INTO {} (
+                    {}, {}, {}, {}, {}, {},
+                    {}, {}
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)",
+                    characterization_table(CharacterizationTable::Scenarios),
+                    proto_field!(CharacterizationScenarioRow, id),
+                    proto_field!(CharacterizationScenarioRow, run_id),
+                    proto_field!(CharacterizationScenarioRow, behavior_id),
+                    proto_field!(CharacterizationScenarioRow, name),
+                    proto_field!(CharacterizationScenarioRow, scenario_kind),
+                    proto_field!(CharacterizationScenarioRow, invocation_kind),
+                    proto_field!(CharacterizationScenarioRow, status),
+                    proto_field!(CharacterizationScenarioRow, diagnostic_reason),
+                ),
                 params![
                     scenario.id,
                     run_id,
@@ -1274,10 +1309,19 @@ impl CharacterizationStore {
     fn persist_file(&mut self, file: &GeneratedFile) -> Result<(), String> {
         self.connection
             .execute(
-                "INSERT INTO characterization_files (
-                    scenario_id, path, class_name, package_name, content_hash,
-                    generated_marker
+                &format!(
+                    "INSERT INTO {} (
+                    {}, {}, {}, {}, {},
+                    {}
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    characterization_table(CharacterizationTable::Files),
+                    proto_field!(CharacterizationFileRow, scenario_id),
+                    proto_field!(CharacterizationFileRow, path),
+                    proto_field!(CharacterizationFileRow, class_name),
+                    proto_field!(CharacterizationFileRow, package_name),
+                    proto_field!(CharacterizationFileRow, content_hash),
+                    proto_field!(CharacterizationFileRow, generated_marker),
+                ),
                 params![
                     file.scenario_id,
                     file.relative_path,
@@ -1308,10 +1352,20 @@ impl CharacterizationStore {
     ) -> Result<(), String> {
         self.connection
             .execute(
-                "INSERT INTO characterization_diagnostics (
-                    run_id, behavior_id, kg_node_id, scenario_id, severity,
-                    category, message
+                &format!(
+                    "INSERT INTO {} (
+                    {}, {}, {}, {}, {},
+                    {}, {}
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    characterization_table(CharacterizationTable::Diagnostics),
+                    proto_field!(CharacterizationDiagnosticRow, run_id),
+                    proto_field!(CharacterizationDiagnosticRow, behavior_id),
+                    proto_field!(CharacterizationDiagnosticRow, kg_node_id),
+                    proto_field!(CharacterizationDiagnosticRow, scenario_id),
+                    proto_field!(CharacterizationDiagnosticRow, severity),
+                    proto_field!(CharacterizationDiagnosticRow, category),
+                    proto_field!(CharacterizationDiagnosticRow, message),
+                ),
                 params![
                     run_id,
                     behavior_id,
@@ -1333,14 +1387,24 @@ impl CharacterizationStore {
     ) -> Result<(), String> {
         self.connection
             .execute(
-                "UPDATE characterization_runs
-                 SET status = ?1,
-                     finished_at = ?2,
-                     selected_behaviors = ?3,
-                     persisted_behaviors = ?4,
-                     skipped_behaviors = ?5,
-                     diagnostics = ?6
-                 WHERE id = ?7",
+                &format!(
+                    "UPDATE {}
+                 SET {} = ?1,
+                     {} = ?2,
+                     {} = ?3,
+                     {} = ?4,
+                     {} = ?5,
+                     {} = ?6
+                 WHERE {} = ?7",
+                    characterization_table(CharacterizationTable::Runs),
+                    proto_field!(CharacterizationRunRow, status),
+                    proto_field!(CharacterizationRunRow, finished_at),
+                    proto_field!(CharacterizationRunRow, selected_behaviors),
+                    proto_field!(CharacterizationRunRow, persisted_behaviors),
+                    proto_field!(CharacterizationRunRow, skipped_behaviors),
+                    proto_field!(CharacterizationRunRow, diagnostics),
+                    proto_field!(CharacterizationRunRow, id),
+                ),
                 params![
                     if summary.diagnostics == 0 {
                         characterization_run_status(CharacterizationRunStatus::Completed)
@@ -1361,110 +1425,7 @@ impl CharacterizationStore {
 
     fn create_schema(&self) -> Result<(), String> {
         self.connection
-            .execute_batch(
-                "
-                PRAGMA foreign_keys = ON;
-
-                CREATE TABLE IF NOT EXISTS characterization_runs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    mode TEXT NOT NULL,
-                    source_path TEXT NOT NULL,
-                    business_database_path TEXT NOT NULL,
-                    kg_database_path TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    started_at TEXT NOT NULL,
-                    finished_at TEXT,
-                    selected_behaviors INTEGER DEFAULT 0,
-                    persisted_behaviors INTEGER DEFAULT 0,
-                    skipped_behaviors INTEGER DEFAULT 0,
-                    diagnostics INTEGER DEFAULT 0
-                );
-
-                CREATE TABLE IF NOT EXISTS characterization_behaviors (
-                    id TEXT PRIMARY KEY,
-                    run_id INTEGER NOT NULL,
-                    kg_node_id TEXT NOT NULL,
-                    node_kind TEXT NOT NULL,
-                    node_name TEXT NOT NULL,
-                    node_statement TEXT NOT NULL,
-                    source_method_ids_json TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    FOREIGN KEY (run_id) REFERENCES characterization_runs(id)
-                );
-
-                CREATE TABLE IF NOT EXISTS characterization_scenarios (
-                    id TEXT PRIMARY KEY,
-                    run_id INTEGER NOT NULL,
-                    behavior_id TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    scenario_kind TEXT NOT NULL,
-                    invocation_kind TEXT,
-                    status TEXT NOT NULL,
-                    diagnostic_reason TEXT,
-                    FOREIGN KEY (run_id) REFERENCES characterization_runs(id),
-                    FOREIGN KEY (behavior_id) REFERENCES characterization_behaviors(id)
-                );
-
-                CREATE TABLE IF NOT EXISTS characterization_inputs (
-                    id TEXT PRIMARY KEY,
-                    scenario_id TEXT NOT NULL,
-                    input_json TEXT NOT NULL,
-                    fixture_json TEXT NOT NULL,
-                    deterministic_seed_json TEXT NOT NULL,
-                    FOREIGN KEY (scenario_id) REFERENCES characterization_scenarios(id)
-                );
-
-                CREATE TABLE IF NOT EXISTS characterization_observations (
-                    id TEXT PRIMARY KEY,
-                    scenario_id TEXT NOT NULL,
-                    input_id TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    return_value_json TEXT,
-                    response_body TEXT,
-                    exception_type TEXT,
-                    exception_message TEXT,
-                    emitted_events_json TEXT NOT NULL DEFAULT '[]',
-                    database_side_effects_json TEXT NOT NULL DEFAULT '[]',
-                    fake_boundary_calls_json TEXT NOT NULL DEFAULT '[]',
-                    normalized_output_json TEXT NOT NULL,
-                    FOREIGN KEY (scenario_id) REFERENCES characterization_scenarios(id),
-                    FOREIGN KEY (input_id) REFERENCES characterization_inputs(id)
-                );
-
-                CREATE TABLE IF NOT EXISTS characterization_files (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    scenario_id TEXT NOT NULL,
-                    path TEXT NOT NULL,
-                    class_name TEXT NOT NULL,
-                    package_name TEXT NOT NULL,
-                    content_hash TEXT NOT NULL,
-                    generated_marker TEXT NOT NULL,
-                    FOREIGN KEY (scenario_id) REFERENCES characterization_scenarios(id)
-                );
-
-                CREATE TABLE IF NOT EXISTS characterization_fakes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    scenario_id TEXT NOT NULL,
-                    dependency_name TEXT NOT NULL,
-                    fake_strategy TEXT NOT NULL,
-                    source_file_path TEXT,
-                    boundary_calls_json TEXT NOT NULL DEFAULT '[]',
-                    FOREIGN KEY (scenario_id) REFERENCES characterization_scenarios(id)
-                );
-
-                CREATE TABLE IF NOT EXISTS characterization_diagnostics (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    run_id INTEGER NOT NULL,
-                    behavior_id TEXT,
-                    kg_node_id TEXT,
-                    scenario_id TEXT,
-                    severity TEXT NOT NULL,
-                    category TEXT NOT NULL,
-                    message TEXT NOT NULL,
-                    FOREIGN KEY (run_id) REFERENCES characterization_runs(id)
-                );
-                ",
-            )
+            .execute_batch(&characterization_schema_ddl())
             .map_err(|error| format!("failed to create characterization schema: {error}"))
     }
 }

@@ -164,9 +164,12 @@ multi-agent workflows, or commit repository changes.
    captures observed outputs, and stores inputs, observations, fake boundary
    calls, and scenario status in `characterization-tests.db` through Gluon CLI
    database commands.
-9. Harness verifies the test with the project build/test command.
+9. Main agent verifies the test with the project build/test command after the
+   database writes.
 10. Main agent returns control to harness after the test is accepted.
-11. Harness commits the accepted test and related snapshot DB update, selects
+11. Harness verifies that scenario status is accepted and at least one input
+   row and observation row exist for the scenario.
+12. Harness commits the accepted test and related snapshot DB update, selects
    the next pending scenario, collects fresh seed context, and gives control
    back to the main agent.
 
@@ -299,8 +302,9 @@ in `characterization-tests.db` under the Gluon output directory.
 
 The shared protobuf contract lives at
 `app/package/gluon/db/v1/characterization_tests.proto`. Code-parser and harness
-use that contract for shared table, row, and lifecycle names. Code-parser still
-owns SQLite DDL, indexes, foreign keys, migrations, and defaults.
+use that contract for shared table, row, lifecycle names, and SQLite metadata.
+Code-parser materializes DDL, foreign keys, and defaults from protobuf
+`sqlite_table` and `sqlite_column` options.
 
 Suggested tables:
 

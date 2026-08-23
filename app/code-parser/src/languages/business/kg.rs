@@ -12,8 +12,12 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::core::error::{DatabaseError, FileError, KgError, LlmError, PathError};
-use crate::proto::gluon::db::v1::{ExtractionTable, LlmExtractionRunStatus};
-use crate::proto::{extraction_table, llm_extraction_run_status};
+use crate::proto::gluon::db::v1::{
+    BusinessEdgeRow, BusinessEvidenceRow, BusinessKgTable, BusinessNodeRow, ExtractionTable,
+    LlmExtractionRunRow, LlmExtractionRunStatus,
+};
+use crate::proto::{business_kg_table, extraction_table, llm_extraction_run_status};
+use crate::proto_field;
 
 pub const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-5";
 pub const BUSINESS_KG_PROMPT_VERSION: &str = "v1";
@@ -1994,8 +1998,15 @@ impl KgStore {
     fn start_run(&mut self, model: &str, methods_total: usize) -> Result<i64, String> {
         self.connection
             .execute(
-                "INSERT INTO llm_extraction_runs (model, status, started_at, methods_total)
+                &format!(
+                    "INSERT INTO {} ({}, {}, {}, {})
                  VALUES (?1, ?2, ?3, ?4)",
+                    business_kg_table(BusinessKgTable::LlmExtractionRuns),
+                    proto_field!(LlmExtractionRunRow, model),
+                    proto_field!(LlmExtractionRunRow, status),
+                    proto_field!(LlmExtractionRunRow, started_at),
+                    proto_field!(LlmExtractionRunRow, methods_total),
+                ),
                 params![
                     model,
                     llm_extraction_run_status(LlmExtractionRunStatus::Running),
@@ -2015,20 +2026,36 @@ impl KgStore {
         };
         self.connection
             .execute(
-                "UPDATE llm_extraction_runs
-                 SET status = ?1,
-                     finished_at = ?2,
-                     methods_processed = ?3,
-                     failed = ?4,
-                     nodes_created = ?5,
-                     edges_created = ?6,
-                     evidence_created = ?7,
-                     input_tokens = ?8,
-                     output_tokens = ?9,
-                     cache_creation_input_tokens = ?10,
-                     cache_read_input_tokens = ?11,
-                     total_tokens = ?12
-                 WHERE id = ?13",
+                &format!(
+                    "UPDATE {}
+                 SET {} = ?1,
+                     {} = ?2,
+                     {} = ?3,
+                     {} = ?4,
+                     {} = ?5,
+                     {} = ?6,
+                     {} = ?7,
+                     {} = ?8,
+                     {} = ?9,
+                     {} = ?10,
+                     {} = ?11,
+                     {} = ?12
+                 WHERE {} = ?13",
+                    business_kg_table(BusinessKgTable::LlmExtractionRuns),
+                    proto_field!(LlmExtractionRunRow, status),
+                    proto_field!(LlmExtractionRunRow, finished_at),
+                    proto_field!(LlmExtractionRunRow, methods_processed),
+                    proto_field!(LlmExtractionRunRow, failed),
+                    proto_field!(LlmExtractionRunRow, nodes_created),
+                    proto_field!(LlmExtractionRunRow, edges_created),
+                    proto_field!(LlmExtractionRunRow, evidence_created),
+                    proto_field!(LlmExtractionRunRow, input_tokens),
+                    proto_field!(LlmExtractionRunRow, output_tokens),
+                    proto_field!(LlmExtractionRunRow, cache_creation_input_tokens),
+                    proto_field!(LlmExtractionRunRow, cache_read_input_tokens),
+                    proto_field!(LlmExtractionRunRow, total_tokens),
+                    proto_field!(LlmExtractionRunRow, id),
+                ),
                 params![
                     status,
                     timestamp(),
@@ -2057,18 +2084,32 @@ impl KgStore {
         let counts = self.counts()?;
         self.connection
             .execute(
-                "UPDATE llm_extraction_runs
-                 SET methods_processed = ?1,
-                     failed = ?2,
-                     nodes_created = ?3,
-                     edges_created = ?4,
-                     evidence_created = ?5,
-                     input_tokens = ?6,
-                     output_tokens = ?7,
-                     cache_creation_input_tokens = ?8,
-                     cache_read_input_tokens = ?9,
-                     total_tokens = ?10
-                 WHERE id = ?11",
+                &format!(
+                    "UPDATE {}
+                 SET {} = ?1,
+                     {} = ?2,
+                     {} = ?3,
+                     {} = ?4,
+                     {} = ?5,
+                     {} = ?6,
+                     {} = ?7,
+                     {} = ?8,
+                     {} = ?9,
+                     {} = ?10
+                 WHERE {} = ?11",
+                    business_kg_table(BusinessKgTable::LlmExtractionRuns),
+                    proto_field!(LlmExtractionRunRow, methods_processed),
+                    proto_field!(LlmExtractionRunRow, failed),
+                    proto_field!(LlmExtractionRunRow, nodes_created),
+                    proto_field!(LlmExtractionRunRow, edges_created),
+                    proto_field!(LlmExtractionRunRow, evidence_created),
+                    proto_field!(LlmExtractionRunRow, input_tokens),
+                    proto_field!(LlmExtractionRunRow, output_tokens),
+                    proto_field!(LlmExtractionRunRow, cache_creation_input_tokens),
+                    proto_field!(LlmExtractionRunRow, cache_read_input_tokens),
+                    proto_field!(LlmExtractionRunRow, total_tokens),
+                    proto_field!(LlmExtractionRunRow, id),
+                ),
                 params![
                     summary.methods_processed as i64,
                     summary.failed as i64,
@@ -2096,7 +2137,12 @@ impl KgStore {
         let existing: Option<String> = self
             .connection
             .query_row(
-                "SELECT error FROM llm_extraction_runs WHERE id = ?1",
+                &format!(
+                    "SELECT {} FROM {} WHERE {} = ?1",
+                    proto_field!(LlmExtractionRunRow, error),
+                    business_kg_table(BusinessKgTable::LlmExtractionRuns),
+                    proto_field!(LlmExtractionRunRow, id),
+                ),
                 [run_id],
                 |row| row.get::<_, Option<String>>(0),
             )
@@ -2110,7 +2156,12 @@ impl KgStore {
         };
         self.connection
             .execute(
-                "UPDATE llm_extraction_runs SET error = ?1 WHERE id = ?2",
+                &format!(
+                    "UPDATE {} SET {} = ?1 WHERE {} = ?2",
+                    business_kg_table(BusinessKgTable::LlmExtractionRuns),
+                    proto_field!(LlmExtractionRunRow, error),
+                    proto_field!(LlmExtractionRunRow, id),
+                ),
                 params![combined, run_id],
             )
             .map_err(|error| format!("failed to record KG method failure: {error}"))?;
@@ -2120,7 +2171,11 @@ impl KgStore {
     fn method_has_evidence(&self, method_id: &str) -> Result<bool, String> {
         self.connection
             .query_row(
-                "SELECT 1 FROM business_evidence WHERE method_id = ?1 LIMIT 1",
+                &format!(
+                    "SELECT 1 FROM {} WHERE {} = ?1 LIMIT 1",
+                    business_kg_table(BusinessKgTable::BusinessEvidence),
+                    proto_field!(BusinessEvidenceRow, method_id),
+                ),
                 [method_id],
                 |row| row.get::<_, i64>(0),
             )
@@ -2308,10 +2363,21 @@ impl KgStore {
             let node_id = deterministic_node_id(&node.kind, &node.name, &node.statement);
             transaction
                 .execute(
-                    "INSERT INTO business_nodes (
-                        id, kind, name, statement, confidence, created_by_run_id, created_at
+                    &format!(
+                        "INSERT INTO {} (
+                        {}, {}, {}, {}, {}, {}, {}
                      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                     ON CONFLICT(id) DO NOTHING",
+                     ON CONFLICT({}) DO NOTHING",
+                        business_kg_table(BusinessKgTable::BusinessNodes),
+                        proto_field!(BusinessNodeRow, id),
+                        proto_field!(BusinessNodeRow, kind),
+                        proto_field!(BusinessNodeRow, name),
+                        proto_field!(BusinessNodeRow, statement),
+                        proto_field!(BusinessNodeRow, confidence),
+                        proto_field!(BusinessNodeRow, created_by_run_id),
+                        proto_field!(BusinessNodeRow, created_at),
+                        proto_field!(BusinessNodeRow, id),
+                    ),
                     params![
                         node_id,
                         node.kind,
@@ -2347,10 +2413,22 @@ impl KgStore {
             )?;
             transaction
                 .execute(
-                    "INSERT INTO business_edges (
-                        source_id, target_id, kind, confidence, created_by_run_id, created_at
+                    &format!(
+                        "INSERT INTO {} (
+                        {}, {}, {}, {}, {}, {}
                      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-                     ON CONFLICT(source_id, target_id, kind) DO NOTHING",
+                     ON CONFLICT({}, {}, {}) DO NOTHING",
+                        business_kg_table(BusinessKgTable::BusinessEdges),
+                        proto_field!(BusinessEdgeRow, source_id),
+                        proto_field!(BusinessEdgeRow, target_id),
+                        proto_field!(BusinessEdgeRow, kind),
+                        proto_field!(BusinessEdgeRow, confidence),
+                        proto_field!(BusinessEdgeRow, created_by_run_id),
+                        proto_field!(BusinessEdgeRow, created_at),
+                        proto_field!(BusinessEdgeRow, source_id),
+                        proto_field!(BusinessEdgeRow, target_id),
+                        proto_field!(BusinessEdgeRow, kind),
+                    ),
                     params![
                         source_id,
                         target_id,
@@ -2363,8 +2441,15 @@ impl KgStore {
                 .map_err(|error| format!("failed to insert KG edge: {error}"))?;
             let edge_id: i64 = transaction
                 .query_row(
-                    "SELECT id FROM business_edges
-                     WHERE source_id = ?1 AND target_id = ?2 AND kind = ?3",
+                    &format!(
+                        "SELECT {} FROM {}
+                     WHERE {} = ?1 AND {} = ?2 AND {} = ?3",
+                        proto_field!(BusinessEdgeRow, id),
+                        business_kg_table(BusinessKgTable::BusinessEdges),
+                        proto_field!(BusinessEdgeRow, source_id),
+                        proto_field!(BusinessEdgeRow, target_id),
+                        proto_field!(BusinessEdgeRow, kind),
+                    ),
                     params![source_id, target_id, edge.kind],
                     |row| row.get(0),
                 )
@@ -2381,161 +2466,254 @@ impl KgStore {
 
     fn counts(&self) -> Result<KgCounts, String> {
         Ok(KgCounts {
-            nodes: count_table(&self.connection, "business_nodes")?,
-            edges: count_table(&self.connection, "business_edges")?,
-            evidence: count_table(&self.connection, "business_evidence")?,
+            nodes: count_table(
+                &self.connection,
+                business_kg_table(BusinessKgTable::BusinessNodes),
+            )?,
+            edges: count_table(
+                &self.connection,
+                business_kg_table(BusinessKgTable::BusinessEdges),
+            )?,
+            evidence: count_table(
+                &self.connection,
+                business_kg_table(BusinessKgTable::BusinessEvidence),
+            )?,
         })
     }
 }
 
 fn create_kg_schema(connection: &Connection) -> Result<(), String> {
     connection
-        .execute_batch(
+        .execute_batch(&format!(
             "
             PRAGMA foreign_keys = ON;
 
-            CREATE TABLE IF NOT EXISTS llm_extraction_runs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                model TEXT NOT NULL,
-                status TEXT NOT NULL,
-                started_at TEXT NOT NULL,
-                finished_at TEXT,
-                error TEXT,
-                methods_total INTEGER DEFAULT 0,
-                methods_processed INTEGER DEFAULT 0,
-                failed INTEGER DEFAULT 0,
-                nodes_created INTEGER DEFAULT 0,
-                edges_created INTEGER DEFAULT 0,
-                evidence_created INTEGER DEFAULT 0,
-                input_tokens INTEGER DEFAULT 0,
-                output_tokens INTEGER DEFAULT 0,
-                cache_creation_input_tokens INTEGER DEFAULT 0,
-                cache_read_input_tokens INTEGER DEFAULT 0,
-                total_tokens INTEGER DEFAULT 0
+            CREATE TABLE IF NOT EXISTS {runs} (
+                {run_id} INTEGER PRIMARY KEY AUTOINCREMENT,
+                {run_model} TEXT NOT NULL,
+                {run_status} TEXT NOT NULL,
+                {run_started_at} TEXT NOT NULL,
+                {run_finished_at} TEXT,
+                {run_error} TEXT,
+                {run_methods_total} INTEGER DEFAULT 0,
+                {run_methods_processed} INTEGER DEFAULT 0,
+                {run_failed} INTEGER DEFAULT 0,
+                {run_nodes_created} INTEGER DEFAULT 0,
+                {run_edges_created} INTEGER DEFAULT 0,
+                {run_evidence_created} INTEGER DEFAULT 0,
+                {run_input_tokens} INTEGER DEFAULT 0,
+                {run_output_tokens} INTEGER DEFAULT 0,
+                {run_cache_creation_input_tokens} INTEGER DEFAULT 0,
+                {run_cache_read_input_tokens} INTEGER DEFAULT 0,
+                {run_total_tokens} INTEGER DEFAULT 0
             );
 
-            CREATE TABLE IF NOT EXISTS business_nodes (
-                id TEXT PRIMARY KEY,
-                kind TEXT NOT NULL,
-                name TEXT NOT NULL,
-                statement TEXT NOT NULL,
-                confidence REAL NOT NULL,
-                created_by_run_id INTEGER,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (created_by_run_id) REFERENCES llm_extraction_runs(id)
+            CREATE TABLE IF NOT EXISTS {nodes} (
+                {node_id} TEXT PRIMARY KEY,
+                {node_kind} TEXT NOT NULL,
+                {node_name} TEXT NOT NULL,
+                {node_statement} TEXT NOT NULL,
+                {node_confidence} REAL NOT NULL,
+                {node_created_by_run_id} INTEGER,
+                {node_created_at} TEXT NOT NULL,
+                FOREIGN KEY ({node_created_by_run_id}) REFERENCES {runs}({run_id})
             );
 
-            CREATE TABLE IF NOT EXISTS business_edges (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source_id TEXT NOT NULL,
-                target_id TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                confidence REAL NOT NULL,
-                created_by_run_id INTEGER,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (source_id) REFERENCES business_nodes(id),
-                FOREIGN KEY (target_id) REFERENCES business_nodes(id),
-                FOREIGN KEY (created_by_run_id) REFERENCES llm_extraction_runs(id)
+            CREATE TABLE IF NOT EXISTS {edges} (
+                {edge_id} INTEGER PRIMARY KEY AUTOINCREMENT,
+                {edge_source_id} TEXT NOT NULL,
+                {edge_target_id} TEXT NOT NULL,
+                {edge_kind} TEXT NOT NULL,
+                {edge_confidence} REAL NOT NULL,
+                {edge_created_by_run_id} INTEGER,
+                {edge_created_at} TEXT NOT NULL,
+                FOREIGN KEY ({edge_source_id}) REFERENCES {nodes}({node_id}),
+                FOREIGN KEY ({edge_target_id}) REFERENCES {nodes}({node_id}),
+                FOREIGN KEY ({edge_created_by_run_id}) REFERENCES {runs}({run_id})
             );
 
-            CREATE TABLE IF NOT EXISTS business_evidence (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                node_id TEXT,
-                edge_id INTEGER,
-                method_id TEXT NOT NULL,
-                source_lines_json TEXT NOT NULL,
-                reason TEXT NOT NULL,
-                created_by_run_id INTEGER,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (node_id) REFERENCES business_nodes(id),
-                FOREIGN KEY (edge_id) REFERENCES business_edges(id),
-                FOREIGN KEY (created_by_run_id) REFERENCES llm_extraction_runs(id),
+            CREATE TABLE IF NOT EXISTS {evidence} (
+                {evidence_id} INTEGER PRIMARY KEY AUTOINCREMENT,
+                {evidence_node_id} TEXT,
+                {evidence_edge_id} INTEGER,
+                {evidence_method_id} TEXT NOT NULL,
+                {evidence_source_lines_json} TEXT NOT NULL,
+                {evidence_reason} TEXT NOT NULL,
+                {evidence_created_by_run_id} INTEGER,
+                {evidence_created_at} TEXT NOT NULL,
+                FOREIGN KEY ({evidence_node_id}) REFERENCES {nodes}({node_id}),
+                FOREIGN KEY ({evidence_edge_id}) REFERENCES {edges}({edge_id}),
+                FOREIGN KEY ({evidence_created_by_run_id}) REFERENCES {runs}({run_id}),
                 CHECK (
-                    (node_id IS NOT NULL AND edge_id IS NULL)
-                    OR (node_id IS NULL AND edge_id IS NOT NULL)
+                    ({evidence_node_id} IS NOT NULL AND {evidence_edge_id} IS NULL)
+                    OR ({evidence_node_id} IS NULL AND {evidence_edge_id} IS NOT NULL)
                 )
             );
 
             CREATE INDEX IF NOT EXISTS idx_business_nodes_kind_name
-                ON business_nodes(kind, name);
+                ON {nodes}({node_kind}, {node_name});
             CREATE INDEX IF NOT EXISTS idx_business_edges_source
-                ON business_edges(source_id);
+                ON {edges}({edge_source_id});
             CREATE INDEX IF NOT EXISTS idx_business_edges_target
-                ON business_edges(target_id);
+                ON {edges}({edge_target_id});
             CREATE UNIQUE INDEX IF NOT EXISTS idx_business_edges_unique
-                ON business_edges(source_id, target_id, kind);
+                ON {edges}({edge_source_id}, {edge_target_id}, {edge_kind});
             CREATE INDEX IF NOT EXISTS idx_business_evidence_method
-                ON business_evidence(method_id);
+                ON {evidence}({evidence_method_id});
             CREATE INDEX IF NOT EXISTS idx_business_evidence_node
-                ON business_evidence(node_id);
+                ON {evidence}({evidence_node_id});
             CREATE INDEX IF NOT EXISTS idx_business_evidence_edge
-                ON business_evidence(edge_id);
+                ON {evidence}({evidence_edge_id});
             CREATE INDEX IF NOT EXISTS idx_business_nodes_run
-                ON business_nodes(created_by_run_id);
+                ON {nodes}({node_created_by_run_id});
             CREATE INDEX IF NOT EXISTS idx_business_edges_run
-                ON business_edges(created_by_run_id);
+                ON {edges}({edge_created_by_run_id});
             CREATE INDEX IF NOT EXISTS idx_business_evidence_run
-                ON business_evidence(created_by_run_id);
+                ON {evidence}({evidence_created_by_run_id});
             CREATE UNIQUE INDEX IF NOT EXISTS idx_business_evidence_node_unique
-                ON business_evidence(node_id, method_id, source_lines_json, reason)
-                WHERE node_id IS NOT NULL;
+                ON {evidence}({evidence_node_id}, {evidence_method_id}, {evidence_source_lines_json}, {evidence_reason})
+                WHERE {evidence_node_id} IS NOT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS idx_business_evidence_edge_unique
-                ON business_evidence(edge_id, method_id, source_lines_json, reason)
-                WHERE edge_id IS NOT NULL;
+                ON {evidence}({evidence_edge_id}, {evidence_method_id}, {evidence_source_lines_json}, {evidence_reason})
+                WHERE {evidence_edge_id} IS NOT NULL;
             ",
-        )
+            runs = business_kg_table(BusinessKgTable::LlmExtractionRuns),
+            run_id = proto_field!(LlmExtractionRunRow, id),
+            run_model = proto_field!(LlmExtractionRunRow, model),
+            run_status = proto_field!(LlmExtractionRunRow, status),
+            run_started_at = proto_field!(LlmExtractionRunRow, started_at),
+            run_finished_at = proto_field!(LlmExtractionRunRow, finished_at),
+            run_error = proto_field!(LlmExtractionRunRow, error),
+            run_methods_total = proto_field!(LlmExtractionRunRow, methods_total),
+            run_methods_processed = proto_field!(LlmExtractionRunRow, methods_processed),
+            run_failed = proto_field!(LlmExtractionRunRow, failed),
+            run_nodes_created = proto_field!(LlmExtractionRunRow, nodes_created),
+            run_edges_created = proto_field!(LlmExtractionRunRow, edges_created),
+            run_evidence_created = proto_field!(LlmExtractionRunRow, evidence_created),
+            run_input_tokens = proto_field!(LlmExtractionRunRow, input_tokens),
+            run_output_tokens = proto_field!(LlmExtractionRunRow, output_tokens),
+            run_cache_creation_input_tokens =
+                proto_field!(LlmExtractionRunRow, cache_creation_input_tokens),
+            run_cache_read_input_tokens =
+                proto_field!(LlmExtractionRunRow, cache_read_input_tokens),
+            run_total_tokens = proto_field!(LlmExtractionRunRow, total_tokens),
+            nodes = business_kg_table(BusinessKgTable::BusinessNodes),
+            node_id = proto_field!(BusinessNodeRow, id),
+            node_kind = proto_field!(BusinessNodeRow, kind),
+            node_name = proto_field!(BusinessNodeRow, name),
+            node_statement = proto_field!(BusinessNodeRow, statement),
+            node_confidence = proto_field!(BusinessNodeRow, confidence),
+            node_created_by_run_id = proto_field!(BusinessNodeRow, created_by_run_id),
+            node_created_at = proto_field!(BusinessNodeRow, created_at),
+            edges = business_kg_table(BusinessKgTable::BusinessEdges),
+            edge_id = proto_field!(BusinessEdgeRow, id),
+            edge_source_id = proto_field!(BusinessEdgeRow, source_id),
+            edge_target_id = proto_field!(BusinessEdgeRow, target_id),
+            edge_kind = proto_field!(BusinessEdgeRow, kind),
+            edge_confidence = proto_field!(BusinessEdgeRow, confidence),
+            edge_created_by_run_id = proto_field!(BusinessEdgeRow, created_by_run_id),
+            edge_created_at = proto_field!(BusinessEdgeRow, created_at),
+            evidence = business_kg_table(BusinessKgTable::BusinessEvidence),
+            evidence_id = proto_field!(BusinessEvidenceRow, id),
+            evidence_node_id = proto_field!(BusinessEvidenceRow, node_id),
+            evidence_edge_id = proto_field!(BusinessEvidenceRow, edge_id),
+            evidence_method_id = proto_field!(BusinessEvidenceRow, method_id),
+            evidence_source_lines_json = proto_field!(BusinessEvidenceRow, source_lines_json),
+            evidence_reason = proto_field!(BusinessEvidenceRow, reason),
+            evidence_created_by_run_id = proto_field!(BusinessEvidenceRow, created_by_run_id),
+            evidence_created_at = proto_field!(BusinessEvidenceRow, created_at),
+        ))
         .map_err(|error| format!("failed to create KG schema: {error}"))?;
     ensure_run_column(
         connection,
-        "methods_total",
-        "ALTER TABLE llm_extraction_runs ADD COLUMN methods_total INTEGER DEFAULT 0",
+        proto_field!(LlmExtractionRunRow, methods_total),
+        &format!(
+            "ALTER TABLE {} ADD COLUMN {} INTEGER DEFAULT 0",
+            business_kg_table(BusinessKgTable::LlmExtractionRuns),
+            proto_field!(LlmExtractionRunRow, methods_total)
+        ),
     )?;
     ensure_run_column(
         connection,
-        "nodes_created",
-        "ALTER TABLE llm_extraction_runs ADD COLUMN nodes_created INTEGER DEFAULT 0",
+        proto_field!(LlmExtractionRunRow, nodes_created),
+        &format!(
+            "ALTER TABLE {} ADD COLUMN {} INTEGER DEFAULT 0",
+            business_kg_table(BusinessKgTable::LlmExtractionRuns),
+            proto_field!(LlmExtractionRunRow, nodes_created)
+        ),
     )?;
     ensure_run_column(
         connection,
-        "edges_created",
-        "ALTER TABLE llm_extraction_runs ADD COLUMN edges_created INTEGER DEFAULT 0",
+        proto_field!(LlmExtractionRunRow, edges_created),
+        &format!(
+            "ALTER TABLE {} ADD COLUMN {} INTEGER DEFAULT 0",
+            business_kg_table(BusinessKgTable::LlmExtractionRuns),
+            proto_field!(LlmExtractionRunRow, edges_created)
+        ),
     )?;
     ensure_run_column(
         connection,
-        "evidence_created",
-        "ALTER TABLE llm_extraction_runs ADD COLUMN evidence_created INTEGER DEFAULT 0",
+        proto_field!(LlmExtractionRunRow, evidence_created),
+        &format!(
+            "ALTER TABLE {} ADD COLUMN {} INTEGER DEFAULT 0",
+            business_kg_table(BusinessKgTable::LlmExtractionRuns),
+            proto_field!(LlmExtractionRunRow, evidence_created)
+        ),
     )?;
     ensure_run_column(
         connection,
-        "input_tokens",
-        "ALTER TABLE llm_extraction_runs ADD COLUMN input_tokens INTEGER DEFAULT 0",
+        proto_field!(LlmExtractionRunRow, input_tokens),
+        &format!(
+            "ALTER TABLE {} ADD COLUMN {} INTEGER DEFAULT 0",
+            business_kg_table(BusinessKgTable::LlmExtractionRuns),
+            proto_field!(LlmExtractionRunRow, input_tokens)
+        ),
     )?;
     ensure_run_column(
         connection,
-        "output_tokens",
-        "ALTER TABLE llm_extraction_runs ADD COLUMN output_tokens INTEGER DEFAULT 0",
+        proto_field!(LlmExtractionRunRow, output_tokens),
+        &format!(
+            "ALTER TABLE {} ADD COLUMN {} INTEGER DEFAULT 0",
+            business_kg_table(BusinessKgTable::LlmExtractionRuns),
+            proto_field!(LlmExtractionRunRow, output_tokens)
+        ),
     )?;
     ensure_run_column(
         connection,
-        "cache_creation_input_tokens",
-        "ALTER TABLE llm_extraction_runs ADD COLUMN cache_creation_input_tokens INTEGER DEFAULT 0",
+        proto_field!(LlmExtractionRunRow, cache_creation_input_tokens),
+        &format!(
+            "ALTER TABLE {} ADD COLUMN {} INTEGER DEFAULT 0",
+            business_kg_table(BusinessKgTable::LlmExtractionRuns),
+            proto_field!(LlmExtractionRunRow, cache_creation_input_tokens)
+        ),
     )?;
     ensure_run_column(
         connection,
-        "cache_read_input_tokens",
-        "ALTER TABLE llm_extraction_runs ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0",
+        proto_field!(LlmExtractionRunRow, cache_read_input_tokens),
+        &format!(
+            "ALTER TABLE {} ADD COLUMN {} INTEGER DEFAULT 0",
+            business_kg_table(BusinessKgTable::LlmExtractionRuns),
+            proto_field!(LlmExtractionRunRow, cache_read_input_tokens)
+        ),
     )?;
     ensure_run_column(
         connection,
-        "total_tokens",
-        "ALTER TABLE llm_extraction_runs ADD COLUMN total_tokens INTEGER DEFAULT 0",
+        proto_field!(LlmExtractionRunRow, total_tokens),
+        &format!(
+            "ALTER TABLE {} ADD COLUMN {} INTEGER DEFAULT 0",
+            business_kg_table(BusinessKgTable::LlmExtractionRuns),
+            proto_field!(LlmExtractionRunRow, total_tokens)
+        ),
     )?;
     Ok(())
 }
 
 fn ensure_run_column(connection: &Connection, name: &str, ddl: &str) -> Result<(), String> {
     let mut statement = connection
-        .prepare("PRAGMA table_info(llm_extraction_runs)")
+        .prepare(&format!(
+            "PRAGMA table_info({})",
+            business_kg_table(BusinessKgTable::LlmExtractionRuns)
+        ))
         .map_err(|error| format!("failed to inspect KG run schema: {error}"))?;
     let columns = statement
         .query_map([], |row| row.get::<_, String>(1))
@@ -2800,10 +2978,20 @@ fn insert_evidence(
         .map_err(|error| format!("failed to serialize evidence source lines: {error}"))?;
     transaction
         .execute(
-            "INSERT INTO business_evidence (
-                node_id, edge_id, method_id, source_lines_json, reason, created_by_run_id, created_at
+            &format!(
+                "INSERT INTO {} (
+                {}, {}, {}, {}, {}, {}, {}
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT DO NOTHING",
+                business_kg_table(BusinessKgTable::BusinessEvidence),
+                proto_field!(BusinessEvidenceRow, node_id),
+                proto_field!(BusinessEvidenceRow, edge_id),
+                proto_field!(BusinessEvidenceRow, method_id),
+                proto_field!(BusinessEvidenceRow, source_lines_json),
+                proto_field!(BusinessEvidenceRow, reason),
+                proto_field!(BusinessEvidenceRow, created_by_run_id),
+                proto_field!(BusinessEvidenceRow, created_at),
+            ),
             params![
                 node_id,
                 edge_id,

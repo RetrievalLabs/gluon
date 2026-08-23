@@ -284,6 +284,35 @@ Example:
 gluon-cli code-parser db rows --database /path/to/gluon/data/project/business-kg.db --table business_nodes --limit 10
 ```
 
+### `code-parser db insert`
+
+Inserts one row into a Gluon SQLite database using table and column names
+validated against the database schema. This is for focused snapshot and repair
+workflows; it does not execute arbitrary SQL.
+
+Required input:
+
+- `--database <database.db>`: database to edit.
+- `--table <table>`: table to insert into.
+- `--set <column=value>`: value to write. May be repeated.
+
+Outputs:
+
+- JSON object with table, `rows_inserted`, and SQLite `rowid`.
+
+Example:
+
+```bash
+gluon-cli code-parser db insert \
+  --database /path/to/gluon/data/project/characterization-tests.db \
+  --table characterization_inputs \
+  --set id=input:approve:happy \
+  --set scenario_id=scenario:approve \
+  --set input_json='{"eventType":"orders"}' \
+  --set fixture_json='{}' \
+  --set deterministic_seed_json='{"case":"happy"}'
+```
+
 ### `code-parser db update`
 
 Updates existing rows in a Gluon SQLite database using table and column names validated against the database schema. This is for focused repair/edit workflows; it does not execute arbitrary SQL.

@@ -97,6 +97,7 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertIn("Task", options["allowed_tools"])
         self.assertIn("Edit", options["allowed_tools"])
         self.assertEqual(options["permission_mode"], "dontAsk")
+        self.assertEqual(options["max_turns"], 80)
         self.assertEqual(options["skills"], ["gluon-cli"])
         self.assertEqual(options["hooks"]["PreToolUse"][0].matcher, "Bash")
         self.assertIn("system_prompt", options)
@@ -199,6 +200,12 @@ class ClaudeAgentTests(unittest.TestCase):
                 "env FOO=bar gluon code-parser db tables --database db"
             )
         )
+        self.assertTrue(is_allowed_gluon_db_command("gluon-cli db tables --database db"))
+        self.assertTrue(
+            is_allowed_gluon_db_command(
+                "gluon-cli db insert --database db --table t --set id=one"
+            )
+        )
         self.assertFalse(
             is_allowed_gluon_db_command("gluon-cli code-parser parse-build")
         )
@@ -223,6 +230,8 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertIn("Context Agent returns structured JSON", prompt)
         self.assertIn("Implementation Agent writes", prompt)
         self.assertIn("Input/Output Agent generates deterministic inputs", prompt)
+        self.assertIn("at least one row into `characterization_inputs`", prompt)
+        self.assertIn("db insert", prompt)
         self.assertIn("Return control to harness", prompt)
         self.assertIn("Do not select the next scenario", prompt)
 

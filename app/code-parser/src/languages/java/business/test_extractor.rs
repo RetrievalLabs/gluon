@@ -15,6 +15,12 @@ use crate::languages::java::business::jdtls::{
     JdtlsDefinition, JdtlsDefinitionRequest, JdtlsOptions, resolve_test_definitions,
 };
 use crate::languages::java::business::modules::{discover_modules, module_id_for_file};
+use crate::proto::extraction_table;
+use crate::proto::gluon::db::v1::{
+    ExtractionTable, TestAssertionRow, TestCaseRow, TestDiagnosticRow, TestEntryPointRow,
+    TestFixtureRow, TestSuiteRow, TestTargetRow,
+};
+use crate::proto_field;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TestExtractionOptions {
@@ -1053,102 +1059,165 @@ fn write_test_tables(connection: &mut Connection, model: &TestModel) -> Result<(
 
 fn create_test_schema(connection: &Connection) -> Result<(), String> {
     connection
-        .execute_batch(
+        .execute_batch(&format!(
             "
             PRAGMA foreign_keys = ON;
 
-            CREATE TABLE IF NOT EXISTS test_suites (
-                id TEXT PRIMARY KEY,
-                module_id TEXT,
-                class_name TEXT NOT NULL,
-                package_name TEXT,
-                qualified_name TEXT NOT NULL,
-                test_kind TEXT NOT NULL,
-                file TEXT NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL,
-                annotations_json TEXT NOT NULL
+            CREATE TABLE IF NOT EXISTS {test_suites} (
+                {suite_id} TEXT PRIMARY KEY,
+                {suite_module_id} TEXT,
+                {suite_class_name} TEXT NOT NULL,
+                {suite_package_name} TEXT,
+                {suite_qualified_name} TEXT NOT NULL,
+                {suite_test_kind} TEXT NOT NULL,
+                {suite_file} TEXT NOT NULL,
+                {suite_start_line} INTEGER NOT NULL,
+                {suite_end_line} INTEGER NOT NULL,
+                {suite_annotations_json} TEXT NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS test_cases (
-                id TEXT PRIMARY KEY,
-                suite_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                display_name TEXT,
-                test_kind TEXT NOT NULL,
-                file TEXT NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL,
-                annotations_json TEXT NOT NULL,
-                body_text TEXT NOT NULL,
-                FOREIGN KEY (suite_id) REFERENCES test_suites(id)
+            CREATE TABLE IF NOT EXISTS {test_cases} (
+                {case_id} TEXT PRIMARY KEY,
+                {case_suite_id} TEXT NOT NULL,
+                {case_name} TEXT NOT NULL,
+                {case_display_name} TEXT,
+                {case_test_kind} TEXT NOT NULL,
+                {case_file} TEXT NOT NULL,
+                {case_start_line} INTEGER NOT NULL,
+                {case_end_line} INTEGER NOT NULL,
+                {case_annotations_json} TEXT NOT NULL,
+                {case_body_text} TEXT NOT NULL,
+                FOREIGN KEY ({case_suite_id}) REFERENCES {test_suites}({suite_id})
             );
 
-            CREATE TABLE IF NOT EXISTS test_targets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                test_case_id TEXT NOT NULL,
-                target_kind TEXT NOT NULL,
-                target_id TEXT NOT NULL,
-                relationship TEXT NOT NULL,
-                confidence REAL NOT NULL,
-                source TEXT NOT NULL,
-                FOREIGN KEY (test_case_id) REFERENCES test_cases(id)
+            CREATE TABLE IF NOT EXISTS {test_targets} (
+                {target_id_column} INTEGER PRIMARY KEY AUTOINCREMENT,
+                {target_test_case_id} TEXT NOT NULL,
+                {target_target_kind} TEXT NOT NULL,
+                {target_target_id} TEXT NOT NULL,
+                {target_relationship} TEXT NOT NULL,
+                {target_confidence} REAL NOT NULL,
+                {target_source} TEXT NOT NULL,
+                FOREIGN KEY ({target_test_case_id}) REFERENCES {test_cases}({case_id})
             );
 
-            CREATE TABLE IF NOT EXISTS test_assertions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                test_case_id TEXT NOT NULL,
-                assertion_kind TEXT NOT NULL,
-                expression TEXT NOT NULL,
-                expected_value TEXT,
-                file TEXT NOT NULL,
-                line INTEGER NOT NULL,
-                FOREIGN KEY (test_case_id) REFERENCES test_cases(id)
+            CREATE TABLE IF NOT EXISTS {test_assertions} (
+                {assertion_id} INTEGER PRIMARY KEY AUTOINCREMENT,
+                {assertion_test_case_id} TEXT NOT NULL,
+                {assertion_kind} TEXT NOT NULL,
+                {assertion_expression} TEXT NOT NULL,
+                {assertion_expected_value} TEXT,
+                {assertion_file} TEXT NOT NULL,
+                {assertion_line} INTEGER NOT NULL,
+                FOREIGN KEY ({assertion_test_case_id}) REFERENCES {test_cases}({case_id})
             );
 
-            CREATE TABLE IF NOT EXISTS test_fixtures (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                suite_id TEXT,
-                test_case_id TEXT,
-                fixture_kind TEXT NOT NULL,
-                name TEXT NOT NULL,
-                details_json TEXT NOT NULL,
-                file TEXT NOT NULL,
-                line INTEGER NOT NULL,
-                FOREIGN KEY (suite_id) REFERENCES test_suites(id),
-                FOREIGN KEY (test_case_id) REFERENCES test_cases(id)
+            CREATE TABLE IF NOT EXISTS {test_fixtures} (
+                {fixture_id} INTEGER PRIMARY KEY AUTOINCREMENT,
+                {fixture_suite_id} TEXT,
+                {fixture_test_case_id} TEXT,
+                {fixture_kind} TEXT NOT NULL,
+                {fixture_name} TEXT NOT NULL,
+                {fixture_details_json} TEXT NOT NULL,
+                {fixture_file} TEXT NOT NULL,
+                {fixture_line} INTEGER NOT NULL,
+                FOREIGN KEY ({fixture_suite_id}) REFERENCES {test_suites}({suite_id}),
+                FOREIGN KEY ({fixture_test_case_id}) REFERENCES {test_cases}({case_id})
             );
 
-            CREATE TABLE IF NOT EXISTS test_entry_points (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                test_case_id TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                framework TEXT,
-                route TEXT,
-                http_method TEXT,
-                topic TEXT,
-                command TEXT,
-                source TEXT NOT NULL,
-                FOREIGN KEY (test_case_id) REFERENCES test_cases(id)
+            CREATE TABLE IF NOT EXISTS {test_entry_points} (
+                {entry_point_id} INTEGER PRIMARY KEY AUTOINCREMENT,
+                {entry_point_test_case_id} TEXT NOT NULL,
+                {entry_point_kind} TEXT NOT NULL,
+                {entry_point_framework} TEXT,
+                {entry_point_route} TEXT,
+                {entry_point_http_method} TEXT,
+                {entry_point_topic} TEXT,
+                {entry_point_command} TEXT,
+                {entry_point_source} TEXT NOT NULL,
+                FOREIGN KEY ({entry_point_test_case_id}) REFERENCES {test_cases}({case_id})
             );
 
-            CREATE TABLE IF NOT EXISTS test_diagnostics (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                severity TEXT NOT NULL,
-                category TEXT NOT NULL,
-                message TEXT NOT NULL,
-                file TEXT
+            CREATE TABLE IF NOT EXISTS {test_diagnostics} (
+                {diagnostic_id} INTEGER PRIMARY KEY AUTOINCREMENT,
+                {diagnostic_severity} TEXT NOT NULL,
+                {diagnostic_category} TEXT NOT NULL,
+                {diagnostic_message} TEXT NOT NULL,
+                {diagnostic_file} TEXT
             );
 
-            CREATE INDEX IF NOT EXISTS idx_test_cases_suite ON test_cases(suite_id);
-            CREATE INDEX IF NOT EXISTS idx_test_targets_case ON test_targets(test_case_id);
-            CREATE INDEX IF NOT EXISTS idx_test_targets_target ON test_targets(target_kind, target_id);
-            CREATE INDEX IF NOT EXISTS idx_test_assertions_case ON test_assertions(test_case_id);
-            CREATE INDEX IF NOT EXISTS idx_test_fixtures_suite ON test_fixtures(suite_id);
-            CREATE INDEX IF NOT EXISTS idx_test_fixtures_case ON test_fixtures(test_case_id);
-            CREATE INDEX IF NOT EXISTS idx_test_entry_points_case ON test_entry_points(test_case_id);
+            CREATE INDEX IF NOT EXISTS idx_test_cases_suite ON {test_cases}({case_suite_id});
+            CREATE INDEX IF NOT EXISTS idx_test_targets_case ON {test_targets}({target_test_case_id});
+            CREATE INDEX IF NOT EXISTS idx_test_targets_target ON {test_targets}({target_target_kind}, {target_target_id});
+            CREATE INDEX IF NOT EXISTS idx_test_assertions_case ON {test_assertions}({assertion_test_case_id});
+            CREATE INDEX IF NOT EXISTS idx_test_fixtures_suite ON {test_fixtures}({fixture_suite_id});
+            CREATE INDEX IF NOT EXISTS idx_test_fixtures_case ON {test_fixtures}({fixture_test_case_id});
+            CREATE INDEX IF NOT EXISTS idx_test_entry_points_case ON {test_entry_points}({entry_point_test_case_id});
             ",
-        )
+            test_suites = extraction_table(ExtractionTable::TestSuites),
+            suite_id = proto_field!(TestSuiteRow, id),
+            suite_module_id = proto_field!(TestSuiteRow, module_id),
+            suite_class_name = proto_field!(TestSuiteRow, class_name),
+            suite_package_name = proto_field!(TestSuiteRow, package_name),
+            suite_qualified_name = proto_field!(TestSuiteRow, qualified_name),
+            suite_test_kind = proto_field!(TestSuiteRow, test_kind),
+            suite_file = proto_field!(TestSuiteRow, file),
+            suite_start_line = proto_field!(TestSuiteRow, start_line),
+            suite_end_line = proto_field!(TestSuiteRow, end_line),
+            suite_annotations_json = proto_field!(TestSuiteRow, annotations_json),
+            test_cases = extraction_table(ExtractionTable::TestCases),
+            case_id = proto_field!(TestCaseRow, id),
+            case_suite_id = proto_field!(TestCaseRow, suite_id),
+            case_name = proto_field!(TestCaseRow, name),
+            case_display_name = proto_field!(TestCaseRow, display_name),
+            case_test_kind = proto_field!(TestCaseRow, test_kind),
+            case_file = proto_field!(TestCaseRow, file),
+            case_start_line = proto_field!(TestCaseRow, start_line),
+            case_end_line = proto_field!(TestCaseRow, end_line),
+            case_annotations_json = proto_field!(TestCaseRow, annotations_json),
+            case_body_text = proto_field!(TestCaseRow, body_text),
+            test_targets = extraction_table(ExtractionTable::TestTargets),
+            target_id_column = proto_field!(TestTargetRow, id),
+            target_test_case_id = proto_field!(TestTargetRow, test_case_id),
+            target_target_kind = proto_field!(TestTargetRow, target_kind),
+            target_target_id = proto_field!(TestTargetRow, target_id),
+            target_relationship = proto_field!(TestTargetRow, relationship),
+            target_confidence = proto_field!(TestTargetRow, confidence),
+            target_source = proto_field!(TestTargetRow, source),
+            test_assertions = extraction_table(ExtractionTable::TestAssertions),
+            assertion_id = proto_field!(TestAssertionRow, id),
+            assertion_test_case_id = proto_field!(TestAssertionRow, test_case_id),
+            assertion_kind = proto_field!(TestAssertionRow, assertion_kind),
+            assertion_expression = proto_field!(TestAssertionRow, expression),
+            assertion_expected_value = proto_field!(TestAssertionRow, expected_value),
+            assertion_file = proto_field!(TestAssertionRow, file),
+            assertion_line = proto_field!(TestAssertionRow, line),
+            test_fixtures = extraction_table(ExtractionTable::TestFixtures),
+            fixture_id = proto_field!(TestFixtureRow, id),
+            fixture_suite_id = proto_field!(TestFixtureRow, suite_id),
+            fixture_test_case_id = proto_field!(TestFixtureRow, test_case_id),
+            fixture_kind = proto_field!(TestFixtureRow, fixture_kind),
+            fixture_name = proto_field!(TestFixtureRow, name),
+            fixture_details_json = proto_field!(TestFixtureRow, details_json),
+            fixture_file = proto_field!(TestFixtureRow, file),
+            fixture_line = proto_field!(TestFixtureRow, line),
+            test_entry_points = extraction_table(ExtractionTable::TestEntryPoints),
+            entry_point_id = proto_field!(TestEntryPointRow, id),
+            entry_point_test_case_id = proto_field!(TestEntryPointRow, test_case_id),
+            entry_point_kind = proto_field!(TestEntryPointRow, kind),
+            entry_point_framework = proto_field!(TestEntryPointRow, framework),
+            entry_point_route = proto_field!(TestEntryPointRow, route),
+            entry_point_http_method = proto_field!(TestEntryPointRow, http_method),
+            entry_point_topic = proto_field!(TestEntryPointRow, topic),
+            entry_point_command = proto_field!(TestEntryPointRow, command),
+            entry_point_source = proto_field!(TestEntryPointRow, source),
+            test_diagnostics = extraction_table(ExtractionTable::TestDiagnostics),
+            diagnostic_id = proto_field!(TestDiagnosticRow, id),
+            diagnostic_severity = proto_field!(TestDiagnosticRow, severity),
+            diagnostic_category = proto_field!(TestDiagnosticRow, category),
+            diagnostic_message = proto_field!(TestDiagnosticRow, message),
+            diagnostic_file = proto_field!(TestDiagnosticRow, file),
+        ))
         .map_err(|error| format!("failed to create test extraction schema: {error}"))
 }
 

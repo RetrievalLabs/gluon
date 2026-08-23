@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package gluon.db.v1;
+
+import "google/protobuf/descriptor.proto";
+
+message SqliteTableOptions {
+  string name = 1;
+}
+
+message SqliteColumnOptions {
+  string sql_type = 1;
+  bool primary_key = 2;
+  bool autoincrement = 3;
+  bool not_null = 4;
+  string default_sql = 5;
+  string references_table = 6;
+  string references_column = 7;
+}
+
+extend google.protobuf.MessageOptions {
+  SqliteTableOptions sqlite_table = 51001;
+}
+
+extend google.protobuf.FieldOptions {
+  SqliteColumnOptions sqlite_column = 51002;
+}

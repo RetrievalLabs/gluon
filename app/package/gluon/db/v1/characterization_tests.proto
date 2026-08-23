@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package gluon.db.v1;
 
+import "gluon/db/v1/sqlite.proto";
+
 // Shared contract for characterization-tests.db.
 //
 // Code-parser owns SQLite DDL and migrations. Harness uses this contract to
@@ -67,91 +69,107 @@ enum CharacterizationTable {
 }
 
 message CharacterizationRunRow {
-  int64 id = 1;
-  string mode = 2;
-  string source_path = 3;
-  string business_database_path = 4;
-  string kg_database_path = 5;
-  CharacterizationRunStatus status = 6;
-  string started_at = 7;
-  optional string finished_at = 8;
-  int64 selected_behaviors = 9;
-  int64 persisted_behaviors = 10;
-  int64 skipped_behaviors = 11;
-  int64 diagnostics = 12;
+  option (sqlite_table).name = "characterization_runs";
+
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  string mode = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string source_path = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string business_database_path = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string kg_database_path = 5 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  CharacterizationRunStatus status = 6 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string started_at = 7 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string finished_at = 8 [(sqlite_column).sql_type = "TEXT"];
+  int64 selected_behaviors = 9 [(sqlite_column) = { sql_type: "INTEGER" default_sql: "0" }];
+  int64 persisted_behaviors = 10 [(sqlite_column) = { sql_type: "INTEGER" default_sql: "0" }];
+  int64 skipped_behaviors = 11 [(sqlite_column) = { sql_type: "INTEGER" default_sql: "0" }];
+  int64 diagnostics = 12 [(sqlite_column) = { sql_type: "INTEGER" default_sql: "0" }];
 }
 
 message CharacterizationBehaviorRow {
-  string id = 1;
-  int64 run_id = 2;
-  string kg_node_id = 3;
-  string node_kind = 4;
-  string node_name = 5;
-  string node_statement = 6;
-  string source_method_ids_json = 7;
-  CharacterizationBehaviorStatus status = 8;
+  option (sqlite_table).name = "characterization_behaviors";
+
+  string id = 1 [(sqlite_column) = { sql_type: "TEXT" primary_key: true }];
+  int64 run_id = 2 [(sqlite_column) = { sql_type: "INTEGER" not_null: true references_table: "characterization_runs" references_column: "id" }];
+  string kg_node_id = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string node_kind = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string node_name = 5 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string node_statement = 6 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string source_method_ids_json = 7 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  CharacterizationBehaviorStatus status = 8 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message CharacterizationScenarioRow {
-  string id = 1;
-  int64 run_id = 2;
-  string behavior_id = 3;
-  string name = 4;
-  CharacterizationScenarioKind scenario_kind = 5;
-  optional string invocation_kind = 6;
-  CharacterizationScenarioStatus status = 7;
-  optional string diagnostic_reason = 8;
+  option (sqlite_table).name = "characterization_scenarios";
+
+  string id = 1 [(sqlite_column) = { sql_type: "TEXT" primary_key: true }];
+  int64 run_id = 2 [(sqlite_column) = { sql_type: "INTEGER" not_null: true references_table: "characterization_runs" references_column: "id" }];
+  string behavior_id = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true references_table: "characterization_behaviors" references_column: "id" }];
+  string name = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  CharacterizationScenarioKind scenario_kind = 5 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string invocation_kind = 6 [(sqlite_column).sql_type = "TEXT"];
+  CharacterizationScenarioStatus status = 7 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string diagnostic_reason = 8 [(sqlite_column).sql_type = "TEXT"];
 }
 
 message CharacterizationInputRow {
-  string id = 1;
-  string scenario_id = 2;
-  string input_json = 3;
-  string fixture_json = 4;
-  string deterministic_seed_json = 5;
+  option (sqlite_table).name = "characterization_inputs";
+
+  string id = 1 [(sqlite_column) = { sql_type: "TEXT" primary_key: true }];
+  string scenario_id = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true references_table: "characterization_scenarios" references_column: "id" }];
+  string input_json = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string fixture_json = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string deterministic_seed_json = 5 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message CharacterizationObservationRow {
-  string id = 1;
-  string scenario_id = 2;
-  string input_id = 3;
-  CharacterizationObservationStatus status = 4;
-  optional string return_value_json = 5;
-  optional string response_body = 6;
-  optional string exception_type = 7;
-  optional string exception_message = 8;
-  string emitted_events_json = 9;
-  string database_side_effects_json = 10;
-  string fake_boundary_calls_json = 11;
-  string normalized_output_json = 12;
+  option (sqlite_table).name = "characterization_observations";
+
+  string id = 1 [(sqlite_column) = { sql_type: "TEXT" primary_key: true }];
+  string scenario_id = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true references_table: "characterization_scenarios" references_column: "id" }];
+  string input_id = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true references_table: "characterization_inputs" references_column: "id" }];
+  CharacterizationObservationStatus status = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string return_value_json = 5 [(sqlite_column).sql_type = "TEXT"];
+  optional string response_body = 6 [(sqlite_column).sql_type = "TEXT"];
+  optional string exception_type = 7 [(sqlite_column).sql_type = "TEXT"];
+  optional string exception_message = 8 [(sqlite_column).sql_type = "TEXT"];
+  string emitted_events_json = 9 [(sqlite_column) = { sql_type: "TEXT" not_null: true default_sql: "'[]'" }];
+  string database_side_effects_json = 10 [(sqlite_column) = { sql_type: "TEXT" not_null: true default_sql: "'[]'" }];
+  string fake_boundary_calls_json = 11 [(sqlite_column) = { sql_type: "TEXT" not_null: true default_sql: "'[]'" }];
+  string normalized_output_json = 12 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message CharacterizationFileRow {
-  int64 id = 1;
-  string scenario_id = 2;
-  string path = 3;
-  string class_name = 4;
-  string package_name = 5;
-  string content_hash = 6;
-  string generated_marker = 7;
+  option (sqlite_table).name = "characterization_files";
+
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  string scenario_id = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true references_table: "characterization_scenarios" references_column: "id" }];
+  string path = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string class_name = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string package_name = 5 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string content_hash = 6 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string generated_marker = 7 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message CharacterizationFakeRow {
-  int64 id = 1;
-  string scenario_id = 2;
-  string dependency_name = 3;
-  string fake_strategy = 4;
-  optional string source_file_path = 5;
-  string boundary_calls_json = 6;
+  option (sqlite_table).name = "characterization_fakes";
+
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  string scenario_id = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true references_table: "characterization_scenarios" references_column: "id" }];
+  string dependency_name = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string fake_strategy = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string source_file_path = 5 [(sqlite_column).sql_type = "TEXT"];
+  string boundary_calls_json = 6 [(sqlite_column) = { sql_type: "TEXT" not_null: true default_sql: "'[]'" }];
 }
 
 message CharacterizationDiagnosticRow {
-  int64 id = 1;
-  int64 run_id = 2;
-  optional string behavior_id = 3;
-  optional string kg_node_id = 4;
-  optional string scenario_id = 5;
-  CharacterizationDiagnosticSeverity severity = 6;
-  string category = 7;
-  string message = 8;
+  option (sqlite_table).name = "characterization_diagnostics";
+
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  int64 run_id = 2 [(sqlite_column) = { sql_type: "INTEGER" not_null: true references_table: "characterization_runs" references_column: "id" }];
+  optional string behavior_id = 3 [(sqlite_column).sql_type = "TEXT"];
+  optional string kg_node_id = 4 [(sqlite_column).sql_type = "TEXT"];
+  optional string scenario_id = 5 [(sqlite_column).sql_type = "TEXT"];
+  CharacterizationDiagnosticSeverity severity = 6 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string category = 7 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string message = 8 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }

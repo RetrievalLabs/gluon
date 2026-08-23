@@ -21,6 +21,7 @@ tree-sitter = "0.25"
 tree-sitter-java = "0.23"
 walkdir = "2.5.0"
 prost = "0.14.4"
+prost-reflect = "0.16.2"
 
 [build-dependencies]
 prost-build = "0.14.4"

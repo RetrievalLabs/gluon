@@ -3,107 +3,21 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use code_parser::proto::gluon::db::v1::{
+    CharacterizationInputRow, CharacterizationScenarioRow, CharacterizationScenarioStatus,
+    CharacterizationTable,
+};
+use code_parser::proto::{
+    characterization_business_fixture_ddl, characterization_scenario_status, characterization_table,
+};
+use code_parser::proto_field;
 use rusqlite::Connection;
 use serde_json::Value;
 
 fn write_characterization_business_db(path: &PathBuf) {
     let connection = Connection::open(path).unwrap();
     connection
-        .execute_batch(
-            "
-            CREATE TABLE methods (
-                id TEXT PRIMARY KEY,
-                class_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                file TEXT NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL
-            );
-            CREATE TABLE classes (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                package_name TEXT,
-                qualified_name TEXT NOT NULL
-            );
-            CREATE TABLE entry_points (
-                id TEXT PRIMARY KEY,
-                method_id TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                framework TEXT,
-                route TEXT,
-                http_method TEXT,
-                source TEXT NOT NULL
-            );
-            CREATE TABLE candidate_signals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                method_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                count INTEGER NOT NULL,
-                weight INTEGER NOT NULL
-            );
-            CREATE TABLE test_suites (
-                id TEXT PRIMARY KEY,
-                class_name TEXT NOT NULL
-            );
-            CREATE TABLE test_cases (
-                id TEXT PRIMARY KEY,
-                suite_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                file TEXT NOT NULL,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL
-            );
-            CREATE TABLE test_targets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                test_case_id TEXT NOT NULL,
-                target_kind TEXT NOT NULL,
-                target_id TEXT NOT NULL
-            );
-            CREATE TABLE test_assertions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                test_case_id TEXT NOT NULL,
-                assertion_kind TEXT NOT NULL,
-                expression TEXT NOT NULL,
-                line INTEGER NOT NULL
-            );
-            CREATE TABLE test_fixtures (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                test_case_id TEXT,
-                fixture_kind TEXT NOT NULL,
-                name TEXT NOT NULL,
-                line INTEGER NOT NULL
-            );
-            CREATE TABLE test_entry_points (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                test_case_id TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                framework TEXT,
-                route TEXT,
-                http_method TEXT
-            );
-            INSERT INTO classes (id, name, package_name, qualified_name)
-            VALUES ('class:OrderService', 'OrderService', 'demo', 'demo.OrderService');
-            INSERT INTO methods (id, class_id, name, signature, file, start_line, end_line)
-            VALUES ('method:OrderService#approve', 'class:OrderService', 'approve', 'approve()', 'src/main/java/demo/OrderService.java', 3, 5);
-            INSERT INTO entry_points (id, method_id, kind, framework, route, http_method, source)
-            VALUES ('entry:approve', 'method:OrderService#approve', 'http', 'spring', '/orders/{id}/approve', 'POST', 'tree_sitter');
-            INSERT INTO candidate_signals (method_id, name, count, weight)
-            VALUES ('method:OrderService#approve', 'business_terms', 2, 3);
-            INSERT INTO test_suites (id, class_name)
-            VALUES ('suite:OrderServiceTest', 'OrderServiceTest');
-            INSERT INTO test_cases (id, suite_id, name, file, start_line, end_line)
-            VALUES ('case:approvesOrder', 'suite:OrderServiceTest', 'approvesOrder', 'src/test/java/demo/OrderServiceTest.java', 10, 20);
-            INSERT INTO test_targets (test_case_id, target_kind, target_id)
-            VALUES ('case:approvesOrder', 'method', 'method:OrderService#approve');
-            INSERT INTO test_assertions (test_case_id, assertion_kind, expression, line)
-            VALUES ('case:approvesOrder', 'equals', 'assertEquals', 18);
-            INSERT INTO test_fixtures (test_case_id, fixture_kind, name, line)
-            VALUES ('case:approvesOrder', 'mock', 'repository', 12);
-            INSERT INTO test_entry_points (test_case_id, kind, framework, route, http_method)
-            VALUES ('case:approvesOrder', 'http', 'mockmvc', '/orders/{id}/approve', 'POST');
-            ",
-        )
+        .execute_batch(&characterization_business_fixture_ddl())
         .unwrap();
 }
 
@@ -150,17 +64,39 @@ fn write_characterization_kg_db(path: &PathBuf) {
 fn write_characterization_tests_db(path: &PathBuf) {
     let connection = Connection::open(path).unwrap();
     connection
-        .execute_batch(
+        .execute_batch(&format!(
             "
-            CREATE TABLE characterization_scenarios (
-                id TEXT PRIMARY KEY,
-                status TEXT NOT NULL,
-                diagnostic_reason TEXT
+            CREATE TABLE {scenarios} (
+                {scenario_id} TEXT PRIMARY KEY,
+                {scenario_status} TEXT NOT NULL,
+                {scenario_diagnostic_reason} TEXT
             );
-            INSERT INTO characterization_scenarios (id, status, diagnostic_reason)
-            VALUES ('scenario:approve', 'generated_scaffold', NULL);
+            CREATE TABLE {inputs} (
+                {input_id} TEXT PRIMARY KEY,
+                {input_scenario_id} TEXT NOT NULL,
+                {input_json} TEXT NOT NULL,
+                {input_fixture_json} TEXT NOT NULL,
+                {input_deterministic_seed_json} TEXT NOT NULL
+            );
+            INSERT INTO {scenarios} ({scenario_id}, {scenario_status}, {scenario_diagnostic_reason})
+            VALUES ('scenario:approve', '{generated_scaffold}', NULL);
             ",
-        )
+            scenarios = characterization_table(CharacterizationTable::Scenarios),
+            scenario_id = proto_field!(CharacterizationScenarioRow, id),
+            scenario_status = proto_field!(CharacterizationScenarioRow, status),
+            scenario_diagnostic_reason =
+                proto_field!(CharacterizationScenarioRow, diagnostic_reason),
+            inputs = characterization_table(CharacterizationTable::Inputs),
+            input_id = proto_field!(CharacterizationInputRow, id),
+            input_scenario_id = proto_field!(CharacterizationInputRow, scenario_id),
+            input_json = proto_field!(CharacterizationInputRow, input_json),
+            input_fixture_json = proto_field!(CharacterizationInputRow, fixture_json),
+            input_deterministic_seed_json =
+                proto_field!(CharacterizationInputRow, deterministic_seed_json),
+            generated_scaffold = characterization_scenario_status(
+                CharacterizationScenarioStatus::GeneratedScaffold,
+            ),
+        ))
         .unwrap();
 }
 
@@ -1060,17 +996,24 @@ fn db_update_edits_characterization_tests_database_rows() {
     let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
         .args(["db", "update", "--database"])
         .arg(&db)
-        .args([
-            "--table",
-            "characterization_scenarios",
-            "--id-column",
-            "id",
-            "--id",
-            "scenario:approve",
-            "--set",
-            "status=ready",
-            "--set",
-            "diagnostic_reason=reviewed",
+        .args(vec![
+            "--table".to_string(),
+            characterization_table(CharacterizationTable::Scenarios).to_string(),
+            "--id-column".to_string(),
+            proto_field!(CharacterizationScenarioRow, id).to_string(),
+            "--id".to_string(),
+            "scenario:approve".to_string(),
+            "--set".to_string(),
+            format!(
+                "{}={}",
+                proto_field!(CharacterizationScenarioRow, status),
+                characterization_scenario_status(CharacterizationScenarioStatus::Accepted)
+            ),
+            "--set".to_string(),
+            format!(
+                "{}=reviewed",
+                proto_field!(CharacterizationScenarioRow, diagnostic_reason)
+            ),
         ])
         .output()
         .unwrap();
@@ -1081,20 +1024,94 @@ fn db_update_edits_characterization_tests_database_rows() {
     let connection = Connection::open(&db).unwrap();
     let status: String = connection
         .query_row(
-            "SELECT status FROM characterization_scenarios WHERE id = 'scenario:approve'",
+            &format!(
+                "SELECT {} FROM {} WHERE {} = 'scenario:approve'",
+                proto_field!(CharacterizationScenarioRow, status),
+                characterization_table(CharacterizationTable::Scenarios),
+                proto_field!(CharacterizationScenarioRow, id),
+            ),
             [],
             |row| row.get(0),
         )
         .unwrap();
     let reason: String = connection
         .query_row(
-            "SELECT diagnostic_reason FROM characterization_scenarios WHERE id = 'scenario:approve'",
+            &format!(
+                "SELECT {} FROM {} WHERE {} = 'scenario:approve'",
+                proto_field!(CharacterizationScenarioRow, diagnostic_reason),
+                characterization_table(CharacterizationTable::Scenarios),
+                proto_field!(CharacterizationScenarioRow, id),
+            ),
             [],
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(status, "ready");
+    assert_eq!(
+        status,
+        characterization_scenario_status(CharacterizationScenarioStatus::Accepted)
+    );
     assert_eq!(reason, "reviewed");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn db_insert_adds_characterization_input_row() {
+    let root = test_dir("db-insert-characterization");
+    let db = root.join("characterization-tests.db");
+    write_characterization_tests_db(&db);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["db", "insert", "--database"])
+        .arg(&db)
+        .args(vec![
+            "--table".to_string(),
+            characterization_table(CharacterizationTable::Inputs).to_string(),
+            "--set".to_string(),
+            format!(
+                "{}=input:approve:happy",
+                proto_field!(CharacterizationInputRow, id)
+            ),
+            "--set".to_string(),
+            format!(
+                "{}=scenario:approve",
+                proto_field!(CharacterizationInputRow, scenario_id)
+            ),
+            "--set".to_string(),
+            format!(
+                "{}={{\"eventType\":\"orders\"}}",
+                proto_field!(CharacterizationInputRow, input_json)
+            ),
+            "--set".to_string(),
+            format!(
+                "{}={{\"cache\":\"hit\"}}",
+                proto_field!(CharacterizationInputRow, fixture_json)
+            ),
+            "--set".to_string(),
+            format!(
+                "{}={{\"case\":\"happy\"}}",
+                proto_field!(CharacterizationInputRow, deterministic_seed_json)
+            ),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["rows_inserted"], 1);
+    let connection = Connection::open(&db).unwrap();
+    let input_json: String = connection
+        .query_row(
+            &format!(
+                "SELECT {} FROM {} WHERE {} = 'input:approve:happy'",
+                proto_field!(CharacterizationInputRow, input_json),
+                characterization_table(CharacterizationTable::Inputs),
+                proto_field!(CharacterizationInputRow, id),
+            ),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(input_json, "{\"eventType\":\"orders\"}");
     let _ = fs::remove_dir_all(root);
 }
 

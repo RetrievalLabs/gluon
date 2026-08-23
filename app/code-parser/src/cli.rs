@@ -116,6 +116,10 @@ enum DatabaseOperation {
         id: String,
         set_values: Vec<(String, String)>,
     },
+    Insert {
+        table: String,
+        set_values: Vec<(String, String)>,
+    },
 }
 
 pub fn run_cli<I, S>(args: I) -> i32
@@ -685,6 +689,40 @@ fn parse_database_args(mut args: impl Iterator<Item = String>) -> Result<Databas
                 set_values,
             }
         }
+        "insert" => {
+            let mut table = None;
+            let mut set_values = Vec::new();
+            while let Some(arg) = args.next() {
+                match arg.as_str() {
+                    "--database" => {
+                        let value = args.next().ok_or("--database requires a value")?;
+                        database = Some(PathBuf::from(value));
+                    }
+                    "--table" => {
+                        table = Some(args.next().ok_or("--table requires a value")?);
+                    }
+                    "--set" => {
+                        let value = args.next().ok_or("--set requires a value")?;
+                        let (column, field_value) = value
+                            .split_once('=')
+                            .ok_or("--set must be formatted as column=value")?;
+                        if column.is_empty() {
+                            return Err("--set column cannot be empty".to_string());
+                        }
+                        set_values.push((column.to_string(), field_value.to_string()));
+                    }
+                    "--help" | "-h" => return Err("help requested".to_string()),
+                    other => return Err(format!("unsupported argument: {other}")),
+                }
+            }
+            if set_values.is_empty() {
+                return Err("missing required --set".to_string());
+            }
+            DatabaseOperation::Insert {
+                table: table.ok_or("missing required --table")?,
+                set_values,
+            }
+        }
         "--help" | "-h" => return Err("help requested".to_string()),
         other => return Err(format!("unsupported db operation: {other}")),
     };
@@ -1002,6 +1040,9 @@ fn execute_database_command(options: DatabaseOptions) -> Result<Value, String> {
             id,
             set_values,
         } => database_update(&connection, &table, &id_column, &id, &set_values),
+        DatabaseOperation::Insert { table, set_values } => {
+            database_insert(&connection, &table, &set_values)
+        }
     }
 }
 
@@ -1118,6 +1159,43 @@ fn database_update(
     }))
 }
 
+fn database_insert(
+    connection: &Connection,
+    table: &str,
+    set_values: &[(String, String)],
+) -> Result<Value, String> {
+    validate_table(connection, table)?;
+    let column_names = table_column_names(connection, table)?;
+    for (column, _) in set_values {
+        validate_column(&column_names, column)?;
+    }
+
+    let columns = set_values
+        .iter()
+        .map(|(column, _)| quote_identifier(column))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let placeholders = vec!["?"; set_values.len()].join(", ");
+    let sql = format!(
+        "INSERT INTO {} ({}) VALUES ({})",
+        quote_identifier(table),
+        columns,
+        placeholders,
+    );
+    let parameters = set_values
+        .iter()
+        .map(|(_, value)| value.as_str())
+        .collect::<Vec<_>>();
+    let rows_inserted = connection
+        .execute(&sql, params_from_iter(parameters))
+        .map_err(|error| format!("failed to insert row: {error}"))?;
+    Ok(json!({
+        "table": table,
+        "rows_inserted": rows_inserted,
+        "rowid": connection.last_insert_rowid(),
+    }))
+}
+
 fn list_tables(connection: &Connection) -> Result<Vec<String>, String> {
     let value = database_tables(connection)?;
     let tables = value
@@ -1210,7 +1288,7 @@ fn hex_string(value: &[u8]) -> String {
 
 fn print_usage() {
     eprintln!(
-        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--continue]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]\n       code-parser generate-characterization-tests --business-database <business-extraction.db> --kg-database <business-kg.db> --source-path <legacy-project-root> --output-dir <gluon-output-dir> [--max-behaviors <count>] [--node-kind BusinessRule|Workflow|Invariant|StateTransition|SideEffect] [--continue] [--force]\n       code-parser db tables --database <database.db>\n       code-parser db schema --database <database.db> [--table <table>]\n       code-parser db rows --database <database.db> --table <table> [--limit <1-100>] [--offset <count>]\n       code-parser db update --database <database.db> --table <table> --id-column <column> --id <value> --set <column=value> [--set <column=value> ...]"
+        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--continue]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]\n       code-parser generate-characterization-tests --business-database <business-extraction.db> --kg-database <business-kg.db> --source-path <legacy-project-root> --output-dir <gluon-output-dir> [--max-behaviors <count>] [--node-kind BusinessRule|Workflow|Invariant|StateTransition|SideEffect] [--continue] [--force]\n       code-parser db tables --database <database.db>\n       code-parser db schema --database <database.db> [--table <table>]\n       code-parser db rows --database <database.db> --table <table> [--limit <1-100>] [--offset <count>]\n       code-parser db insert --database <database.db> --table <table> --set <column=value> [--set <column=value> ...]\n       code-parser db update --database <database.db> --table <table> --id-column <column> --id <value> --set <column=value> [--set <column=value> ...]"
     );
 }
 
@@ -1800,6 +1878,38 @@ mod tests {
                     table: "methods".to_string(),
                     limit: 5,
                     offset: 10,
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn parses_database_insert_arguments() {
+        let options = parse_args([
+            "code-parser",
+            "db",
+            "insert",
+            "--database",
+            "characterization-tests.db",
+            "--table",
+            "characterization_inputs",
+            "--set",
+            "id=input:one",
+            "--set",
+            "scenario_id=scenario:one",
+        ])
+        .expect("valid arguments");
+
+        assert_eq!(
+            options,
+            CliOptions::Database(DatabaseOptions {
+                database: PathBuf::from("characterization-tests.db"),
+                operation: DatabaseOperation::Insert {
+                    table: "characterization_inputs".to_string(),
+                    set_values: vec![
+                        ("id".to_string(), "input:one".to_string()),
+                        ("scenario_id".to_string(), "scenario:one".to_string()),
+                    ],
                 },
             })
         );

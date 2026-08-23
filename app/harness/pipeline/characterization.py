@@ -23,6 +23,12 @@ BEHAVIORS_TABLE = characterization_table(
 FILES_TABLE = characterization_table(
     characterization_tests_pb2.CHARACTERIZATION_TABLE_FILES
 )
+INPUTS_TABLE = characterization_table(
+    characterization_tests_pb2.CHARACTERIZATION_TABLE_INPUTS
+)
+OBSERVATIONS_TABLE = characterization_table(
+    characterization_tests_pb2.CHARACTERIZATION_TABLE_OBSERVATIONS
+)
 SCENARIO_ID = characterization_field(
     characterization_tests_pb2.CharacterizationScenarioRow,
     "id",
@@ -67,6 +73,14 @@ FILE_PATH = characterization_field(
     characterization_tests_pb2.CharacterizationFileRow,
     "path",
 )
+INPUT_SCENARIO_ID = characterization_field(
+    characterization_tests_pb2.CharacterizationInputRow,
+    "scenario_id",
+)
+OBSERVATION_SCENARIO_ID = characterization_field(
+    characterization_tests_pb2.CharacterizationObservationRow,
+    "scenario_id",
+)
 COMPLETED_SCENARIO_STATUSES = {
     characterization_scenario_status(
         characterization_tests_pb2.CHARACTERIZATION_SCENARIO_STATUS_ACCEPTED
@@ -99,7 +113,14 @@ def run_characterization_agent_loop(
         processed.add(scenario_id)
         seed_context = build_seed_context(paths, scenario)
         agent.run_characterization_scenario(scenario_id, paths.repo, seed_context)
-        commit_characterization_test(runner, paths.repo, scenario_id)
+        ensure_characterization_scenario_completed(paths.characterization_db, scenario_id)
+        commit_characterization_test(
+            runner,
+            paths.repo,
+            paths.characterization_db,
+            scenario_id,
+            scenario.get("scaffold_path"),
+        )
         completed.append(scenario_id)
 
     return completed
@@ -180,7 +201,7 @@ def build_seed_context(paths: HarnessPaths, scenario: dict[str, Any]) -> dict[st
             "git diff",
             "project-local build/test commands",
             "jdtls from PATH",
-            "gluon-cli code-parser db tables/schema/rows/update",
+            "gluon-cli code-parser db tables/schema/rows/insert/update",
         ],
         "relevant_status_rows": {
             "scenario": {
@@ -195,16 +216,52 @@ def build_seed_context(paths: HarnessPaths, scenario: dict[str, Any]) -> dict[st
     }
 
 
+def ensure_characterization_scenario_completed(database: Path, scenario_id: str) -> None:
+    with closing(sqlite3.connect(database)) as connection:
+        with connection:
+            row = connection.execute(
+                f"""
+                SELECT
+                    s.{SCENARIO_STATUS},
+                    COUNT(DISTINCT i.rowid),
+                    COUNT(DISTINCT o.rowid)
+                FROM {SCENARIOS_TABLE} s
+                LEFT JOIN {INPUTS_TABLE} i ON i.{INPUT_SCENARIO_ID} = s.{SCENARIO_ID}
+                LEFT JOIN {OBSERVATIONS_TABLE} o
+                    ON o.{OBSERVATION_SCENARIO_ID} = s.{SCENARIO_ID}
+                WHERE s.{SCENARIO_ID} = ?
+                GROUP BY s.{SCENARIO_ID}, s.{SCENARIO_STATUS}
+                """,
+                [scenario_id],
+            ).fetchone()
+
+    if row is None:
+        raise StageFailedError(f"missing characterization scenario {scenario_id}")
+    status, input_count, observation_count = row
+    if status not in COMPLETED_SCENARIO_STATUSES:
+        raise StageFailedError(
+            f"characterization scenario {scenario_id} not accepted: {status}"
+        )
+    if input_count == 0 or observation_count == 0:
+        raise StageFailedError(
+            "characterization scenario "
+            f"{scenario_id} missing stored inputs or observations"
+        )
+
+
 def commit_characterization_test(
     runner: CommandRunner,
     repo_path: Path,
+    characterization_db: Path,
     scenario_id: str,
+    scaffold_path: str | None,
 ) -> None:
     status = runner.run(["git", "status", "--short"], cwd=repo_path)
     if not status.stdout.strip():
         return
 
-    add = runner.run(["git", "add", "gluon/tests"], cwd=repo_path)
+    add_paths = characterization_add_paths(repo_path, characterization_db, scaffold_path)
+    add = runner.run(["git", "add", *add_paths], cwd=repo_path)
     if not add.ok:
         raise StageFailedError(f"git add failed for characterization {scenario_id}")
     commit = runner.run(
@@ -213,3 +270,16 @@ def commit_characterization_test(
     )
     if not commit.ok:
         raise StageFailedError(f"git commit failed for characterization {scenario_id}")
+
+
+def characterization_add_paths(
+    repo_path: Path,
+    characterization_db: Path,
+    scaffold_path: str | None,
+) -> list[str]:
+    add_paths = [scaffold_path] if scaffold_path else ["gluon/tests"]
+    try:
+        add_paths.append(str(characterization_db.relative_to(repo_path)))
+    except ValueError:
+        pass
+    return add_paths
