@@ -7,3 +7,6 @@ Architecture docs are split by subsystem:
 - [Business Logic Extraction](architecture/business-extraction.md)
 - [Test Extraction](architecture/test-extraction.md)
 - [Business Knowledge Graph](architecture/business-kg.md)
+- [Harness](architecture/harness.md)
+- [Characterization Tests](architecture/characterization-tests.md)
+
