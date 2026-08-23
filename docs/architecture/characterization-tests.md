@@ -144,7 +144,7 @@ multi-agent workflows, or commit repository changes.
 
 ### Harness multi-agent phase
 
-1. Main harness agent selects one pending scenario from
+1. Harness selects one pending scenario from
    `characterization-tests.db`.
 2. Harness gives the main agent seed context: scenario ID, behavior ID, KG node
    ID, abstract/scaffold path, database paths, repo path, allowed
@@ -165,8 +165,10 @@ multi-agent workflows, or commit repository changes.
    calls, and scenario status in `characterization-tests.db` through Gluon CLI
    database commands.
 9. Harness verifies the test with the project build/test command.
-10. Harness commits the accepted test and related snapshot DB update, then moves
-   to the next scenario.
+10. Main agent returns control to harness after the test is accepted.
+11. Harness commits the accepted test and related snapshot DB update, selects
+   the next pending scenario, collects fresh seed context, and gives control
+   back to the main agent.
 
 Failures stop the current scenario after recording diagnostics. The next run
 resumes from unfinished or failed scenarios.
@@ -519,13 +521,17 @@ the Python harness after code-parser produces abstracts and database rows.
 Harness uses one bounded loop per scenario:
 
 ```text
-main harness agent selects pending scenario
-context agent builds context packet
-Input/Output Agent generates inputs and captures legacy outputs
-implementation agent writes full test with mocks/fakes
+Harness selects pending scenario and collects seed context
+Harness gives control to main agent
+main agent gives seed context to Context Agent
+Context Agent returns JSON context packet to main agent
+main agent gives implementation responsibility to Implementation Agent
+Implementation Agent writes full test with mocks/fakes
+main agent gives written test and context to Input/Output Agent
+Input/Output Agent generates inputs, runs test, and captures outputs
 harness verifies project test command
-harness stores snapshots in characterization-tests.db
 harness commits accepted generated test
+control returns to harness for next scenario
 ```
 
 This keeps code-parser deterministic while allowing agents to do repository-
