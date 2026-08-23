@@ -70,6 +70,7 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertEqual(options["permission_mode"], "dontAsk")
         self.assertEqual(options["skills"], ["gluon-cli"])
         self.assertIn("system_prompt", options)
+        self.assertTrue(options["system_prompt"]["exclude_dynamic_sections"])
 
 
 if __name__ == "__main__":

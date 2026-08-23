@@ -83,6 +83,7 @@ class ClaudeAgentClient:
                 "type": "preset",
                 "preset": "claude_code",
                 "append": self.system_prompt(),
+                "exclude_dynamic_sections": True,
             },
             "env": self.agent_env(),
         }
