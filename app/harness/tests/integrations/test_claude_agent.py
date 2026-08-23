@@ -5,7 +5,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from integrations.claude_agent import ClaudeAgentClient, invokes_gluon_cli
+from integrations.claude_agent import (
+    ClaudeAgentClient,
+    invokes_gluon_cli,
+    is_allowed_gluon_db_command,
+)
 from models.command import CommandResult
 from models.config import HarnessConfig
 
@@ -88,7 +92,9 @@ class ClaudeAgentTests(unittest.TestCase):
 
         self.assertEqual(options["cwd"], Path("/repo"))
         self.assertEqual(options["model"], "model")
+        self.assertIn("Task", options["tools"])
         self.assertIn("Bash", options["tools"])
+        self.assertIn("Task", options["allowed_tools"])
         self.assertIn("Edit", options["allowed_tools"])
         self.assertEqual(options["permission_mode"], "dontAsk")
         self.assertEqual(options["skills"], ["gluon-cli"])
@@ -145,6 +151,19 @@ class ClaudeAgentTests(unittest.TestCase):
         )
         allowed = asyncio.run(
             client.block_gluon_cli_hook(
+                {
+                    "tool_input": {
+                        "command": (
+                            "gluon-cli code-parser db rows --database db --table t"
+                        )
+                    }
+                },
+                None,
+                {},
+            )
+        )
+        local = asyncio.run(
+            client.block_gluon_cli_hook(
                 {"tool_input": {"command": "mvn test"}},
                 None,
                 {},
@@ -159,11 +178,53 @@ class ClaudeAgentTests(unittest.TestCase):
             allowed["hookSpecificOutput"]["permissionDecision"],
             "allow",
         )
+        self.assertEqual(
+            local["hookSpecificOutput"]["permissionDecision"],
+            "allow",
+        )
 
     def test_detects_gluon_cli_invocations(self) -> None:
         self.assertTrue(invokes_gluon_cli("/usr/local/bin/gluon-cli --help"))
         self.assertTrue(invokes_gluon_cli("env FOO=bar gluon code-parser"))
         self.assertFalse(invokes_gluon_cli("ls /opt/gluon"))
+
+    def test_allows_only_gluon_database_commands(self) -> None:
+        self.assertTrue(
+            is_allowed_gluon_db_command(
+                "gluon-cli code-parser db rows --database db --table t"
+            )
+        )
+        self.assertTrue(
+            is_allowed_gluon_db_command(
+                "env FOO=bar gluon code-parser db tables --database db"
+            )
+        )
+        self.assertFalse(
+            is_allowed_gluon_db_command("gluon-cli code-parser parse-build")
+        )
+
+    def test_characterization_prompt_orders_agent_handoff(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+        prompt = ClaudeAgentClient(config).build_characterization_prompt(
+            {"scenario_id": "scenario:one"}
+        )
+
+        self.assertIn("You are the main agent", prompt)
+        self.assertIn("Use the Task tool to give the seed context", prompt)
+        self.assertIn("Context Agent returns structured JSON", prompt)
+        self.assertIn("Implementation Agent writes", prompt)
+        self.assertIn("Input/Output Agent generates deterministic inputs", prompt)
+        self.assertIn("Return control to harness", prompt)
+        self.assertIn("Do not select the next scenario", prompt)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from integrations.claude_agent import ClaudeAgentClient
 from integrations.gluon_cli import GluonCli
 from models.config import HarnessConfig
 from models.summary import RunSummary
+from pipeline.characterization import run_characterization_agent_loop
 from pipeline.retry import run_stage_with_repair
 from pipeline.stages import build_stages
 from pipeline.summary import write_summary
@@ -50,6 +51,14 @@ class PipelineCoordinator:
                     if target is not None:
                         target.write_text(result.command_result.stdout, encoding="utf-8")
                     completed.append(stage.name)
+                    if stage.name == "generate-characterization-tests":
+                        scenarios = run_characterization_agent_loop(
+                            self.paths,
+                            agent,
+                            runner,
+                        )
+                        if scenarios:
+                            completed.append("characterization-full-tests")
             except StageFailedError as error:
                 summary = RunSummary(
                     status="failed",

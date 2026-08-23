@@ -45,6 +45,10 @@ class HarnessPaths:
         return self.repo / "gluon" / "tests"
 
     @property
+    def characterization_db(self) -> Path:
+        return self.characterization_output_dir / "characterization-tests.db"
+
+    @property
     def command_log(self) -> Path:
         return self.root / "commands.jsonl"
 
@@ -55,4 +59,3 @@ class HarnessPaths:
     @property
     def summary(self) -> Path:
         return self.root / "summary.json"
-

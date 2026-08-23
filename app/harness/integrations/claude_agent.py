@@ -107,8 +107,18 @@ class ClaudeAgentClient:
         return {
             "model": self.config.anthropic_model,
             "cwd": repo_path,
-            "tools": ["Bash", "Read", "Edit", "MultiEdit", "Glob", "Grep", "LS"],
+            "tools": [
+                "Task",
+                "Bash",
+                "Read",
+                "Edit",
+                "MultiEdit",
+                "Glob",
+                "Grep",
+                "LS",
+            ],
             "allowed_tools": [
+                "Task",
                 "Bash",
                 "Read",
                 "Edit",
@@ -157,7 +167,8 @@ Rules:
 - Make the smallest code or build-file change that fixes the failed stage.
 - Preserve existing Java behavior. Do not modernize unrelated code.
 - Do not skip harness stages, disable checks, delete source, rewrite history, or run destructive git commands.
-- Do not run gluon or gluon-cli commands. Harness reruns failed stages after repair.
+- Do not run Gluon pipeline commands. Harness reruns failed stages after repair.
+- Only `gluon[-cli] code-parser db ...` commands are allowed for characterization database work when the prompt asks for it.
 - Prefer local project conventions and existing tests.
 - Verify with local build or tests when useful, but leave Gluon CLI stage reruns to harness.
 - Report changed files, verification command, and remaining blocker if any.
@@ -170,14 +181,14 @@ Rules:
         _context: Any,
     ) -> dict[str, Any]:
         command = str(hook_input.get("tool_input", {}).get("command", ""))
-        if invokes_gluon_cli(command):
+        if invokes_gluon_cli(command) and not is_allowed_gluon_db_command(command):
             return {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "deny",
                     "permissionDecisionReason": (
-                        "Harness reruns Gluon CLI stages; repair agent must not "
-                        "run gluon commands."
+                        "Harness reruns Gluon pipeline stages. Agents may only "
+                        "run `gluon[-cli] code-parser db ...` commands."
                     ),
                 }
             }
@@ -214,6 +225,55 @@ Stdout:
 Stderr:
 ```text
 {excerpt(failed.stderr)}
+```
+"""
+
+    def run_characterization_scenario(
+        self,
+        scenario_id: str,
+        repo_path: Path,
+        seed_context: dict[str, Any],
+    ) -> AgentAttempt:
+        prompt = self.build_characterization_prompt(seed_context)
+        agent_result = self.run_agent(repo_path, prompt)
+        result = AgentAttempt(
+            stage_name="characterization-full-test",
+            attempt=1,
+            status="completed",
+            message=(
+                f"characterization scenario {scenario_id} completed in "
+                f"{repo_path}: {agent_result}"
+            ),
+        )
+        self.record(result)
+        return result
+
+    def build_characterization_prompt(self, seed_context: dict[str, Any]) -> str:
+        return f"""Generate one full characterization test from harness seed context.
+
+You are the main agent. Follow this order exactly:
+
+1. Read the seed context below.
+2. Use the Task tool to give the seed context to the Context Agent.
+3. Context Agent returns structured JSON context packet only.
+4. As main agent, use the Task tool to give the context packet and implementation responsibility to the Implementation Agent.
+5. Implementation Agent writes the executable project-native characterization test using mocks or fakes for external dependencies.
+6. As main agent, use the Task tool to give the written test and context packet to the Input/Output Agent.
+7. Input/Output Agent generates deterministic inputs, runs the written test with those inputs, captures observed outputs, and writes inputs and outputs to `characterization-tests.db` using only Gluon CLI database commands.
+8. Verify with the project-local build/test command.
+9. Return control to harness. Do not select the next scenario.
+
+Rules:
+- Work only on the selected scenario.
+- Do not modify production source or user-authored tests.
+- Do not invent expected outputs. Outputs must come from running the written test with generated inputs.
+- Do not run Gluon pipeline commands. You may run only `gluon[-cli] code-parser db ...` database commands.
+- Use git status/diff for review, but do not commit. Harness commits after control returns.
+- Keep generated tests deterministic.
+
+Seed context:
+```json
+{json.dumps(seed_context, indent=2, sort_keys=True)}
 ```
 """
 
@@ -255,5 +315,27 @@ def invokes_gluon_cli(command: str) -> bool:
             continue
         if Path(token).name in {"gluon", "gluon-cli"}:
             return True
+        expect_command = False
+    return False
+
+
+def is_allowed_gluon_db_command(command: str) -> bool:
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+    expect_command = True
+    for index, token in enumerate(tokens):
+        if token in {";", "&&", "||", "|"}:
+            expect_command = True
+            continue
+        if not expect_command:
+            continue
+        if "=" in token and token.split("=", 1)[0].isidentifier():
+            continue
+        if token in {"env", "sudo", "command"}:
+            continue
+        if Path(token).name in {"gluon", "gluon-cli"}:
+            return tokens[index + 1 : index + 3] == ["code-parser", "db"]
         expect_command = False
     return False
