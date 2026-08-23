@@ -3,6 +3,7 @@ import json
 import os
 import shlex
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from models.agent import AgentAttempt
@@ -117,6 +118,14 @@ class ClaudeAgentClient:
                 "LS",
             ],
             "permission_mode": "dontAsk",
+            "hooks": {
+                "PreToolUse": [
+                    SimpleNamespace(
+                        matcher="Bash",
+                        hooks=[self.block_gluon_cli_hook],
+                    )
+                ]
+            },
             "max_turns": 20,
             "skills": ["gluon-cli"],
             "system_prompt": {
@@ -148,10 +157,36 @@ Rules:
 - Make the smallest code or build-file change that fixes the failed stage.
 - Preserve existing Java behavior. Do not modernize unrelated code.
 - Do not skip harness stages, disable checks, delete source, rewrite history, or run destructive git commands.
+- Do not run gluon or gluon-cli commands. Harness reruns failed stages after repair.
 - Prefer local project conventions and existing tests.
-- Verify by rerunning the exact failed command before finishing.
+- Verify with local build or tests when useful, but leave Gluon CLI stage reruns to harness.
 - Report changed files, verification command, and remaining blocker if any.
 """
+
+    async def block_gluon_cli_hook(
+        self,
+        hook_input: dict[str, Any],
+        _tool_use_id: str | None,
+        _context: Any,
+    ) -> dict[str, Any]:
+        command = str(hook_input.get("tool_input", {}).get("command", ""))
+        if invokes_gluon_cli(command):
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": (
+                        "Harness reruns Gluon CLI stages; repair agent must not "
+                        "run gluon commands."
+                    ),
+                }
+            }
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+            }
+        }
 
     def build_repair_prompt(
         self,
@@ -200,3 +235,25 @@ def excerpt(value: str, limit: int = OUTPUT_EXCERPT_LIMIT) -> str:
         + f"\n... truncated {len(value) - limit} characters ...\n"
         + value[-half:]
     )
+
+
+def invokes_gluon_cli(command: str) -> bool:
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    expect_command = True
+    for token in tokens:
+        if token in {";", "&&", "||", "|"}:
+            expect_command = True
+            continue
+        if not expect_command:
+            continue
+        if "=" in token and token.split("=", 1)[0].isidentifier():
+            continue
+        if token in {"env", "sudo", "command"}:
+            continue
+        if Path(token).name in {"gluon", "gluon-cli"}:
+            return True
+        expect_command = False
+    return False
