@@ -65,17 +65,24 @@ Full-test generation uses a multi-agent workflow:
 
 1. Main harness agent selects one pending characterization scenario from
    `characterization-tests.db`.
-2. Context agent reads the behavior abstract, `business-kg.db`,
-   `business-extraction.db`, source files, existing tests, and JDTLS symbol
-   context. It returns a bounded context packet for one test.
-3. Input/output agent receives the context packet, generates deterministic
-   inputs including happy path, edge, boundary, and failure cases, runs the
-   test path against the legacy behavior, and stores generated inputs plus
-   observed outputs in `characterization-tests.db`.
-4. Implementation agent receives the context packet and stored observations,
-   writes the executable project-native test, uses mocks or fakes for external
-   dependencies, and verifies it with the project build/test command.
-5. Main harness agent checks `git status`, commits the accepted test and
+2. Harness gives the Context Agent seed context: scenario ID, behavior ID, KG
+   node ID, abstract/scaffold path, database paths, repo path, allowed
+   commands/tools, and relevant status rows.
+3. Context Agent expands the seed into a structured JSON context packet by
+   reading bounded rows from `business-kg.db`, `business-extraction.db`, and
+   `characterization-tests.db`, plus source files, existing tests, and JDTLS
+   symbol context.
+4. Harness validates the context packet shape before passing it to downstream
+   agents.
+5. Input/Output Agent receives the validated context packet, generates
+   deterministic inputs including happy path, edge, boundary, and failure
+   cases, runs the test path against the legacy behavior, and stores generated
+   inputs plus observed outputs in `characterization-tests.db`.
+6. Implementation Agent receives the validated context packet and stored
+   observations, writes the executable project-native test, uses mocks or fakes
+   for external dependencies, and verifies it with the project build/test
+   command.
+7. Main harness agent checks `git status`, commits the accepted test and
    related `characterization-tests.db` changes, then moves to the next
    scenario.
 

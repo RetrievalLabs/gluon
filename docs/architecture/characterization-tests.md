@@ -146,16 +146,22 @@ multi-agent workflows, or commit repository changes.
 
 1. Main harness agent selects one pending scenario from
    `characterization-tests.db`.
-2. Context agent builds a context packet from the abstract, KG rows, extraction
-   rows, source, existing tests, and JDTLS.
-3. Input/output agent generates deterministic inputs, including happy path,
+2. Harness gives the Context Agent seed context: scenario ID, behavior ID, KG
+   node ID, abstract/scaffold path, database paths, repo path, allowed
+   commands/tools, and relevant status rows.
+3. Context Agent expands the seed into a structured JSON context packet from
+   the abstract, KG rows, extraction rows, characterization rows, source,
+   existing tests, and JDTLS.
+4. Harness validates the context packet shape before passing it to the
+   Input/Output Agent and Implementation Agent.
+5. Input/Output Agent generates deterministic inputs, including happy path,
    edge, boundary, and failure cases, then captures observed legacy outputs.
-4. Implementation agent writes the full executable project-native test using
+6. Implementation Agent writes the full executable project-native test using
    mocks or fakes for external dependencies.
-5. Harness verifies the test with the project build/test command.
-6. Harness stores inputs, observations, fake boundary calls, and scenario status
-   in `characterization-tests.db`.
-7. Harness commits the accepted test and related snapshot DB update, then moves
+7. Harness verifies the test with the project build/test command.
+8. Harness stores inputs, observations, fake boundary calls, and scenario status
+   in `characterization-tests.db` through Gluon CLI database commands.
+9. Harness commits the accepted test and related snapshot DB update, then moves
    to the next scenario.
 
 Failures stop the current scenario after recording diagnostics. The next run
@@ -165,7 +171,7 @@ resumes from unfinished or failed scenarios.
 
 Testcase inputs are first-class artifacts.
 
-The input/output agent proposes input candidates for each selected behavior:
+The Input/Output Agent proposes input candidates for each selected behavior:
 
 - happy-path inputs
 - edge-case inputs
@@ -202,8 +208,8 @@ full test implementation and observation.
 
 Agents may:
 
-- build context packets from bounded database rows, source, existing tests, and
-  JDTLS results
+- return structured JSON context packets from bounded database rows, source,
+  existing tests, and JDTLS results
 - propose deterministic testcase inputs, fixtures, fake requirements,
   invocation paths, and observation points
 - write generated characterization test files
@@ -214,6 +220,7 @@ Agents may:
 
 Agents must not:
 
+- choose which scenario to process
 - modify production source or user-authored tests
 - call real external services from generated tests
 - invent expected outputs
@@ -230,6 +237,8 @@ Code-parser owns:
 
 Harness owns:
 
+- scenario selection and seed context construction
+- context packet schema validation
 - context packet orchestration
 - input and observation capture
 - full test file edits
@@ -403,9 +412,9 @@ evidence where available.
 
 Do not expose arbitrary SQL or unrestricted repository writes to agents.
 
-Context and input/output agents use bounded database and source access. The
-preferred database interface is the public Gluon CLI DB command set documented
-in the `gluon-cli` skill.
+Context and Input/Output agents return structured JSON only. They use bounded
+database and source access. The preferred database interface is the public
+Gluon CLI DB command set documented in the `gluon-cli` skill.
 
 Use bounded conceptual tools or equivalent Gluon CLI DB reads:
 
@@ -445,9 +454,11 @@ JDTLS tool results must be normalized before returning to agents:
 - short source excerpt when needed
 - relationship to the selected behavior context
 
-Agents produce context packets, input proposals, observations, and full test
-edits. Harness validates proposed inputs, writes snapshots, runs approved
-project test commands, and commits accepted generated tests.
+Context and Input/Output agents produce JSON context packets, input proposals,
+and observations. Harness validates those JSON payloads, writes snapshots
+through Gluon CLI database commands, runs approved project test commands, and
+commits accepted generated tests. Implementation Agent is the only agent that
+may edit generated test files.
 
 ## Determinism Rules
 
@@ -504,7 +515,7 @@ Harness uses one bounded loop per scenario:
 ```text
 main harness agent selects pending scenario
 context agent builds context packet
-input/output agent generates inputs and captures legacy outputs
+Input/Output Agent generates inputs and captures legacy outputs
 implementation agent writes full test with mocks/fakes
 harness verifies project test command
 harness stores snapshots in characterization-tests.db
