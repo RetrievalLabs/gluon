@@ -16,6 +16,9 @@ class ClaudeAgentClient:
     def __init__(self, config: HarnessConfig, log_path: Path | None = None) -> None:
         self.config = config
         self.log_path = log_path
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._client: Any | None = None
+        self._client_repo_path: Path | None = None
 
     def validate(self) -> None:
         # Import lazily so offline tests can run without the SDK installed.
@@ -46,21 +49,58 @@ class ClaudeAgentClient:
         return result
 
     def run_agent(self, repo_path: Path, prompt: str) -> str:
-        return asyncio.run(self.run_agent_async(repo_path, prompt))
+        return self.event_loop().run_until_complete(
+            self.run_agent_async(repo_path, prompt)
+        )
 
     async def run_agent_async(self, repo_path: Path, prompt: str) -> str:
-        from claude_agent_sdk import ClaudeAgentOptions, query
-
-        options = ClaudeAgentOptions(**self.agent_options_kwargs(repo_path))
+        client = await self.agent_client(repo_path)
+        await client.query(prompt)
         result_text = "no result message returned"
-        async for message in query(prompt=prompt, options=options):
+        async for message in client.receive_messages():
             if hasattr(message, "result") and getattr(message, "result"):
                 result_text = str(getattr(message, "result"))
             if getattr(message, "is_error", False):
                 errors = getattr(message, "errors", None)
                 detail = ", ".join(errors) if errors else result_text
                 raise RuntimeError(f"Claude agent repair failed: {detail}")
+            if hasattr(message, "num_turns"):
+                break
         return excerpt(result_text)
+
+    async def agent_client(self, repo_path: Path) -> Any:
+        if self._client is not None:
+            if self._client_repo_path != repo_path:
+                raise RuntimeError("Claude agent session cannot switch repositories")
+            return self._client
+
+        from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+
+        options = ClaudeAgentOptions(**self.agent_options_kwargs(repo_path))
+        self._client = ClaudeSDKClient(options=options)
+        self._client_repo_path = repo_path
+        await self._client.connect()
+        return self._client
+
+    def event_loop(self) -> asyncio.AbstractEventLoop:
+        if self._loop is None:
+            self._loop = asyncio.new_event_loop()
+        return self._loop
+
+    def close(self) -> None:
+        if self._client is None:
+            if self._loop is not None:
+                self._loop.close()
+                self._loop = None
+            return
+        loop = self.event_loop()
+        try:
+            loop.run_until_complete(self._client.disconnect())
+        finally:
+            self._client = None
+            self._client_repo_path = None
+            loop.close()
+            self._loop = None
 
     def agent_options_kwargs(self, repo_path: Path) -> dict[str, Any]:
         return {

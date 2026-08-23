@@ -36,31 +36,33 @@ class PipelineCoordinator:
         gluon = GluonCli(self.config.gluon_cli, self.paths)
         completed: list[str] = []
         try:
-            for stage in build_stages(self.config, gluon):
-                result = run_stage_with_repair(
-                    stage,
-                    runner,
-                    agent,
-                    self.paths.repo,
-                    self.config.max_agent_attempts,
-                    stage_env,
+            try:
+                for stage in build_stages(self.config, gluon):
+                    result = run_stage_with_repair(
+                        stage,
+                        runner,
+                        agent,
+                        self.paths.repo,
+                        self.config.max_agent_attempts,
+                        stage_env,
+                    )
+                    target = gluon.write_stdout_target(stage.command)
+                    if target is not None:
+                        target.write_text(result.command_result.stdout, encoding="utf-8")
+                    completed.append(stage.name)
+            except StageFailedError as error:
+                summary = RunSummary(
+                    status="failed",
+                    completed_stages=completed,
+                    failed_stage=stage.name,
+                    attempts_used=self.config.max_agent_attempts,
+                    message=str(error),
                 )
-                target = gluon.write_stdout_target(stage.command)
-                if target is not None:
-                    target.write_text(result.command_result.stdout, encoding="utf-8")
-                completed.append(stage.name)
-        except StageFailedError as error:
-            summary = RunSummary(
-                status="failed",
-                completed_stages=completed,
-                failed_stage=stage.name,
-                attempts_used=self.config.max_agent_attempts,
-                message=str(error),
-            )
-            write_summary(self.paths.summary, summary)
-            raise
+                write_summary(self.paths.summary, summary)
+                raise
+        finally:
+            agent.close()
 
         summary = RunSummary(status="ok", completed_stages=completed)
         write_summary(self.paths.summary, summary)
         return summary
-

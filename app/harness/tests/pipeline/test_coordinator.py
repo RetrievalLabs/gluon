@@ -36,6 +36,8 @@ class CoordinatorTests(unittest.TestCase):
             ), mock.patch(
                 "pipeline.coordinator.ClaudeAgentClient.validate",
             ), mock.patch(
+                "pipeline.coordinator.ClaudeAgentClient.close",
+            ) as close_agent, mock.patch(
                 "pipeline.coordinator.GitWorkspace.prepare",
             ), mock.patch(
                 "execution.commands.CommandRunner.run",
@@ -55,8 +57,8 @@ class CoordinatorTests(unittest.TestCase):
                 "generate-characterization-tests",
             ],
         )
+        close_agent.assert_called_once()
 
 
 if __name__ == "__main__":
     unittest.main()
-

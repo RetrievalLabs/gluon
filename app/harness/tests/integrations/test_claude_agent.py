@@ -9,6 +9,28 @@ from models.command import CommandResult
 from models.config import HarnessConfig
 
 
+class FakeResultMessage:
+    def __init__(self, result: str) -> None:
+        self.result = result
+        self.is_error = False
+        self.num_turns = 1
+
+
+class FakeSdkClient:
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+        self.disconnected = False
+
+    async def query(self, prompt: str) -> None:
+        self.prompts.append(prompt)
+
+    async def receive_messages(self):
+        yield FakeResultMessage("fixed")
+
+    async def disconnect(self) -> None:
+        self.disconnected = True
+
+
 class ClaudeAgentTests(unittest.TestCase):
     def test_records_repair_attempt(self) -> None:
         config = HarnessConfig(
@@ -71,6 +93,33 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertEqual(options["skills"], ["gluon-cli"])
         self.assertIn("system_prompt", options)
         self.assertTrue(options["system_prompt"]["exclude_dynamic_sections"])
+
+    def test_reuses_connected_agent_client(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+        client = ClaudeAgentClient(config)
+        sdk_client = FakeSdkClient()
+        client._client = sdk_client
+        client._client_repo_path = Path("/repo")
+
+        try:
+            first = client.run_agent(Path("/repo"), "first")
+            second = client.run_agent(Path("/repo"), "second")
+        finally:
+            client.close()
+
+        self.assertEqual(first, "fixed")
+        self.assertEqual(second, "fixed")
+        self.assertEqual(sdk_client.prompts, ["first", "second"])
+        self.assertTrue(sdk_client.disconnected)
 
 
 if __name__ == "__main__":
