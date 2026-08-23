@@ -297,6 +297,11 @@ and how the configured fake response affected application behavior.
 Generated inputs and observed outputs are stored outside the legacy repository
 in `characterization-tests.db` under the Gluon output directory.
 
+The shared protobuf contract lives at
+`app/package/gluon/db/v1/characterization_tests.proto`. Code-parser and harness
+use that contract for shared table, row, and lifecycle names. Code-parser still
+owns SQLite DDL, indexes, foreign keys, migrations, and defaults.
+
 Suggested tables:
 
 ### `characterization_runs`

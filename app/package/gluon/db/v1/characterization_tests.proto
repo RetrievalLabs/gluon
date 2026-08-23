@@ -1,0 +1,157 @@
+syntax = "proto3";
+
+package gluon.db.v1;
+
+// Shared contract for characterization-tests.db.
+//
+// Code-parser owns SQLite DDL and migrations. Harness uses this contract to
+// avoid inventing table, column, and lifecycle names independently.
+
+enum CharacterizationRunStatus {
+  CHARACTERIZATION_RUN_STATUS_UNSPECIFIED = 0;
+  CHARACTERIZATION_RUN_STATUS_RUNNING = 1;
+  CHARACTERIZATION_RUN_STATUS_COMPLETED = 2;
+  CHARACTERIZATION_RUN_STATUS_FAILED = 3;
+}
+
+enum CharacterizationBehaviorStatus {
+  CHARACTERIZATION_BEHAVIOR_STATUS_UNSPECIFIED = 0;
+  CHARACTERIZATION_BEHAVIOR_STATUS_SELECTED = 1;
+  CHARACTERIZATION_BEHAVIOR_STATUS_SKIPPED = 2;
+}
+
+enum CharacterizationScenarioStatus {
+  CHARACTERIZATION_SCENARIO_STATUS_UNSPECIFIED = 0;
+  CHARACTERIZATION_SCENARIO_STATUS_GENERATED_SCAFFOLD = 1;
+  CHARACTERIZATION_SCENARIO_STATUS_IMPLEMENTING = 2;
+  CHARACTERIZATION_SCENARIO_STATUS_OBSERVING = 3;
+  CHARACTERIZATION_SCENARIO_STATUS_ACCEPTED = 4;
+  CHARACTERIZATION_SCENARIO_STATUS_COMMITTED = 5;
+  CHARACTERIZATION_SCENARIO_STATUS_SKIPPED = 6;
+  CHARACTERIZATION_SCENARIO_STATUS_FAILED = 7;
+}
+
+enum CharacterizationScenarioKind {
+  CHARACTERIZATION_SCENARIO_KIND_UNSPECIFIED = 0;
+  CHARACTERIZATION_SCENARIO_KIND_SCAFFOLD = 1;
+  CHARACTERIZATION_SCENARIO_KIND_HAPPY_PATH = 2;
+  CHARACTERIZATION_SCENARIO_KIND_EDGE = 3;
+  CHARACTERIZATION_SCENARIO_KIND_BOUNDARY = 4;
+  CHARACTERIZATION_SCENARIO_KIND_FAILURE = 5;
+}
+
+enum CharacterizationObservationStatus {
+  CHARACTERIZATION_OBSERVATION_STATUS_UNSPECIFIED = 0;
+  CHARACTERIZATION_OBSERVATION_STATUS_OBSERVED = 1;
+  CHARACTERIZATION_OBSERVATION_STATUS_FAILED = 2;
+}
+
+enum CharacterizationDiagnosticSeverity {
+  CHARACTERIZATION_DIAGNOSTIC_SEVERITY_UNSPECIFIED = 0;
+  CHARACTERIZATION_DIAGNOSTIC_SEVERITY_INFO = 1;
+  CHARACTERIZATION_DIAGNOSTIC_SEVERITY_WARNING = 2;
+  CHARACTERIZATION_DIAGNOSTIC_SEVERITY_ERROR = 3;
+}
+
+enum CharacterizationTable {
+  CHARACTERIZATION_TABLE_UNSPECIFIED = 0;
+  CHARACTERIZATION_TABLE_RUNS = 1;
+  CHARACTERIZATION_TABLE_BEHAVIORS = 2;
+  CHARACTERIZATION_TABLE_SCENARIOS = 3;
+  CHARACTERIZATION_TABLE_INPUTS = 4;
+  CHARACTERIZATION_TABLE_OBSERVATIONS = 5;
+  CHARACTERIZATION_TABLE_FILES = 6;
+  CHARACTERIZATION_TABLE_FAKES = 7;
+  CHARACTERIZATION_TABLE_DIAGNOSTICS = 8;
+}
+
+message CharacterizationRunRow {
+  int64 id = 1;
+  string mode = 2;
+  string source_path = 3;
+  string business_database_path = 4;
+  string kg_database_path = 5;
+  CharacterizationRunStatus status = 6;
+  string started_at = 7;
+  optional string finished_at = 8;
+  int64 selected_behaviors = 9;
+  int64 persisted_behaviors = 10;
+  int64 skipped_behaviors = 11;
+  int64 diagnostics = 12;
+}
+
+message CharacterizationBehaviorRow {
+  string id = 1;
+  int64 run_id = 2;
+  string kg_node_id = 3;
+  string node_kind = 4;
+  string node_name = 5;
+  string node_statement = 6;
+  string source_method_ids_json = 7;
+  CharacterizationBehaviorStatus status = 8;
+}
+
+message CharacterizationScenarioRow {
+  string id = 1;
+  int64 run_id = 2;
+  string behavior_id = 3;
+  string name = 4;
+  CharacterizationScenarioKind scenario_kind = 5;
+  optional string invocation_kind = 6;
+  CharacterizationScenarioStatus status = 7;
+  optional string diagnostic_reason = 8;
+}
+
+message CharacterizationInputRow {
+  string id = 1;
+  string scenario_id = 2;
+  string input_json = 3;
+  string fixture_json = 4;
+  string deterministic_seed_json = 5;
+}
+
+message CharacterizationObservationRow {
+  string id = 1;
+  string scenario_id = 2;
+  string input_id = 3;
+  CharacterizationObservationStatus status = 4;
+  optional string return_value_json = 5;
+  optional string response_body = 6;
+  optional string exception_type = 7;
+  optional string exception_message = 8;
+  string emitted_events_json = 9;
+  string database_side_effects_json = 10;
+  string fake_boundary_calls_json = 11;
+  string normalized_output_json = 12;
+}
+
+message CharacterizationFileRow {
+  int64 id = 1;
+  string scenario_id = 2;
+  string path = 3;
+  string class_name = 4;
+  string package_name = 5;
+  string content_hash = 6;
+  string generated_marker = 7;
+}
+
+message CharacterizationFakeRow {
+  int64 id = 1;
+  string scenario_id = 2;
+  string dependency_name = 3;
+  string fake_strategy = 4;
+  optional string source_file_path = 5;
+  string boundary_calls_json = 6;
+}
+
+message CharacterizationDiagnosticRow {
+  int64 id = 1;
+  int64 run_id = 2;
+  optional string behavior_id = 3;
+  optional string kg_node_id = 4;
+  optional string scenario_id = 5;
+  CharacterizationDiagnosticSeverity severity = 6;
+  string category = 7;
+  string message = 8;
+}
+
