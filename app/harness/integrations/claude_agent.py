@@ -78,6 +78,7 @@ class ClaudeAgentClient:
             ],
             "permission_mode": "dontAsk",
             "max_turns": 20,
+            "skills": ["gluon-cli"],
             "system_prompt": {
                 "type": "preset",
                 "preset": "claude_code",
@@ -138,27 +139,7 @@ Stderr:
 ```text
 {excerpt(failed.stderr)}
 ```
-
-Gluon CLI skill:
-```markdown
-{self.gluon_cli_skill()}
-```
 """
-
-    def gluon_cli_skill(self) -> str:
-        configured_path = os.environ.get("GLUON_CLI_SKILL_PATH")
-        skill_path = (
-            Path(configured_path)
-            if configured_path
-            else Path(__file__).resolve().parents[3]
-            / "skills"
-            / "gluon-cli"
-            / "SKILL.md"
-        )
-        try:
-            return skill_path.read_text(encoding="utf-8")
-        except OSError as error:
-            return f"Failed to read {skill_path}: {error}"
 
     def record(self, attempt: AgentAttempt) -> None:
         if self.log_path is None:
