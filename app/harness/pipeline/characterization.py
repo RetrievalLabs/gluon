@@ -1,3 +1,4 @@
+from contextlib import closing
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -36,39 +37,41 @@ def run_characterization_agent_loop(
 
 
 def count_incomplete_scenarios(database: Path) -> int:
-    with sqlite3.connect(database) as connection:
-        return int(
-            connection.execute(
-                incomplete_scenarios_sql("COUNT(DISTINCT s.id)"),
-            ).fetchone()[0]
-        )
+    with closing(sqlite3.connect(database)) as connection:
+        with connection:
+            return int(
+                connection.execute(
+                    incomplete_scenarios_sql("COUNT(DISTINCT s.id)"),
+                ).fetchone()[0]
+            )
 
 
 def select_next_scenario(
     paths: HarnessPaths,
     excluded_ids: set[str],
 ) -> dict[str, Any] | None:
-    with sqlite3.connect(paths.characterization_db) as connection:
-        connection.row_factory = sqlite3.Row
-        rows = connection.execute(
-            incomplete_scenarios_sql(
-                """
-                s.id AS scenario_id,
-                s.behavior_id,
-                b.kg_node_id,
-                s.name,
-                s.scenario_kind,
-                s.invocation_kind,
-                s.status,
-                s.diagnostic_reason,
-                MIN(f.path) AS scaffold_path
-                """
-            )
-            + """
-                GROUP BY s.id
-                ORDER BY s.id
-              """,
-        ).fetchall()
+    with closing(sqlite3.connect(paths.characterization_db)) as connection:
+        with connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                incomplete_scenarios_sql(
+                    """
+                    s.id AS scenario_id,
+                    s.behavior_id,
+                    b.kg_node_id,
+                    s.name,
+                    s.scenario_kind,
+                    s.invocation_kind,
+                    s.status,
+                    s.diagnostic_reason,
+                    MIN(f.path) AS scaffold_path
+                    """
+                )
+                + """
+                    GROUP BY s.id
+                    ORDER BY s.id
+                  """,
+            ).fetchall()
 
     for row in rows:
         if row["scenario_id"] not in excluded_ids:

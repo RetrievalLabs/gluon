@@ -1,3 +1,4 @@
+from contextlib import closing
 import sqlite3
 import tempfile
 import unittest
@@ -84,39 +85,40 @@ class CharacterizationLoopTests(unittest.TestCase):
 
 
 def write_characterization_db(path: Path) -> None:
-    with sqlite3.connect(path) as connection:
-        connection.executescript(
-            """
-            CREATE TABLE characterization_behaviors (
-                id TEXT PRIMARY KEY,
-                kg_node_id TEXT NOT NULL
-            );
-            CREATE TABLE characterization_scenarios (
-                id TEXT PRIMARY KEY,
-                behavior_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                scenario_kind TEXT NOT NULL,
-                invocation_kind TEXT,
-                status TEXT NOT NULL,
-                diagnostic_reason TEXT
-            );
-            CREATE TABLE characterization_files (
-                scenario_id TEXT NOT NULL,
-                path TEXT NOT NULL
-            );
-            INSERT INTO characterization_behaviors (id, kg_node_id)
-            VALUES ('behavior:one', 'node:one');
-            INSERT INTO characterization_scenarios (
-                id, behavior_id, name, scenario_kind, invocation_kind, status,
-                diagnostic_reason
-            ) VALUES (
-                'scenario:one', 'behavior:one', 'Approve', 'happy_path',
-                'method', 'generated_scaffold', NULL
-            );
-            INSERT INTO characterization_files (scenario_id, path)
-            VALUES ('scenario:one', 'gluon/tests/Test.java');
-            """
-        )
+    with closing(sqlite3.connect(path)) as connection:
+        with connection:
+            connection.executescript(
+                """
+                CREATE TABLE characterization_behaviors (
+                    id TEXT PRIMARY KEY,
+                    kg_node_id TEXT NOT NULL
+                );
+                CREATE TABLE characterization_scenarios (
+                    id TEXT PRIMARY KEY,
+                    behavior_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    scenario_kind TEXT NOT NULL,
+                    invocation_kind TEXT,
+                    status TEXT NOT NULL,
+                    diagnostic_reason TEXT
+                );
+                CREATE TABLE characterization_files (
+                    scenario_id TEXT NOT NULL,
+                    path TEXT NOT NULL
+                );
+                INSERT INTO characterization_behaviors (id, kg_node_id)
+                VALUES ('behavior:one', 'node:one');
+                INSERT INTO characterization_scenarios (
+                    id, behavior_id, name, scenario_kind, invocation_kind, status,
+                    diagnostic_reason
+                ) VALUES (
+                    'scenario:one', 'behavior:one', 'Approve', 'happy_path',
+                    'method', 'generated_scaffold', NULL
+                );
+                INSERT INTO characterization_files (scenario_id, path)
+                VALUES ('scenario:one', 'gluon/tests/Test.java');
+                """
+            )
 
 
 if __name__ == "__main__":
