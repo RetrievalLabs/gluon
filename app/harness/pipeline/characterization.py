@@ -1,4 +1,6 @@
 from contextlib import closing
+import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -77,9 +79,21 @@ INPUT_SCENARIO_ID = characterization_field(
     characterization_tests_pb2.CharacterizationInputRow,
     "scenario_id",
 )
+INPUT_ID = characterization_field(
+    characterization_tests_pb2.CharacterizationInputRow,
+    "id",
+)
+INPUT_JSON = characterization_field(
+    characterization_tests_pb2.CharacterizationInputRow,
+    "input_json",
+)
 OBSERVATION_SCENARIO_ID = characterization_field(
     characterization_tests_pb2.CharacterizationObservationRow,
     "scenario_id",
+)
+OBSERVATION_INPUT_ID = characterization_field(
+    characterization_tests_pb2.CharacterizationObservationRow,
+    "input_id",
 )
 COMPLETED_SCENARIO_STATUSES = {
     characterization_scenario_status(
@@ -113,7 +127,7 @@ def run_characterization_agent_loop(
 
     completed: list[str] = []
     processed: set[str] = set()
-    for _ in range(count_incomplete_scenarios(paths.characterization_db)):
+    for _ in range(count_incomplete_scenarios(paths.characterization_db, paths.repo)):
         scenario = select_next_scenario(paths, processed)
         if scenario is None:
             break
@@ -122,7 +136,12 @@ def run_characterization_agent_loop(
         processed.add(scenario_id)
         seed_context = build_seed_context(paths, scenario)
         agent.run_characterization_scenario(scenario_id, paths.repo, seed_context)
-        ensure_characterization_scenario_completed(paths.characterization_db, scenario_id)
+        ensure_characterization_scenario_completed(
+            paths.characterization_db,
+            scenario_id,
+            paths.repo,
+            scenario.get("scaffold_path"),
+        )
         commit_characterization_test(
             runner,
             paths.repo,
@@ -135,65 +154,68 @@ def run_characterization_agent_loop(
     return completed
 
 
-def count_incomplete_scenarios(database: Path) -> int:
+def count_incomplete_scenarios(database: Path, repo_path: Path | None = None) -> int:
+    return sum(
+        1
+        for scenario in candidate_scenarios(database)
+        if not scenario_is_complete(database, scenario, repo_path)
+    )
+
+
+def candidate_scenarios(database: Path) -> list[dict[str, Any]]:
     with closing(sqlite3.connect(database)) as connection:
         with connection:
-            return int(
-                connection.execute(
-                    incomplete_scenarios_sql("COUNT(DISTINCT s.id)"),
-                ).fetchone()[0]
-            )
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                candidate_scenarios_sql(scenario_projection())
+                + f"""
+                    GROUP BY s.{SCENARIO_ID}
+                    ORDER BY s.{SCENARIO_ID}
+                  """
+            ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def select_next_scenario(
     paths: HarnessPaths,
     excluded_ids: set[str],
 ) -> dict[str, Any] | None:
-    with closing(sqlite3.connect(paths.characterization_db)) as connection:
-        with connection:
-            connection.row_factory = sqlite3.Row
-            rows = connection.execute(
-                incomplete_scenarios_sql(
-                    scenario_projection()
-                )
-                + f"""
-                    GROUP BY s.{SCENARIO_ID}
-                    ORDER BY s.{SCENARIO_ID}
-                  """
-            ).fetchall()
-
-    for row in rows:
-        if row["scenario_id"] not in excluded_ids:
-            return dict(row)
+    for row in candidate_scenarios(paths.characterization_db):
+        if row["scenario_id"] not in excluded_ids and not scenario_is_complete(
+            paths.characterization_db,
+            row,
+            paths.repo,
+        ):
+            return row
     return None
 
 
-def incomplete_scenarios_sql(select_clause: str) -> str:
+def candidate_scenarios_sql(select_clause: str) -> str:
     return f"""
         SELECT {select_clause}
         FROM {SCENARIOS_TABLE} s
         JOIN {BEHAVIORS_TABLE} b ON b.{BEHAVIOR_ID} = s.{SCENARIO_BEHAVIOR_ID}
         LEFT JOIN {FILES_TABLE} f ON f.{FILE_SCENARIO_ID} = s.{SCENARIO_ID}
-        LEFT JOIN {INPUTS_TABLE} i ON i.{INPUT_SCENARIO_ID} = s.{SCENARIO_ID}
-        LEFT JOIN {OBSERVATIONS_TABLE} o ON o.{OBSERVATION_SCENARIO_ID} = s.{SCENARIO_ID}
-        WHERE NOT {completed_scenario_sql()}
+        WHERE s.{SCENARIO_STATUS} != '{SKIPPED_SCENARIO_STATUS}'
     """
 
 
-def completed_scenario_sql() -> str:
-    return f"""
-        (
-            s.{SCENARIO_STATUS} = '{SKIPPED_SCENARIO_STATUS}'
-            OR (
-                s.{SCENARIO_STATUS} IN (
-                    '{ACCEPTED_SCENARIO_STATUS}',
-                    '{COMMITTED_SCENARIO_STATUS}'
-                )
-                AND i.rowid IS NOT NULL
-                AND o.rowid IS NOT NULL
-            )
-        )
-    """
+def scenario_is_complete(
+    database: Path,
+    scenario: dict[str, Any],
+    repo_path: Path | None,
+) -> bool:
+    status = str(scenario["status"])
+    if status == SKIPPED_SCENARIO_STATUS:
+        return True
+    if status not in {ACCEPTED_SCENARIO_STATUS, COMMITTED_SCENARIO_STATUS}:
+        return False
+    return scenario_has_input_output_coverage(
+        database,
+        str(scenario["scenario_id"]),
+        repo_path,
+        scenario.get("scaffold_path"),
+    )
 
 
 def scenario_projection() -> str:
@@ -242,7 +264,12 @@ def build_seed_context(paths: HarnessPaths, scenario: dict[str, Any]) -> dict[st
     }
 
 
-def ensure_characterization_scenario_completed(database: Path, scenario_id: str) -> None:
+def ensure_characterization_scenario_completed(
+    database: Path,
+    scenario_id: str,
+    repo_path: Path | None = None,
+    scaffold_path: str | None = None,
+) -> None:
     with closing(sqlite3.connect(database)) as connection:
         with connection:
             row = connection.execute(
@@ -273,6 +300,84 @@ def ensure_characterization_scenario_completed(database: Path, scenario_id: str)
             "characterization scenario "
             f"{scenario_id} missing stored inputs or observations"
         )
+    if not scenario_has_input_output_coverage(
+        database,
+        scenario_id,
+        repo_path,
+        scaffold_path,
+    ):
+        missing = missing_input_output_methods(database, scenario_id, repo_path, scaffold_path)
+        raise StageFailedError(
+            "characterization scenario "
+            f"{scenario_id} missing input/output coverage for test methods: "
+            f"{', '.join(missing)}"
+        )
+
+
+def scenario_has_input_output_coverage(
+    database: Path,
+    scenario_id: str,
+    repo_path: Path | None,
+    scaffold_path: str | None,
+) -> bool:
+    return not missing_input_output_methods(database, scenario_id, repo_path, scaffold_path)
+
+
+def missing_input_output_methods(
+    database: Path,
+    scenario_id: str,
+    repo_path: Path | None,
+    scaffold_path: str | None,
+) -> list[str]:
+    test_methods = test_methods_for_scaffold(repo_path, scaffold_path)
+    if not test_methods:
+        return []
+    covered_methods = input_methods_with_observations(database, scenario_id)
+    return sorted(test_methods - covered_methods)
+
+
+def test_methods_for_scaffold(repo_path: Path | None, scaffold_path: str | None) -> set[str]:
+    if repo_path is None or not scaffold_path:
+        return set()
+    test_file = repo_path / scaffold_path
+    if not test_file.exists():
+        raise StageFailedError(f"missing characterization test file {scaffold_path}")
+    source = test_file.read_text(encoding="utf-8")
+    return set(
+        re.findall(
+            r"@Test(?:\s*\([^)]*\))?(?:\s*@\w+(?:\([^)]*\))?)*\s*(?:public\s+)?void\s+([A-Za-z_]\w*)\s*\(",
+            source,
+        )
+    )
+
+
+def input_methods_with_observations(database: Path, scenario_id: str) -> set[str]:
+    with closing(sqlite3.connect(database)) as connection:
+        with connection:
+            rows = connection.execute(
+                f"""
+                SELECT i.{INPUT_JSON}, COUNT(o.rowid)
+                FROM {INPUTS_TABLE} i
+                LEFT JOIN {OBSERVATIONS_TABLE} o
+                    ON o.{OBSERVATION_INPUT_ID} = i.{INPUT_ID}
+                    AND o.{OBSERVATION_SCENARIO_ID} = i.{INPUT_SCENARIO_ID}
+                WHERE i.{INPUT_SCENARIO_ID} = ?
+                GROUP BY i.{INPUT_ID}, i.{INPUT_JSON}
+                """,
+                [scenario_id],
+            ).fetchall()
+
+    methods = set()
+    for input_json, observation_count in rows:
+        if observation_count == 0:
+            continue
+        try:
+            method = json.loads(input_json).get("method")
+        except json.JSONDecodeError:
+            continue
+        if isinstance(method, str) and method:
+            methods.add(method)
+    return methods
 
 
 def commit_characterization_test(

@@ -1,4 +1,5 @@
 from contextlib import closing
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -150,6 +151,8 @@ OBSERVATION_NORMALIZED_OUTPUT_JSON = characterization_field(
 
 
 class FakeAgent:
+    methods = ["successfulDeletionPublishesAudit", "missingEventTypeDoesNotPublish"]
+
     def __init__(self) -> None:
         self.calls: list[tuple[str, Path, dict[str, object]]] = []
 
@@ -171,28 +174,30 @@ class FakeAgent:
                     """,
                     [ACCEPTED, scenario_id],
                 )
-                connection.execute(
-                    f"""
-                    INSERT INTO {INPUTS_TABLE} (
-                        {INPUT_ID}, {INPUT_SCENARIO_ID}, {INPUT_JSON},
-                        {FIXTURE_JSON}, {DETERMINISTIC_SEED_JSON}
-                    ) VALUES (?, ?, '{{}}', '{{}}', '{{}}')
-                    """,
-                    [f"input:{scenario_id}", scenario_id],
-                )
-                connection.execute(
-                    f"""
-                    INSERT INTO {OBSERVATIONS_TABLE} (
-                        {OBSERVATION_ID}, {OBSERVATION_SCENARIO_ID},
-                        {OBSERVATION_INPUT_ID}, {OBSERVATION_STATUS},
-                        {OBSERVATION_EMITTED_EVENTS_JSON},
-                        {OBSERVATION_DATABASE_SIDE_EFFECTS_JSON},
-                        {OBSERVATION_FAKE_BOUNDARY_CALLS_JSON},
-                        {OBSERVATION_NORMALIZED_OUTPUT_JSON}
-                    ) VALUES (?, ?, ?, 'observed', '[]', '[]', '[]', '{{}}')
-                    """,
-                    [f"observation:{scenario_id}", scenario_id, f"input:{scenario_id}"],
-                )
+                for method in self.methods:
+                    input_id = f"input:{scenario_id}:{method}"
+                    connection.execute(
+                        f"""
+                        INSERT INTO {INPUTS_TABLE} (
+                            {INPUT_ID}, {INPUT_SCENARIO_ID}, {INPUT_JSON},
+                            {FIXTURE_JSON}, {DETERMINISTIC_SEED_JSON}
+                        ) VALUES (?, ?, ?, '{{}}', '{{}}')
+                        """,
+                        [input_id, scenario_id, json.dumps({"method": method})],
+                    )
+                    connection.execute(
+                        f"""
+                        INSERT INTO {OBSERVATIONS_TABLE} (
+                            {OBSERVATION_ID}, {OBSERVATION_SCENARIO_ID},
+                            {OBSERVATION_INPUT_ID}, {OBSERVATION_STATUS},
+                            {OBSERVATION_EMITTED_EVENTS_JSON},
+                            {OBSERVATION_DATABASE_SIDE_EFFECTS_JSON},
+                            {OBSERVATION_FAKE_BOUNDARY_CALLS_JSON},
+                            {OBSERVATION_NORMALIZED_OUTPUT_JSON}
+                        ) VALUES (?, ?, ?, 'observed', '[]', '[]', '[]', '{{}}')
+                        """,
+                        [f"observation:{scenario_id}:{method}", scenario_id, input_id],
+                    )
 
 
 class FakeRunner:
@@ -229,6 +234,7 @@ class CharacterizationLoopTests(unittest.TestCase):
             paths = HarnessPaths.from_org_project("org/project", Path(directory))
             paths.characterization_db.parent.mkdir(parents=True)
             write_characterization_db(paths.characterization_db)
+            write_characterization_test_file(paths.repo)
             agent = FakeAgent()
             runner = FakeRunner()
 
@@ -278,12 +284,28 @@ class CharacterizationLoopTests(unittest.TestCase):
             paths = HarnessPaths.from_org_project("org/project", Path(directory))
             paths.characterization_db.parent.mkdir(parents=True)
             write_characterization_db(paths.characterization_db, status=ACCEPTED)
+            write_characterization_test_file(paths.repo)
             agent = FakeAgent()
 
             completed = run_characterization_agent_loop(paths, agent, FakeRunner())
 
         self.assertEqual(completed, ["scenario:one"])
         self.assertEqual(len(agent.calls), 1)
+
+    def test_fails_when_agent_does_not_cover_every_generated_test_method(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = HarnessPaths.from_org_project("org/project", Path(directory))
+            paths.characterization_db.parent.mkdir(parents=True)
+            write_characterization_db(paths.characterization_db)
+            write_characterization_test_file(paths.repo)
+            agent = FakeAgentWithPartialMethodCoverage()
+
+            with self.assertRaisesRegex(
+                StageFailedError,
+                "missing input/output coverage for test methods: "
+                "missingEventTypeDoesNotPublish",
+            ):
+                run_characterization_agent_loop(paths, agent, FakeRunner())
 
 
 def write_characterization_db(path: Path, status: str = GENERATED_SCAFFOLD) -> None:
@@ -345,6 +367,25 @@ def write_characterization_db(path: Path, status: str = GENERATED_SCAFFOLD) -> N
             )
 
 
+def write_characterization_test_file(repo_path: Path) -> None:
+    test_file = repo_path / "gluon/tests/Test.java"
+    test_file.parent.mkdir(parents=True, exist_ok=True)
+    test_file.write_text(
+        """
+        import org.junit.Test;
+
+        final class Test {
+            @Test
+            public void successfulDeletionPublishesAudit() {}
+
+            @Test
+            public void missingEventTypeDoesNotPublish() {}
+        }
+        """,
+        encoding="utf-8",
+    )
+
+
 class FakeAgentWithoutDatabaseWrites:
     def run_characterization_scenario(
         self,
@@ -363,6 +404,10 @@ class FakeAgentWithoutDatabaseWrites:
                     """,
                     [ACCEPTED, scenario_id],
                 )
+
+
+class FakeAgentWithPartialMethodCoverage(FakeAgent):
+    methods = ["successfulDeletionPublishesAudit"]
 
 
 if __name__ == "__main__":

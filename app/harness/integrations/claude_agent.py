@@ -260,7 +260,7 @@ You are the main agent. Follow this order exactly:
 4. As main agent, use the Task tool to give the context packet and implementation responsibility to the Implementation Agent.
 5. Implementation Agent writes the executable project-native characterization test using mocks or fakes for external dependencies, then runs the project-local test command and repairs compile/test failures.
 6. As main agent, use the Task tool to give the written test and context packet to the Input/Output Agent.
-7. Input/Output Agent generates deterministic inputs, reruns the written test with those inputs, captures observed outputs, inserts at least one row into `characterization_inputs`, inserts at least one row into `characterization_observations`, and updates the scenario status to `accepted` in `characterization-tests.db` using only Gluon CLI database commands.
+7. Input/Output Agent enumerates every generated `@Test` method, generates deterministic inputs for each method, reruns the written test with those inputs, captures observed outputs, inserts one row per test method into `characterization_inputs`, inserts one linked row per test method into `characterization_observations`, and updates the scenario status to `accepted` in `characterization-tests.db` using only Gluon CLI database commands.
 8. Verify with the project-local build/test command after database writes.
 9. Return control to harness only after the test passes, inputs are stored, observations are stored, and scenario status is `accepted`. Do not select the next scenario.
 
@@ -268,6 +268,7 @@ Rules:
 - Work only on the selected scenario.
 - Do not modify production source or user-authored tests.
 - Do not invent expected outputs. Outputs must come from running the written test with generated inputs.
+- Store each test method name in `characterization_inputs.input_json.method`; harness uses that to verify coverage.
 - Do not run Gluon pipeline commands. You may run only `gluon[-cli] code-parser db ...` or `gluon[-cli] db ...` database commands.
 - Use `gluon[-cli] ... db insert` for new input and observation rows. Use `gluon[-cli] ... db update` for scenario status.
 - Use git status/diff for review, but do not commit. Harness commits after control returns.
