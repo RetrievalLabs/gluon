@@ -24,15 +24,13 @@ Missing or invalid required config is fatal.
 1. Validate required environment variables.
 2. Validate Anthropic API key and base URL with a test request.
 3. Request repo URL, source branch, and token from backend. Mock this until backend is ready.
-4. Clone repo into `/opt/gluon/org/project/{}`.
-5. Checkout source branch and create migration branch.
-6. Set `JAVA_HOME` to `/opt/jdks/jdk{CURRENT_VERSION}`.
-7. Run `gluon-cli parse-build` to create `/opt/gluon/org/build-report`.
-8. Run `gluon-cli analyze-report` to create `/opt/gluon/org/compatibility-report`.
-9. Run `gluon-cli extract-business` to create `/opt/gluon/org/extraction.db`.
-10. Run `gluon-cli extract-tests` to append test extraction tables to `/opt/gluon/org/extraction.db`.
-11. Run `gluon-cli build-business-kg` to create `/opt/gluon/org/business-kg.db`.
-12. Run characterization test generation to create artifacts under `<repo>/gluon/tests/*`.
+4. Clone repo, checkout source branch, create migration branch.
+5. Set `JAVA_HOME` to `/opt/jdks/jdk{CURRENT_VERSION}`.
+6. Run `gluon-cli parse-build` and `gluon-cli analyze-report`.
+7. Run `gluon-cli extract-business` to create `/opt/gluon/org/extraction.db`.
+8. Run `gluon-cli extract-tests` to append test extraction tables to `/opt/gluon/org/extraction.db`.
+9. Run `gluon-cli build-business-kg` to create `business-kg.db`.
+10. Run characterization test generation.
 
 ## Error Handling
 
@@ -54,4 +52,19 @@ Do not skip stages after failure.
 - `/opt/gluon/org/extraction.db`
 - test extraction tables in `/opt/gluon/org/extraction.db`
 - `/opt/gluon/org/business-kg.db`
-- characterization test artifacts in `<repo>/gluon/tests/*`
+- characterization test artifacts in `<repo-path>/gluon/tests/*`
+
+## Characterization Test Generation
+
+- gluon command has given abstract for characterization teast
+- Now we have to generate full tests using that abstract
+- We have to use mocks for external depedencies
+- We have to capture business behaviour
+- We will use a multi-agent setup for this,
+- One agent will collect the important context and create a context packet for a test.
+- The context packet is passed to implementation agent.
+- The implementation agent writes the test, and verifies it.
+- The input output agent -> the main agent pass the context to this agent, this agent generate inputs, including bounday conditions, the give this inputs to the test, the test gives output
+- this agent store input and output for the test, in the extraction db.
+- again do the same for other tests.
+- gluon-cli has commands to interact with database.
