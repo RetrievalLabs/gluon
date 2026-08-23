@@ -3,7 +3,11 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from db_contracts import characterization_scenario_status, characterization_table
+from db_contracts import (
+    characterization_field,
+    characterization_scenario_status,
+    characterization_table,
+)
 from errors import StageFailedError
 from execution.commands import CommandRunner
 from execution.paths import HarnessPaths
@@ -18,6 +22,50 @@ BEHAVIORS_TABLE = characterization_table(
 )
 FILES_TABLE = characterization_table(
     characterization_tests_pb2.CHARACTERIZATION_TABLE_FILES
+)
+SCENARIO_ID = characterization_field(
+    characterization_tests_pb2.CharacterizationScenarioRow,
+    "id",
+)
+SCENARIO_BEHAVIOR_ID = characterization_field(
+    characterization_tests_pb2.CharacterizationScenarioRow,
+    "behavior_id",
+)
+SCENARIO_NAME = characterization_field(
+    characterization_tests_pb2.CharacterizationScenarioRow,
+    "name",
+)
+SCENARIO_KIND = characterization_field(
+    characterization_tests_pb2.CharacterizationScenarioRow,
+    "scenario_kind",
+)
+SCENARIO_INVOCATION_KIND = characterization_field(
+    characterization_tests_pb2.CharacterizationScenarioRow,
+    "invocation_kind",
+)
+SCENARIO_STATUS = characterization_field(
+    characterization_tests_pb2.CharacterizationScenarioRow,
+    "status",
+)
+SCENARIO_DIAGNOSTIC_REASON = characterization_field(
+    characterization_tests_pb2.CharacterizationScenarioRow,
+    "diagnostic_reason",
+)
+BEHAVIOR_ID = characterization_field(
+    characterization_tests_pb2.CharacterizationBehaviorRow,
+    "id",
+)
+BEHAVIOR_KG_NODE_ID = characterization_field(
+    characterization_tests_pb2.CharacterizationBehaviorRow,
+    "kg_node_id",
+)
+FILE_SCENARIO_ID = characterization_field(
+    characterization_tests_pb2.CharacterizationFileRow,
+    "scenario_id",
+)
+FILE_PATH = characterization_field(
+    characterization_tests_pb2.CharacterizationFileRow,
+    "path",
 )
 COMPLETED_SCENARIO_STATUSES = {
     characterization_scenario_status(
@@ -76,22 +124,12 @@ def select_next_scenario(
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
                 incomplete_scenarios_sql(
-                    """
-                    s.id AS scenario_id,
-                    s.behavior_id,
-                    b.kg_node_id,
-                    s.name,
-                    s.scenario_kind,
-                    s.invocation_kind,
-                    s.status,
-                    s.diagnostic_reason,
-                    MIN(f.path) AS scaffold_path
-                    """
+                    scenario_projection()
                 )
-                + """
-                    GROUP BY s.id
-                    ORDER BY s.id
-                  """,
+                + f"""
+                    GROUP BY s.{SCENARIO_ID}
+                    ORDER BY s.{SCENARIO_ID}
+                  """
             ).fetchall()
 
     for row in rows:
@@ -105,9 +143,23 @@ def incomplete_scenarios_sql(select_clause: str) -> str:
     return f"""
         SELECT {select_clause}
         FROM {SCENARIOS_TABLE} s
-        JOIN {BEHAVIORS_TABLE} b ON b.id = s.behavior_id
-        LEFT JOIN {FILES_TABLE} f ON f.scenario_id = s.id
-        WHERE s.status NOT IN ({placeholders})
+        JOIN {BEHAVIORS_TABLE} b ON b.{BEHAVIOR_ID} = s.{SCENARIO_BEHAVIOR_ID}
+        LEFT JOIN {FILES_TABLE} f ON f.{FILE_SCENARIO_ID} = s.{SCENARIO_ID}
+        WHERE s.{SCENARIO_STATUS} NOT IN ({placeholders})
+    """
+
+
+def scenario_projection() -> str:
+    return f"""
+        s.{SCENARIO_ID} AS scenario_id,
+        s.{SCENARIO_BEHAVIOR_ID},
+        b.{BEHAVIOR_KG_NODE_ID},
+        s.{SCENARIO_NAME},
+        s.{SCENARIO_KIND},
+        s.{SCENARIO_INVOCATION_KIND},
+        s.{SCENARIO_STATUS},
+        s.{SCENARIO_DIAGNOSTIC_REASON},
+        MIN(f.{FILE_PATH}) AS scaffold_path
     """
 
 

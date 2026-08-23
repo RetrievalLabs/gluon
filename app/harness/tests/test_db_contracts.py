@@ -1,9 +1,12 @@
 import unittest
 
 from db_contracts import (
+    business_kg_field,
     business_kg_table,
+    characterization_field,
     characterization_scenario_status,
     characterization_table,
+    extraction_field,
     extraction_table,
 )
 from generated.gluon.db.v1 import business_kg_pb2
@@ -33,6 +36,30 @@ class DbContractsTests(unittest.TestCase):
         self.assertEqual(
             extraction_table(extraction_pb2.EXTRACTION_TABLE_TEST_CASES),
             "test_cases",
+        )
+
+    def test_derives_sqlite_columns_from_proto_clients(self) -> None:
+        self.assertEqual(
+            characterization_field(
+                characterization_tests_pb2.CharacterizationScenarioRow,
+                "behavior_id",
+            ),
+            "behavior_id",
+        )
+        self.assertEqual(
+            characterization_field(
+                characterization_tests_pb2.CharacterizationBehaviorRow,
+                "kg_node_id",
+            ),
+            "kg_node_id",
+        )
+        self.assertEqual(
+            business_kg_field(business_kg_pb2.BusinessNodeRow, "statement"),
+            "statement",
+        )
+        self.assertEqual(
+            extraction_field(extraction_pb2.MethodRow, "signature"),
+            "signature",
         )
 
 

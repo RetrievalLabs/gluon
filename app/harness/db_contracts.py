@@ -18,6 +18,18 @@ def characterization_scenario_status(status: int) -> str:
     )
 
 
+def characterization_field(message_type: type, field_name: str) -> str:
+    return proto_field(message_type, field_name)
+
+
+def business_kg_field(message_type: type, field_name: str) -> str:
+    return proto_field(message_type, field_name)
+
+
+def extraction_field(message_type: type, field_name: str) -> str:
+    return proto_field(message_type, field_name)
+
+
 def business_kg_table(table: int) -> str:
     return enum_db_value(
         business_kg_pb2.BusinessKgTable.Name(table),
@@ -37,3 +49,8 @@ def enum_db_value(enum_name: str, prefix: str, table_prefix: str = "") -> str:
         raise ValueError(f"unexpected enum name {enum_name}")
     return f"{table_prefix}{enum_name.removeprefix(prefix).lower()}"
 
+
+def proto_field(message_type: type, field_name: str) -> str:
+    if field_name not in message_type.DESCRIPTOR.fields_by_name:
+        raise ValueError(f"{message_type.DESCRIPTOR.full_name} has no field {field_name}")
+    return field_name
