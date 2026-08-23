@@ -12,6 +12,8 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::core::error::{DatabaseError, FileError, KgError, LlmError, PathError};
+use crate::proto::gluon::db::v1::{ExtractionTable, LlmExtractionRunStatus};
+use crate::proto::{extraction_table, llm_extraction_run_status};
 
 pub const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-5";
 pub const BUSINESS_KG_PROMPT_VERSION: &str = "v1";
@@ -833,9 +835,9 @@ fn build_business_kg_with_input(
     eprintln!(
         "build-business-kg: done status={} methods_processed={} failed={} input_tokens={} output_tokens={} total_tokens={} nodes={} edges={} evidence={} elapsed_ms={}",
         if summary.failed == 0 {
-            "completed"
+            llm_extraction_run_status(LlmExtractionRunStatus::Completed)
         } else {
-            "partial_failure"
+            llm_extraction_run_status(LlmExtractionRunStatus::PartialFailure)
         },
         summary.methods_processed,
         summary.failed,
@@ -877,7 +879,11 @@ fn validate_build_options(options: &BuildBusinessKgOptions) -> BuildResult<()> {
 }
 
 fn validate_extraction_db(connection: &Connection) -> Result<(), String> {
-    for table in ["methods", "classes", "candidate_scores"] {
+    for table in [
+        extraction_table(ExtractionTable::Methods),
+        extraction_table(ExtractionTable::Classes),
+        extraction_table(ExtractionTable::CandidateScores),
+    ] {
         let exists: Option<i64> = connection
             .query_row(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
@@ -1989,8 +1995,13 @@ impl KgStore {
         self.connection
             .execute(
                 "INSERT INTO llm_extraction_runs (model, status, started_at, methods_total)
-                 VALUES (?1, 'running', ?2, ?3)",
-                params![model, timestamp(), methods_total as i64],
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    model,
+                    llm_extraction_run_status(LlmExtractionRunStatus::Running),
+                    timestamp(),
+                    methods_total as i64,
+                ],
             )
             .map_err(|error| format!("failed to create KG run: {error}"))?;
         Ok(self.connection.last_insert_rowid())
@@ -1998,9 +2009,9 @@ impl KgStore {
 
     fn finish_run(&mut self, run_id: i64, summary: &BuildBusinessKgSummary) -> Result<(), String> {
         let status = if summary.failed == 0 {
-            "completed"
+            llm_extraction_run_status(LlmExtractionRunStatus::Completed)
         } else {
-            "partial_failure"
+            llm_extraction_run_status(LlmExtractionRunStatus::PartialFailure)
         };
         self.connection
             .execute(

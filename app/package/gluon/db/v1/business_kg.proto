@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package gluon.db.v1;
+
+// Shared contract for business-kg.db.
+
+enum BusinessKgTable {
+  BUSINESS_KG_TABLE_UNSPECIFIED = 0;
+  BUSINESS_KG_TABLE_LLM_EXTRACTION_RUNS = 1;
+  BUSINESS_KG_TABLE_BUSINESS_NODES = 2;
+  BUSINESS_KG_TABLE_BUSINESS_EDGES = 3;
+  BUSINESS_KG_TABLE_BUSINESS_EVIDENCE = 4;
+}
+
+enum LlmExtractionRunStatus {
+  LLM_EXTRACTION_RUN_STATUS_UNSPECIFIED = 0;
+  LLM_EXTRACTION_RUN_STATUS_RUNNING = 1;
+  LLM_EXTRACTION_RUN_STATUS_COMPLETED = 2;
+  LLM_EXTRACTION_RUN_STATUS_FAILED = 3;
+  LLM_EXTRACTION_RUN_STATUS_PARTIAL_FAILURE = 4;
+}
+
+message LlmExtractionRunRow {
+  int64 id = 1;
+  string model = 2;
+  LlmExtractionRunStatus status = 3;
+  string started_at = 4;
+  optional string finished_at = 5;
+  optional string error = 6;
+  int64 methods_total = 7;
+  int64 methods_processed = 8;
+  int64 failed = 9;
+  int64 nodes_created = 10;
+  int64 edges_created = 11;
+  int64 evidence_created = 12;
+  int64 input_tokens = 13;
+  int64 output_tokens = 14;
+  int64 cache_creation_input_tokens = 15;
+  int64 cache_read_input_tokens = 16;
+  int64 total_tokens = 17;
+}
+
+message BusinessNodeRow {
+  string id = 1;
+  string kind = 2;
+  string name = 3;
+  string statement = 4;
+  double confidence = 5;
+  optional int64 created_by_run_id = 6;
+  string created_at = 7;
+}
+
+message BusinessEdgeRow {
+  int64 id = 1;
+  string source_id = 2;
+  string target_id = 3;
+  string kind = 4;
+  double confidence = 5;
+  optional int64 created_by_run_id = 6;
+  string created_at = 7;
+}
+
+message BusinessEvidenceRow {
+  int64 id = 1;
+  optional string node_id = 2;
+  optional int64 edge_id = 3;
+  string method_id = 4;
+  string source_lines_json = 5;
+  string reason = 6;
+  optional int64 created_by_run_id = 7;
+  string created_at = 8;
+}

@@ -1,0 +1,202 @@
+syntax = "proto3";
+
+package gluon.db.v1;
+
+// Shared contract for extraction.db.
+
+enum ExtractionTable {
+  EXTRACTION_TABLE_UNSPECIFIED = 0;
+  EXTRACTION_TABLE_MODULES = 1;
+  EXTRACTION_TABLE_CLASSES = 2;
+  EXTRACTION_TABLE_METHODS = 3;
+  EXTRACTION_TABLE_RELATIONSHIPS = 4;
+  EXTRACTION_TABLE_ENTRY_POINTS = 5;
+  EXTRACTION_TABLE_CANDIDATE_SCORES = 6;
+  EXTRACTION_TABLE_CANDIDATE_SIGNALS = 7;
+  EXTRACTION_TABLE_EVIDENCE_RANGES = 8;
+  EXTRACTION_TABLE_CONTEXT_PACKETS = 9;
+  EXTRACTION_TABLE_DIAGNOSTICS = 10;
+  EXTRACTION_TABLE_TEST_SUITES = 11;
+  EXTRACTION_TABLE_TEST_CASES = 12;
+  EXTRACTION_TABLE_TEST_TARGETS = 13;
+  EXTRACTION_TABLE_TEST_ASSERTIONS = 14;
+  EXTRACTION_TABLE_TEST_FIXTURES = 15;
+  EXTRACTION_TABLE_TEST_ENTRY_POINTS = 16;
+  EXTRACTION_TABLE_TEST_DIAGNOSTICS = 17;
+}
+
+message ModuleRow {
+  string id = 1;
+  string name = 2;
+  string path = 3;
+  optional string build_system = 4;
+  optional string build_file = 5;
+  optional string parent_id = 6;
+}
+
+message ClassRow {
+  string id = 1;
+  string module_id = 2;
+  string name = 3;
+  optional string package_name = 4;
+  string qualified_name = 5;
+  string kind = 6;
+  string file = 7;
+  int64 start_line = 8;
+  int64 end_line = 9;
+  optional string superclass = 10;
+  string interfaces_json = 11;
+  string annotations_json = 12;
+}
+
+message MethodRow {
+  string id = 1;
+  string module_id = 2;
+  string class_id = 3;
+  string name = 4;
+  string signature = 5;
+  optional string return_type = 6;
+  string parameters_json = 7;
+  string annotations_json = 8;
+  string file = 9;
+  int64 start_line = 10;
+  int64 end_line = 11;
+  int64 name_line = 12;
+  int64 name_column = 13;
+}
+
+message RelationshipRow {
+  int64 id = 1;
+  string source_id = 2;
+  string target_id = 3;
+  string kind = 4;
+  double confidence = 5;
+  string source = 6;
+}
+
+message EntryPointRow {
+  string id = 1;
+  string method_id = 2;
+  string kind = 3;
+  optional string framework = 4;
+  optional string route = 5;
+  optional string http_method = 6;
+  string source = 7;
+}
+
+message CandidateScoreRow {
+  string method_id = 1;
+  int64 score = 2;
+  string priority = 3;
+}
+
+message CandidateSignalRow {
+  int64 id = 1;
+  string method_id = 2;
+  string name = 3;
+  int64 count = 4;
+  int64 weight = 5;
+}
+
+message EvidenceRangeRow {
+  int64 id = 1;
+  string method_id = 2;
+  string file = 3;
+  int64 start_line = 4;
+  int64 end_line = 5;
+  string source = 6;
+}
+
+message ContextPacketRow {
+  string method_id = 1;
+  string summary = 2;
+}
+
+message DiagnosticRow {
+  int64 id = 1;
+  string severity = 2;
+  string category = 3;
+  string message = 4;
+  optional string file = 5;
+  optional string command_json = 6;
+  optional int64 exit_code = 7;
+  optional string stderr = 8;
+}
+
+message TestSuiteRow {
+  string id = 1;
+  optional string module_id = 2;
+  string class_name = 3;
+  optional string package_name = 4;
+  string qualified_name = 5;
+  string test_kind = 6;
+  string file = 7;
+  int64 start_line = 8;
+  int64 end_line = 9;
+  string annotations_json = 10;
+}
+
+message TestCaseRow {
+  string id = 1;
+  string suite_id = 2;
+  string name = 3;
+  optional string display_name = 4;
+  string test_kind = 5;
+  string file = 6;
+  int64 start_line = 7;
+  int64 end_line = 8;
+  string annotations_json = 9;
+  string body_text = 10;
+}
+
+message TestTargetRow {
+  int64 id = 1;
+  string test_case_id = 2;
+  string target_kind = 3;
+  string target_id = 4;
+  string relationship = 5;
+  double confidence = 6;
+  string source = 7;
+}
+
+message TestAssertionRow {
+  int64 id = 1;
+  string test_case_id = 2;
+  string assertion_kind = 3;
+  string expression = 4;
+  optional string expected_value = 5;
+  string file = 6;
+  int64 line = 7;
+}
+
+message TestFixtureRow {
+  int64 id = 1;
+  optional string suite_id = 2;
+  optional string test_case_id = 3;
+  string fixture_kind = 4;
+  string name = 5;
+  string details_json = 6;
+  string file = 7;
+  int64 line = 8;
+}
+
+message TestEntryPointRow {
+  int64 id = 1;
+  string test_case_id = 2;
+  string kind = 3;
+  optional string framework = 4;
+  optional string route = 5;
+  optional string http_method = 6;
+  optional string topic = 7;
+  optional string command = 8;
+  string source = 9;
+}
+
+message TestDiagnosticRow {
+  int64 id = 1;
+  string severity = 2;
+  string category = 3;
+  string message = 4;
+  optional string file = 5;
+}
+

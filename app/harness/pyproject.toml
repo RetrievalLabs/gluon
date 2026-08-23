@@ -6,7 +6,13 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "claude-agent-sdk",
+    "protobuf>=7.36.0",
 ]
 
 [project.scripts]
 gluon-harness = "cli:main"
+
+[dependency-groups]
+dev = [
+    "grpcio-tools>=1.83.0",
+]

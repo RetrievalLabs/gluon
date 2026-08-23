@@ -12,6 +12,7 @@ enum CharacterizationRunStatus {
   CHARACTERIZATION_RUN_STATUS_RUNNING = 1;
   CHARACTERIZATION_RUN_STATUS_COMPLETED = 2;
   CHARACTERIZATION_RUN_STATUS_FAILED = 3;
+  CHARACTERIZATION_RUN_STATUS_PARTIAL_FAILURE = 4;
 }
 
 enum CharacterizationBehaviorStatus {
@@ -154,4 +155,3 @@ message CharacterizationDiagnosticRow {
   string category = 7;
   string message = 8;
 }
-

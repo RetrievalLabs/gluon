@@ -1,6 +1,7 @@
 mod cli;
 mod core;
 pub mod languages;
+pub mod proto;
 
 pub use cli::run_cli;
 pub use core::error::{

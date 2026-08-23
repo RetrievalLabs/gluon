@@ -7,6 +7,14 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::core::error::{DatabaseError, FileError, PathError};
+use crate::proto::gluon::db::v1::{
+    BusinessKgTable, CharacterizationBehaviorStatus, CharacterizationRunStatus,
+    CharacterizationScenarioStatus, ExtractionTable,
+};
+use crate::proto::{
+    business_kg_table, characterization_behavior_status, characterization_run_status,
+    characterization_scenario_status, extraction_table,
+};
 
 const SUPPORTED_NODE_KINDS: [&str; 5] = [
     "BusinessRule",
@@ -297,14 +305,21 @@ fn validate_options(options: &GenerateCharacterizationTestsOptions) -> Character
 }
 
 fn validate_business_database(connection: &Connection) -> Result<(), String> {
-    validate_tables(connection, "business database", &["methods"])
+    validate_tables(
+        connection,
+        "business database",
+        &[extraction_table(ExtractionTable::Methods)],
+    )
 }
 
 fn validate_kg_database(connection: &Connection) -> Result<(), String> {
     validate_tables(
         connection,
         "KG database",
-        &["business_nodes", "business_evidence"],
+        &[
+            business_kg_table(BusinessKgTable::BusinessNodes),
+            business_kg_table(BusinessKgTable::BusinessEvidence),
+        ],
     )
 }
 
@@ -1185,11 +1200,12 @@ impl CharacterizationStore {
                 "INSERT INTO characterization_runs (
                     mode, source_path, business_database_path, kg_database_path,
                     status, started_at
-                 ) VALUES ('generate', ?1, ?2, ?3, 'running', ?4)",
+                 ) VALUES ('generate', ?1, ?2, ?3, ?4, ?5)",
                 params![
                     options.source_path.display().to_string(),
                     options.business_database.display().to_string(),
                     options.kg_database.display().to_string(),
+                    characterization_run_status(CharacterizationRunStatus::Running),
                     timestamp(),
                 ],
             )
@@ -1208,7 +1224,7 @@ impl CharacterizationStore {
                 "INSERT OR IGNORE INTO characterization_behaviors (
                     id, run_id, kg_node_id, node_kind, node_name, node_statement,
                     source_method_ids_json, status
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'selected')",
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     behavior_id(&candidate.node_id),
                     run_id,
@@ -1218,6 +1234,7 @@ impl CharacterizationStore {
                     candidate.statement,
                     serde_json::to_string(&candidate.method_ids)
                         .map_err(|error| format!("failed to serialize method IDs: {error}"))?,
+                    characterization_behavior_status(CharacterizationBehaviorStatus::Selected),
                 ],
             )
             .map_err(|error| {
@@ -1237,7 +1254,7 @@ impl CharacterizationStore {
                 "INSERT OR REPLACE INTO characterization_scenarios (
                     id, run_id, behavior_id, name, scenario_kind, invocation_kind,
                     status, diagnostic_reason
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'generated_scaffold', NULL)",
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)",
                 params![
                     scenario.id,
                     run_id,
@@ -1245,6 +1262,9 @@ impl CharacterizationStore {
                     scenario.name,
                     scenario.scenario_kind,
                     scenario.invocation_kind,
+                    characterization_scenario_status(
+                        CharacterizationScenarioStatus::GeneratedScaffold,
+                    ),
                 ],
             )
             .map_err(|error| format!("failed to persist scenario {}: {error}", scenario.id))?;
@@ -1323,9 +1343,9 @@ impl CharacterizationStore {
                  WHERE id = ?7",
                 params![
                     if summary.diagnostics == 0 {
-                        "completed"
+                        characterization_run_status(CharacterizationRunStatus::Completed)
                     } else {
-                        "partial_failure"
+                        characterization_run_status(CharacterizationRunStatus::PartialFailure)
                     },
                     timestamp(),
                     summary.selected_behaviors as i64,

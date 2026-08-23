@@ -3,12 +3,33 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from db_contracts import characterization_scenario_status, characterization_table
 from errors import StageFailedError
 from execution.commands import CommandRunner
 from execution.paths import HarnessPaths
+from generated.gluon.db.v1 import characterization_tests_pb2
 from integrations.claude_agent import ClaudeAgentClient
 
-COMPLETED_SCENARIO_STATUSES = {"accepted", "committed", "skipped"}
+SCENARIOS_TABLE = characterization_table(
+    characterization_tests_pb2.CHARACTERIZATION_TABLE_SCENARIOS
+)
+BEHAVIORS_TABLE = characterization_table(
+    characterization_tests_pb2.CHARACTERIZATION_TABLE_BEHAVIORS
+)
+FILES_TABLE = characterization_table(
+    characterization_tests_pb2.CHARACTERIZATION_TABLE_FILES
+)
+COMPLETED_SCENARIO_STATUSES = {
+    characterization_scenario_status(
+        characterization_tests_pb2.CHARACTERIZATION_SCENARIO_STATUS_ACCEPTED
+    ),
+    characterization_scenario_status(
+        characterization_tests_pb2.CHARACTERIZATION_SCENARIO_STATUS_COMMITTED
+    ),
+    characterization_scenario_status(
+        characterization_tests_pb2.CHARACTERIZATION_SCENARIO_STATUS_SKIPPED
+    ),
+}
 
 
 def run_characterization_agent_loop(
@@ -83,9 +104,9 @@ def incomplete_scenarios_sql(select_clause: str) -> str:
     placeholders = ", ".join(f"'{status}'" for status in COMPLETED_SCENARIO_STATUSES)
     return f"""
         SELECT {select_clause}
-        FROM characterization_scenarios s
-        JOIN characterization_behaviors b ON b.id = s.behavior_id
-        LEFT JOIN characterization_files f ON f.scenario_id = s.id
+        FROM {SCENARIOS_TABLE} s
+        JOIN {BEHAVIORS_TABLE} b ON b.id = s.behavior_id
+        LEFT JOIN {FILES_TABLE} f ON f.scenario_id = s.id
         WHERE s.status NOT IN ({placeholders})
     """
 
