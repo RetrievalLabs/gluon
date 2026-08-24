@@ -239,13 +239,16 @@ fn sqlite_option_string(message: &DynamicMessage, field: &str) -> Option<String>
 }
 
 fn sqlite_option_string_list(message: &DynamicMessage, field: &str) -> Vec<String> {
-    match message.get_field_by_name(field).map(|value| value.as_ref()) {
-        Some(Value::List(values)) => values
-            .iter()
-            .filter_map(|value| value.as_str().map(str::to_owned))
-            .filter(|value| !value.is_empty())
-            .collect(),
-        _ => Vec::new(),
+    match message.get_field_by_name(field) {
+        Some(value) => match value.as_ref() {
+            Value::List(values) => values
+                .iter()
+                .filter_map(|value| value.as_str().map(str::to_owned))
+                .filter(|value| !value.is_empty())
+                .collect(),
+            _ => Vec::new(),
+        },
+        None => Vec::new(),
     }
 }
 
@@ -257,15 +260,18 @@ fn sqlite_option_bool(message: &DynamicMessage, field: &str) -> bool {
 }
 
 fn sqlite_option_message_list(message: &DynamicMessage, field: &str) -> Vec<DynamicMessage> {
-    match message.get_field_by_name(field).map(|value| value.as_ref()) {
-        Some(Value::List(values)) => values
-            .iter()
-            .filter_map(|value| match value {
-                Value::Message(message) => Some(message.clone()),
-                _ => None,
-            })
-            .collect(),
-        _ => Vec::new(),
+    match message.get_field_by_name(field) {
+        Some(value) => match value.as_ref() {
+            Value::List(values) => values
+                .iter()
+                .filter_map(|value| match value {
+                    Value::Message(message) => Some(message.clone()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        },
+        None => Vec::new(),
     }
 }
 

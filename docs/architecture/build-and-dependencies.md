@@ -10,6 +10,7 @@
 - `LanguageParser` is the public language-level abstraction.
 - `BuildSystemParser` is the Java build-system abstraction implemented by Maven and Gradle parsers.
 - Offline parsing reads `pom.xml`, Gradle build files, Gradle wrapper properties, and Gradle version catalogs without executing the build.
+- Build reports group inventory under `parent` and `modules`; single-module projects have only `parent`.
 - Resolved parsing optionally runs Maven or Gradle to extract effective dependency and plugin versions.
 - Maven resolution prefers `./mvnw` when present and falls back to `mvn`.
 - Gradle resolution prefers `./gradlew` when present and falls back to `gradle`.
@@ -18,6 +19,7 @@
 - Compatibility data tracks incremental migration guidance, removed APIs, deprecated-for-removal APIs, internal API risks, replacement dependencies, dependency compatibility, and build plugin compatibility separately from parser logic.
 - Dependency compatibility coverage is curated and inventory-driven; unmatched dependencies are treated as requiring official-source verification before automated upgrades.
 - `code-parser analyze-report` consumes a resolved `build-report.json`, loads Java compatibility KB files, and produces a separate `compatibility-report.json` with dependency, plugin, API, source-change, unknown-inventory, and diagnostic sections.
+- Compatibility reports group recommendations and findings under `parent` and `modules` using build-report module paths.
 - Compatibility analysis prefers resolved dependencies and plugins when present, falls back to declared inventory, and includes declared source metadata when available.
 - Java source analysis parses `.java` files with tree-sitter and matches syntax candidates against compatibility rules. It ignores build output and VCS directories and reports findings only; it does not edit source files.
 - Optional JDK tool enrichment uses `GLUON_JDK_ROOT` when set, otherwise `/opt/jdks`, compiling with `jdk<source_java>` and running target JDK `jdeps --jdk-internals` plus `jdeprscan --release <target> --for-removal` on compiled class directories.

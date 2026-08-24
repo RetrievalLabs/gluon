@@ -1301,8 +1301,18 @@ fn default_jdk_root() -> PathBuf {
 fn read_build_report(path: &Path) -> Result<BuildReport, String> {
     let data = fs::read_to_string(path)
         .map_err(|error| format!("failed to read report {}: {error}", path.display()))?;
-    serde_json::from_str(&data)
-        .map_err(|error| format!("failed to parse report {}: {error}", path.display()))
+    let mut report: BuildReport = serde_json::from_str(&data)
+        .map_err(|error| format!("failed to parse report {}: {error}", path.display()))?;
+    if report.build_tools.is_empty()
+        && report.java_versions.is_empty()
+        && report.declared_dependencies.is_empty()
+        && report.resolved_dependencies.is_empty()
+        && report.declared_plugins.is_empty()
+        && report.resolved_plugins.is_empty()
+    {
+        report.rebuild_flat_inventory();
+    }
+    Ok(report)
 }
 
 fn write_report(

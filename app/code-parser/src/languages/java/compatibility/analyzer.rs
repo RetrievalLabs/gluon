@@ -5,15 +5,15 @@ use thiserror::Error;
 
 use crate::core::error::KnowledgeBaseError;
 use crate::languages::java::build::model::{
-    BuildReport, BuildToolInfo, DependencyInfo, PluginInfo,
+    BuildReport, BuildToolInfo, DependencyInfo, Diagnostic, PluginInfo,
 };
 use crate::languages::java::compatibility::jdk_tools::{JdkToolOptions, run_jdk_tools};
 use crate::languages::java::compatibility::knowledge_base::{
     CompatibilityRule, JavaCompatibilityKnowledgeBase, MatchRule, ReplacementRule,
 };
 use crate::languages::java::compatibility::model::{
-    CodeChangeRecommendation, CompatibilityReport, DependencyRecommendation, PluginRecommendation,
-    UnknownDependency, UnknownPlugin,
+    CodeChangeRecommendation, CompatibilityReport, CompatibilityScopeReport,
+    DependencyRecommendation, PluginRecommendation, UnknownDependency, UnknownPlugin,
 };
 use crate::languages::java::compatibility::source_scan::scan_java_sources;
 
@@ -76,7 +76,7 @@ pub fn analyze_report_with_options(
     );
     diagnostics.extend(jdk_tool_diagnostics);
 
-    let code_change_recommendations =
+    let code_change_recommendations: Vec<CodeChangeRecommendation> =
         derive_code_change_recommendations(&api_findings, &kb.replacements, target_java)
             .into_iter()
             .chain(
@@ -93,9 +93,24 @@ pub fn analyze_report_with_options(
             )
             .collect();
 
+    let (parent, modules) = build_compatibility_scopes(
+        build_report,
+        source_java.clone(),
+        &dependency_recommendations,
+        &plugin_recommendations,
+        &api_findings,
+        &jdk_tool_findings,
+        &code_change_recommendations,
+        &unknown_dependencies,
+        &unknown_plugins,
+        &diagnostics,
+    );
+
     Ok(CompatibilityReport {
         source_java,
         target_java,
+        parent,
+        modules,
         dependency_recommendations,
         plugin_recommendations,
         api_findings,
@@ -231,6 +246,115 @@ fn analyze_plugins(
     (recommendations, unknown)
 }
 
+fn build_compatibility_scopes(
+    build_report: &BuildReport,
+    source_java: Option<String>,
+    dependency_recommendations: &[DependencyRecommendation],
+    plugin_recommendations: &[PluginRecommendation],
+    api_findings: &[crate::languages::java::compatibility::model::ApiFinding],
+    jdk_tool_findings: &[crate::languages::java::compatibility::model::JdkToolFinding],
+    code_change_recommendations: &[CodeChangeRecommendation],
+    unknown_dependencies: &[UnknownDependency],
+    unknown_plugins: &[UnknownPlugin],
+    diagnostics: &[Diagnostic],
+) -> (CompatibilityScopeReport, Vec<CompatibilityScopeReport>) {
+    let mut parent = CompatibilityScopeReport {
+        name: "parent".to_string(),
+        path: ".".to_string(),
+        source_java: source_java.clone(),
+        ..CompatibilityScopeReport::default()
+    };
+    let mut modules: Vec<CompatibilityScopeReport> = build_report
+        .modules
+        .iter()
+        .map(|module| CompatibilityScopeReport {
+            name: module.name.clone(),
+            path: module.path.clone(),
+            source_java: detect_source_java_for_module(module).or_else(|| source_java.clone()),
+            ..CompatibilityScopeReport::default()
+        })
+        .collect();
+
+    for item in dependency_recommendations {
+        scope_for_source(&item.source, &mut parent, &mut modules)
+            .dependency_recommendations
+            .push(item.clone());
+    }
+    for item in plugin_recommendations {
+        scope_for_source(&item.source, &mut parent, &mut modules)
+            .plugin_recommendations
+            .push(item.clone());
+    }
+    for item in api_findings {
+        scope_for_source(&item.file, &mut parent, &mut modules)
+            .api_findings
+            .push(item.clone());
+    }
+    for item in jdk_tool_findings {
+        scope_for_source(&item.source, &mut parent, &mut modules)
+            .jdk_tool_findings
+            .push(item.clone());
+    }
+    for item in code_change_recommendations {
+        let source = item
+            .related_findings
+            .first()
+            .and_then(|finding| finding.split(':').next())
+            .unwrap_or(&item.source);
+        scope_for_source(source, &mut parent, &mut modules)
+            .code_change_recommendations
+            .push(item.clone());
+    }
+    for item in unknown_dependencies {
+        scope_for_source(&item.source, &mut parent, &mut modules)
+            .unknown_dependencies
+            .push(item.clone());
+    }
+    for item in unknown_plugins {
+        scope_for_source(&item.source, &mut parent, &mut modules)
+            .unknown_plugins
+            .push(item.clone());
+    }
+    for item in diagnostics {
+        scope_for_source(
+            item.file.as_deref().unwrap_or(""),
+            &mut parent,
+            &mut modules,
+        )
+        .diagnostics
+        .push(item.clone());
+    }
+
+    modules.sort_by(|left, right| left.path.cmp(&right.path));
+    (parent, modules)
+}
+
+fn scope_for_source<'a>(
+    source: &str,
+    parent: &'a mut CompatibilityScopeReport,
+    modules: &'a mut Vec<CompatibilityScopeReport>,
+) -> &'a mut CompatibilityScopeReport {
+    let normalized = source.replace('\\', "/");
+    if let Some(index) = modules.iter().position(|module| {
+        normalized == module.path || normalized.starts_with(&format!("{}/", module.path))
+    }) {
+        return &mut modules[index];
+    }
+
+    parent
+}
+
+fn detect_source_java_for_module(
+    module: &crate::languages::java::build::model::BuildScopeReport,
+) -> Option<String> {
+    module
+        .java_versions
+        .iter()
+        .find(|version| matches!(version.kind.as_str(), "release" | "source" | "target"))
+        .or_else(|| module.java_versions.first())
+        .map(|version| version.version.clone())
+}
+
 fn derive_code_change_recommendations(
     findings: &[crate::languages::java::compatibility::model::ApiFinding],
     replacements: &[ReplacementRule],
@@ -290,7 +414,15 @@ fn detect_source_java(build_report: &BuildReport) -> Option<String> {
 fn dependency_sources(dependencies: &[DependencyInfo]) -> HashMap<String, String> {
     dependencies
         .iter()
-        .map(|dependency| (dependency_key(dependency), dependency.source.clone()))
+        .map(|dependency| {
+            (
+                dependency_key(dependency),
+                dependency
+                    .file
+                    .clone()
+                    .unwrap_or_else(|| dependency.source.clone()),
+            )
+        })
         .collect()
 }
 

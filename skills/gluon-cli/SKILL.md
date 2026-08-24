@@ -47,6 +47,8 @@ Flags:
 Outputs:
 
 - Declared Java versions, build tools, plugins, and dependencies from build files.
+- Inventory grouped under `parent` and `modules`. Multi-module projects are
+  grouped by module build-file path; single-module projects have only `parent`.
 - Resolved dependencies and plugins when `--resolve` succeeds.
 - Diagnostics for malformed files, missing tools, wrapper issues, and build resolution failures.
 - When `--output-dir` is set, report JSON is written to disk instead of printed to stdout. Stdout and stderr include the generated JSON path.
@@ -83,6 +85,7 @@ Flags:
 Outputs:
 
 - Source and target Java versions.
+- Recommendations and findings grouped under `parent` and `modules`.
 - Dependency and plugin update recommendations from curated KB rules.
 - Removed, deprecated-for-removal, internal API, and reflective access findings from tree-sitter Java syntax scanning.
 - Optional `jdk_tool_findings` from `jdeps --jdk-internals` and `jdeprscan --release <target> --for-removal`.

@@ -87,6 +87,7 @@ pub fn parse_build_with_runner(
         BuildResolver::new(runner).resolve(&project_root, &mut report);
     }
 
+    report.rebuild_scopes();
     Ok(report)
 }
 

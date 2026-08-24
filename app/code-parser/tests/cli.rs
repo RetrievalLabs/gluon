@@ -377,6 +377,58 @@ fn parse_build_outputs_json_for_project_root() {
 }
 
 #[test]
+fn parse_build_groups_multi_module_report_sections() {
+    let root = test_dir("cli-multi-module");
+    fs::write(
+        root.join("pom.xml"),
+        r#"
+        <project>
+          <modelVersion>4.0.0</modelVersion>
+          <properties><java.version>17</java.version></properties>
+        </project>
+        "#,
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("service")).unwrap();
+    fs::write(
+        root.join("service").join("pom.xml"),
+        r#"
+        <project>
+          <modelVersion>4.0.0</modelVersion>
+          <dependencies>
+            <dependency>
+              <groupId>org.example</groupId>
+              <artifactId>service-api</artifactId>
+              <version>1.0.0</version>
+            </dependency>
+          </dependencies>
+        </project>
+        "#,
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["parse-build", "--path"])
+        .arg(&root)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["parent"]["path"], ".");
+    assert_eq!(value["modules"][0]["path"], "service");
+    assert!(value["declared_dependencies"].is_null());
+    assert!(value["resolved_dependencies"].is_null());
+    assert!(value["declared_plugins"].is_null());
+    assert!(value["resolved_plugins"].is_null());
+    assert_eq!(
+        value["modules"][0]["declared_dependencies"][0]["artifact_id"],
+        "service-api"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn parse_build_rejects_missing_path() {
     let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
         .args(["parse-build", "--path", "/definitely/missing/gluon/project"])
@@ -449,8 +501,48 @@ fn analyze_report_outputs_valid_json() {
     assert!(output.status.success());
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["target_java"], 25);
-    assert_eq!(value["dependency_recommendations"][0]["id"], "asm-java25");
+    assert!(value["dependency_recommendations"].is_null());
+    assert_eq!(
+        value["parent"]["dependency_recommendations"][0]["id"],
+        "asm-java25"
+    );
     assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn analyze_report_groups_multi_module_report_sections() {
+    let root = test_dir("analyze-multi-module");
+    let report_path = root.join("build-report.json");
+    fs::write(
+        &report_path,
+        format!(
+            r#"{{
+              "project_root":"{}",
+              "parent":{{"name":"parent","path":".","build_tools":[],"java_versions":[{{"version":"17","kind":"release","file":"pom.xml","source":"pom.xml properties"}}],"declared_dependencies":[],"resolved_dependencies":[],"declared_plugins":[],"resolved_plugins":[]}},
+              "modules":[{{"name":"service","path":"service","build_tools":[],"java_versions":[],"declared_dependencies":[{{"group_id":"org.ow2.asm","artifact_id":"asm","version":"9.7","configuration":null,"scope":null,"file":"service/pom.xml","source":"pom.xml"}}],"resolved_dependencies":[],"declared_plugins":[],"resolved_plugins":[]}}],
+              "diagnostics":[]
+            }}"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["analyze-report", "--report"])
+        .arg(&report_path)
+        .args(["--target-java", "25"])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["parent"]["path"], ".");
+    assert_eq!(value["modules"][0]["path"], "service");
+    assert_eq!(
+        value["modules"][0]["dependency_recommendations"][0]["id"],
+        "asm-java25"
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -546,9 +638,9 @@ fn analyze_report_warns_for_missing_source_path_and_keeps_dependency_analysis() 
 
     assert!(output.status.success());
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["diagnostics"][0]["severity"], "warning");
+    assert_eq!(value["parent"]["diagnostics"][0]["severity"], "warning");
     assert_eq!(
-        value["unknown_dependencies"][0]["coordinates"],
+        value["parent"]["unknown_dependencies"][0]["coordinates"],
         "org.example:demo"
     );
     let _ = fs::remove_dir_all(root);
@@ -574,7 +666,7 @@ fn analyze_report_jdk_tools_missing_root_emits_warnings() {
     assert!(output.status.success());
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(
-        value["diagnostics"]
+        value["parent"]["diagnostics"]
             .as_array()
             .unwrap()
             .iter()
@@ -586,7 +678,13 @@ fn analyze_report_jdk_tools_missing_root_emits_warnings() {
                         .contains("jdeps not found")
             })
     );
-    assert_eq!(value["jdk_tool_findings"].as_array().unwrap().len(), 0);
+    assert_eq!(
+        value["parent"]["jdk_tool_findings"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
     let _ = fs::remove_dir_all(root);
 }
 

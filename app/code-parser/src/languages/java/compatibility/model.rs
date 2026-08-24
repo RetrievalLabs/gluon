@@ -6,6 +6,31 @@ use crate::languages::java::build::model::Diagnostic;
 pub struct CompatibilityReport {
     pub source_java: Option<String>,
     pub target_java: u32,
+    pub parent: CompatibilityScopeReport,
+    pub modules: Vec<CompatibilityScopeReport>,
+    #[serde(skip_serializing)]
+    pub dependency_recommendations: Vec<DependencyRecommendation>,
+    #[serde(skip_serializing)]
+    pub plugin_recommendations: Vec<PluginRecommendation>,
+    #[serde(skip_serializing)]
+    pub api_findings: Vec<ApiFinding>,
+    #[serde(skip_serializing)]
+    pub jdk_tool_findings: Vec<JdkToolFinding>,
+    #[serde(skip_serializing)]
+    pub code_change_recommendations: Vec<CodeChangeRecommendation>,
+    #[serde(skip_serializing)]
+    pub unknown_dependencies: Vec<UnknownDependency>,
+    #[serde(skip_serializing)]
+    pub unknown_plugins: Vec<UnknownPlugin>,
+    #[serde(skip_serializing)]
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct CompatibilityScopeReport {
+    pub name: String,
+    pub path: String,
+    pub source_java: Option<String>,
     pub dependency_recommendations: Vec<DependencyRecommendation>,
     pub plugin_recommendations: Vec<PluginRecommendation>,
     pub api_findings: Vec<ApiFinding>,
