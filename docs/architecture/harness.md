@@ -32,6 +32,7 @@ Missing or invalid required config is fatal.
 8. Run `gluon-cli extract-tests` to append test extraction tables to `/opt/gluon/org/extraction.db`.
 9. Run `gluon-cli build-business-kg` to create `business-kg.db`.
 10. Run characterization test generation.
+11. Create migration rewrite workspace and hand off rewrite setup to agents.
 
 ## Error Handling
 
@@ -54,6 +55,8 @@ Do not skip stages after failure.
 - test extraction tables in `/opt/gluon/org/extraction.db`
 - `/opt/gluon/org/business-kg.db`
 - characterization test artifacts in `<repo-path>/gluon/tests/*`
+- rewrite workspace in `/opt/gluon/org/rewrite/<project>`
+- legacy tree snapshot in `/opt/gluon/org/rewrite/<project>/docs/legacy-tree.txt`
 
 ## Characterization Test Generation
 
@@ -115,4 +118,5 @@ pipeline commands and resumes failed stages after repair.
    `Makefile`, `.gitignore`, `docs/`, `src/`, `CLAUDE.md`, and `AGENTS.md`.
 5. Use the compatibility report as the source of migration requirements.
    Preserve behavior and avoid unrelated refactors.
-6. We create a multi-agent setup. 
+6. Use a multi-agent handoff: Context Agent reads reports and legacy structure,
+   Rewrite Agent updates scaffold, and Review Agent checks traceability.

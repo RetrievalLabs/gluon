@@ -10,6 +10,7 @@ from integrations.gluon_cli import GluonCli
 from models.config import HarnessConfig
 from models.summary import RunSummary
 from pipeline.characterization import run_characterization_agent_loop
+from pipeline.migration_rewrite import run_migration_rewrite_setup
 from pipeline.retry import run_stage_with_repair
 from pipeline.stages import build_stages
 from pipeline.summary import write_summary
@@ -36,6 +37,7 @@ class PipelineCoordinator:
 
         gluon = GluonCli(self.config.gluon_cli, self.paths)
         completed: list[str] = []
+        agent_closed = False
         try:
             try:
                 for stage in build_stages(self.config, gluon):
@@ -56,6 +58,23 @@ class PipelineCoordinator:
                         )
                         if scenarios:
                             completed.append("characterization-full-tests")
+                        agent.close()
+                        agent_closed = True
+                        rewrite_agent = ClaudeAgentClient(
+                            self.config,
+                            self.paths.agent_log,
+                        )
+                        try:
+                            run_migration_rewrite_setup(
+                                self.paths,
+                                repo,
+                                self.config.target_version,
+                                runner,
+                                rewrite_agent,
+                            )
+                            completed.append("migration-rewrite")
+                        finally:
+                            rewrite_agent.close()
             except StageFailedError as error:
                 summary = RunSummary(
                     status="failed",
@@ -67,7 +86,8 @@ class PipelineCoordinator:
                 write_summary(self.paths.summary, summary)
                 raise
         finally:
-            agent.close()
+            if not agent_closed:
+                agent.close()
 
         summary = RunSummary(status="ok", completed_stages=completed)
         write_summary(self.paths.summary, summary)

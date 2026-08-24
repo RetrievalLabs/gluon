@@ -25,6 +25,18 @@ class HarnessPaths:
         return self.root / "project" / self.project
 
     @property
+    def rewrite_workspace(self) -> Path:
+        return self.root / "rewrite" / self.project
+
+    @property
+    def rewrite_docs_dir(self) -> Path:
+        return self.rewrite_workspace / "docs"
+
+    @property
+    def legacy_tree(self) -> Path:
+        return self.rewrite_docs_dir / "legacy-tree.txt"
+
+    @property
     def build_report(self) -> Path:
         return self.build_report_output_dir / self.project / "build-report.json"
 

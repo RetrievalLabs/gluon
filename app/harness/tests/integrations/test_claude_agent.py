@@ -236,6 +236,27 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertIn("Return control to harness", prompt)
         self.assertIn("Do not select the next scenario", prompt)
 
+    def test_migration_rewrite_prompt_orders_agent_handoff(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+        prompt = ClaudeAgentClient(config).build_migration_rewrite_prompt(
+            {"rewrite_workspace": "/tmp/rewrite", "compatibility_report": "/tmp/report"}
+        )
+
+        self.assertIn("Context Agent reads the compatibility report", prompt)
+        self.assertIn("Rewrite Agent updates only scaffold files", prompt)
+        self.assertIn("Review Agent verifies every planned migration requirement", prompt)
+        self.assertIn("Do not push", prompt)
+        self.assertIn("Do not run Gluon pipeline commands", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

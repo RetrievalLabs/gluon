@@ -40,6 +40,8 @@ class CoordinatorTests(unittest.TestCase):
             ) as close_agent, mock.patch(
                 "pipeline.coordinator.GitWorkspace.prepare",
             ), mock.patch(
+                "pipeline.coordinator.run_migration_rewrite_setup",
+            ), mock.patch(
                 "execution.commands.CommandRunner.run",
                 return_value=CommandResult(["cmd"], None, 0, "{}", "", 1),
             ):
@@ -55,9 +57,10 @@ class CoordinatorTests(unittest.TestCase):
                 "extract-tests",
                 "build-business-kg",
                 "generate-characterization-tests",
+                "migration-rewrite",
             ],
         )
-        close_agent.assert_called_once()
+        self.assertEqual(close_agent.call_count, 2)
 
 
 if __name__ == "__main__":
