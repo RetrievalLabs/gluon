@@ -644,6 +644,9 @@ Evidence rows provide the connection back to the extraction DB.
 
 Create a separate SQLite database.
 
+Code-parser materializes base table DDL, foreign keys, checks, defaults, and
+indexes from `app/package/gluon/db/v1/business_kg.proto` SQLite metadata.
+
 Create `llm_extraction_runs` before graph tables that reference it.
 
 ## `llm_extraction_runs`

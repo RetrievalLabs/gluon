@@ -16,7 +16,9 @@ use crate::proto::gluon::db::v1::{
     BusinessEdgeRow, BusinessEvidenceRow, BusinessKgTable, BusinessNodeRow, ExtractionTable,
     LlmExtractionRunRow, LlmExtractionRunStatus,
 };
-use crate::proto::{business_kg_table, extraction_table, llm_extraction_run_status};
+use crate::proto::{
+    business_kg_schema_ddl, business_kg_table, extraction_table, llm_extraction_run_status,
+};
 use crate::proto_field;
 
 pub const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-5";
@@ -2484,145 +2486,7 @@ impl KgStore {
 
 fn create_kg_schema(connection: &Connection) -> Result<(), String> {
     connection
-        .execute_batch(&format!(
-            "
-            PRAGMA foreign_keys = ON;
-
-            CREATE TABLE IF NOT EXISTS {runs} (
-                {run_id} INTEGER PRIMARY KEY AUTOINCREMENT,
-                {run_model} TEXT NOT NULL,
-                {run_status} TEXT NOT NULL,
-                {run_started_at} TEXT NOT NULL,
-                {run_finished_at} TEXT,
-                {run_error} TEXT,
-                {run_methods_total} INTEGER DEFAULT 0,
-                {run_methods_processed} INTEGER DEFAULT 0,
-                {run_failed} INTEGER DEFAULT 0,
-                {run_nodes_created} INTEGER DEFAULT 0,
-                {run_edges_created} INTEGER DEFAULT 0,
-                {run_evidence_created} INTEGER DEFAULT 0,
-                {run_input_tokens} INTEGER DEFAULT 0,
-                {run_output_tokens} INTEGER DEFAULT 0,
-                {run_cache_creation_input_tokens} INTEGER DEFAULT 0,
-                {run_cache_read_input_tokens} INTEGER DEFAULT 0,
-                {run_total_tokens} INTEGER DEFAULT 0
-            );
-
-            CREATE TABLE IF NOT EXISTS {nodes} (
-                {node_id} TEXT PRIMARY KEY,
-                {node_kind} TEXT NOT NULL,
-                {node_name} TEXT NOT NULL,
-                {node_statement} TEXT NOT NULL,
-                {node_confidence} REAL NOT NULL,
-                {node_created_by_run_id} INTEGER,
-                {node_created_at} TEXT NOT NULL,
-                FOREIGN KEY ({node_created_by_run_id}) REFERENCES {runs}({run_id})
-            );
-
-            CREATE TABLE IF NOT EXISTS {edges} (
-                {edge_id} INTEGER PRIMARY KEY AUTOINCREMENT,
-                {edge_source_id} TEXT NOT NULL,
-                {edge_target_id} TEXT NOT NULL,
-                {edge_kind} TEXT NOT NULL,
-                {edge_confidence} REAL NOT NULL,
-                {edge_created_by_run_id} INTEGER,
-                {edge_created_at} TEXT NOT NULL,
-                FOREIGN KEY ({edge_source_id}) REFERENCES {nodes}({node_id}),
-                FOREIGN KEY ({edge_target_id}) REFERENCES {nodes}({node_id}),
-                FOREIGN KEY ({edge_created_by_run_id}) REFERENCES {runs}({run_id})
-            );
-
-            CREATE TABLE IF NOT EXISTS {evidence} (
-                {evidence_id} INTEGER PRIMARY KEY AUTOINCREMENT,
-                {evidence_node_id} TEXT,
-                {evidence_edge_id} INTEGER,
-                {evidence_method_id} TEXT NOT NULL,
-                {evidence_source_lines_json} TEXT NOT NULL,
-                {evidence_reason} TEXT NOT NULL,
-                {evidence_created_by_run_id} INTEGER,
-                {evidence_created_at} TEXT NOT NULL,
-                FOREIGN KEY ({evidence_node_id}) REFERENCES {nodes}({node_id}),
-                FOREIGN KEY ({evidence_edge_id}) REFERENCES {edges}({edge_id}),
-                FOREIGN KEY ({evidence_created_by_run_id}) REFERENCES {runs}({run_id}),
-                CHECK (
-                    ({evidence_node_id} IS NOT NULL AND {evidence_edge_id} IS NULL)
-                    OR ({evidence_node_id} IS NULL AND {evidence_edge_id} IS NOT NULL)
-                )
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_business_nodes_kind_name
-                ON {nodes}({node_kind}, {node_name});
-            CREATE INDEX IF NOT EXISTS idx_business_edges_source
-                ON {edges}({edge_source_id});
-            CREATE INDEX IF NOT EXISTS idx_business_edges_target
-                ON {edges}({edge_target_id});
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_business_edges_unique
-                ON {edges}({edge_source_id}, {edge_target_id}, {edge_kind});
-            CREATE INDEX IF NOT EXISTS idx_business_evidence_method
-                ON {evidence}({evidence_method_id});
-            CREATE INDEX IF NOT EXISTS idx_business_evidence_node
-                ON {evidence}({evidence_node_id});
-            CREATE INDEX IF NOT EXISTS idx_business_evidence_edge
-                ON {evidence}({evidence_edge_id});
-            CREATE INDEX IF NOT EXISTS idx_business_nodes_run
-                ON {nodes}({node_created_by_run_id});
-            CREATE INDEX IF NOT EXISTS idx_business_edges_run
-                ON {edges}({edge_created_by_run_id});
-            CREATE INDEX IF NOT EXISTS idx_business_evidence_run
-                ON {evidence}({evidence_created_by_run_id});
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_business_evidence_node_unique
-                ON {evidence}({evidence_node_id}, {evidence_method_id}, {evidence_source_lines_json}, {evidence_reason})
-                WHERE {evidence_node_id} IS NOT NULL;
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_business_evidence_edge_unique
-                ON {evidence}({evidence_edge_id}, {evidence_method_id}, {evidence_source_lines_json}, {evidence_reason})
-                WHERE {evidence_edge_id} IS NOT NULL;
-            ",
-            runs = business_kg_table(BusinessKgTable::LlmExtractionRuns),
-            run_id = proto_field!(LlmExtractionRunRow, id),
-            run_model = proto_field!(LlmExtractionRunRow, model),
-            run_status = proto_field!(LlmExtractionRunRow, status),
-            run_started_at = proto_field!(LlmExtractionRunRow, started_at),
-            run_finished_at = proto_field!(LlmExtractionRunRow, finished_at),
-            run_error = proto_field!(LlmExtractionRunRow, error),
-            run_methods_total = proto_field!(LlmExtractionRunRow, methods_total),
-            run_methods_processed = proto_field!(LlmExtractionRunRow, methods_processed),
-            run_failed = proto_field!(LlmExtractionRunRow, failed),
-            run_nodes_created = proto_field!(LlmExtractionRunRow, nodes_created),
-            run_edges_created = proto_field!(LlmExtractionRunRow, edges_created),
-            run_evidence_created = proto_field!(LlmExtractionRunRow, evidence_created),
-            run_input_tokens = proto_field!(LlmExtractionRunRow, input_tokens),
-            run_output_tokens = proto_field!(LlmExtractionRunRow, output_tokens),
-            run_cache_creation_input_tokens =
-                proto_field!(LlmExtractionRunRow, cache_creation_input_tokens),
-            run_cache_read_input_tokens =
-                proto_field!(LlmExtractionRunRow, cache_read_input_tokens),
-            run_total_tokens = proto_field!(LlmExtractionRunRow, total_tokens),
-            nodes = business_kg_table(BusinessKgTable::BusinessNodes),
-            node_id = proto_field!(BusinessNodeRow, id),
-            node_kind = proto_field!(BusinessNodeRow, kind),
-            node_name = proto_field!(BusinessNodeRow, name),
-            node_statement = proto_field!(BusinessNodeRow, statement),
-            node_confidence = proto_field!(BusinessNodeRow, confidence),
-            node_created_by_run_id = proto_field!(BusinessNodeRow, created_by_run_id),
-            node_created_at = proto_field!(BusinessNodeRow, created_at),
-            edges = business_kg_table(BusinessKgTable::BusinessEdges),
-            edge_id = proto_field!(BusinessEdgeRow, id),
-            edge_source_id = proto_field!(BusinessEdgeRow, source_id),
-            edge_target_id = proto_field!(BusinessEdgeRow, target_id),
-            edge_kind = proto_field!(BusinessEdgeRow, kind),
-            edge_confidence = proto_field!(BusinessEdgeRow, confidence),
-            edge_created_by_run_id = proto_field!(BusinessEdgeRow, created_by_run_id),
-            edge_created_at = proto_field!(BusinessEdgeRow, created_at),
-            evidence = business_kg_table(BusinessKgTable::BusinessEvidence),
-            evidence_id = proto_field!(BusinessEvidenceRow, id),
-            evidence_node_id = proto_field!(BusinessEvidenceRow, node_id),
-            evidence_edge_id = proto_field!(BusinessEvidenceRow, edge_id),
-            evidence_method_id = proto_field!(BusinessEvidenceRow, method_id),
-            evidence_source_lines_json = proto_field!(BusinessEvidenceRow, source_lines_json),
-            evidence_reason = proto_field!(BusinessEvidenceRow, reason),
-            evidence_created_by_run_id = proto_field!(BusinessEvidenceRow, created_by_run_id),
-            evidence_created_at = proto_field!(BusinessEvidenceRow, created_at),
-        ))
+        .execute_batch(&business_kg_schema_ddl())
         .map_err(|error| format!("failed to create KG schema: {error}"))?;
     ensure_run_column(
         connection,

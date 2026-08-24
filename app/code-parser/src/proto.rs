@@ -57,6 +57,13 @@ const EXTRACTION_ROW_MESSAGES: &[&str] = &[
     "gluon.db.v1.TestDiagnosticRow",
 ];
 
+const BUSINESS_KG_ROW_MESSAGES: &[&str] = &[
+    "gluon.db.v1.LlmExtractionRunRow",
+    "gluon.db.v1.BusinessNodeRow",
+    "gluon.db.v1.BusinessEdgeRow",
+    "gluon.db.v1.BusinessEvidenceRow",
+];
+
 pub fn extraction_table(table: ExtractionTable) -> &'static str {
     match table {
         ExtractionTable::Modules => "modules",
@@ -112,6 +119,10 @@ pub fn extraction_schema_ddl() -> String {
     sqlite_schema_ddl(EXTRACTION_ROW_MESSAGES)
 }
 
+pub fn business_kg_schema_ddl() -> String {
+    sqlite_schema_ddl(BUSINESS_KG_ROW_MESSAGES)
+}
+
 fn descriptor_pool() -> &'static DescriptorPool {
     static POOL: OnceLock<DescriptorPool> = OnceLock::new();
     POOL.get_or_init(|| {
@@ -132,7 +143,10 @@ fn sqlite_schema_ddl(row_messages: &[&str]) -> String {
 }
 
 fn sqlite_create_table_ddl(pool: &DescriptorPool, message: &MessageDescriptor) -> String {
-    let table_name = sqlite_table_name(pool, message);
+    let table = sqlite_table_options(pool, message);
+    let table_name = sqlite_option_string(&table, "name")
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| panic!("sqlite_table.name is set for {}", message.full_name()));
     let mut definitions = Vec::new();
     let mut foreign_keys = Vec::new();
 
@@ -176,25 +190,29 @@ fn sqlite_create_table_ddl(pool: &DescriptorPool, message: &MessageDescriptor) -
         definitions.push(definition);
     }
 
+    definitions.extend(sqlite_option_string_list(&table, "table_constraints"));
     definitions.extend(foreign_keys);
-    format!(
+    let mut statements = vec![format!(
         "CREATE TABLE IF NOT EXISTS {table_name} (\n    {}\n);",
         definitions.join(",\n    ")
-    )
+    )];
+    statements.extend(sqlite_index_ddl(&table_name, &table));
+    statements.join("\n")
 }
 
-fn sqlite_table_name(pool: &DescriptorPool, message: &MessageDescriptor) -> String {
+fn sqlite_table_options(pool: &DescriptorPool, message: &MessageDescriptor) -> DynamicMessage {
     let table_extension = pool
         .get_extension_by_name("gluon.db.v1.sqlite_table")
         .expect("sqlite_table protobuf extension exists");
     let options = message.options();
     let table_value = options.get_extension(&table_extension);
     let Value::Message(table) = table_value.as_ref() else {
-        panic!("sqlite_table option is a message for {}", message.full_name());
+        panic!(
+            "sqlite_table option is a message for {}",
+            message.full_name()
+        );
     };
-    sqlite_option_string(table, "name")
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| panic!("sqlite_table.name is set for {}", message.full_name()))
+    table.clone()
 }
 
 fn sqlite_column_options(
@@ -220,11 +238,68 @@ fn sqlite_option_string(message: &DynamicMessage, field: &str) -> Option<String>
         .and_then(|value| value.as_ref().as_str().map(str::to_owned))
 }
 
+fn sqlite_option_string_list(message: &DynamicMessage, field: &str) -> Vec<String> {
+    match message.get_field_by_name(field).map(|value| value.as_ref()) {
+        Some(Value::List(values)) => values
+            .iter()
+            .filter_map(|value| value.as_str().map(str::to_owned))
+            .filter(|value| !value.is_empty())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 fn sqlite_option_bool(message: &DynamicMessage, field: &str) -> bool {
     message
         .get_field_by_name(field)
         .and_then(|value| value.as_ref().as_bool())
         .unwrap_or(false)
+}
+
+fn sqlite_option_message_list(message: &DynamicMessage, field: &str) -> Vec<DynamicMessage> {
+    match message.get_field_by_name(field).map(|value| value.as_ref()) {
+        Some(Value::List(values)) => values
+            .iter()
+            .filter_map(|value| match value {
+                Value::Message(message) => Some(message.clone()),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn sqlite_index_ddl(table_name: &str, table: &DynamicMessage) -> Vec<String> {
+    sqlite_option_message_list(table, "indexes")
+        .into_iter()
+        .map(|index| {
+            let name = sqlite_option_string(&index, "name")
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| panic!("sqlite index name is set for {table_name}"));
+            let columns = sqlite_option_string_list(&index, "columns");
+            if columns.is_empty() {
+                panic!("sqlite index columns are set for {name}");
+            }
+            let unique = if sqlite_option_bool(&index, "unique") {
+                "UNIQUE "
+            } else {
+                ""
+            };
+            let mut statement = format!(
+                "CREATE {unique}INDEX IF NOT EXISTS {name}\n    ON {table_name}({});",
+                columns.join(", ")
+            );
+            if let Some(where_sql) = sqlite_option_string(&index, "where_sql") {
+                if !where_sql.is_empty() {
+                    statement.pop();
+                    statement.push_str("\n    WHERE ");
+                    statement.push_str(&where_sql);
+                    statement.push(';');
+                }
+            }
+            statement
+        })
+        .collect()
 }
 
 pub fn characterization_business_fixture_ddl() -> String {
@@ -390,8 +465,8 @@ pub fn llm_extraction_run_status(status: LlmExtractionRunStatus) -> &'static str
 #[cfg(test)]
 mod tests {
     use super::{
-        business_kg_table, characterization_run_status, characterization_schema_ddl,
-        characterization_table, extraction_table,
+        business_kg_schema_ddl, business_kg_table, characterization_run_status,
+        characterization_schema_ddl, characterization_table, extraction_table,
         gluon::db::v1::{
             BusinessKgTable, BusinessNodeRow, CharacterizationRunStatus,
             CharacterizationScenarioKind, CharacterizationScenarioRow,
@@ -442,6 +517,10 @@ mod tests {
             "characterization_scenarios"
         );
         assert!(characterization_schema_ddl().contains("characterization_scenarios"));
+        let business_kg_schema = business_kg_schema_ddl();
+        assert!(business_kg_schema.contains("business_nodes"));
+        assert!(business_kg_schema.contains("idx_business_evidence_node_unique"));
+        assert!(business_kg_schema.contains("CHECK ((node_id IS NOT NULL"));
         assert_eq!(extraction_table(ExtractionTable::Methods), "methods");
     }
 }

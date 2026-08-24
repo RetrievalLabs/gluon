@@ -10,6 +10,6 @@ Scope:
   and harness.
 - Public inter-service API contracts when needed.
 
-Protobuf contracts describe shared names and typed row shapes. SQLite DDL,
-indexes, foreign keys, migrations, and defaults stay owned by the component
-that creates the database.
+Protobuf contracts describe shared names, typed row shapes, and SQLite metadata
+when a component generates schema from descriptors. Migrations and behavior
+around database lifecycle stay owned by the component that creates the database.

@@ -6,6 +6,8 @@ import "google/protobuf/descriptor.proto";
 
 message SqliteTableOptions {
   string name = 1;
+  repeated string table_constraints = 2;
+  repeated SqliteIndexOptions indexes = 3;
 }
 
 message SqliteColumnOptions {
@@ -16,6 +18,13 @@ message SqliteColumnOptions {
   string default_sql = 5;
   string references_table = 6;
   string references_column = 7;
+}
+
+message SqliteIndexOptions {
+  string name = 1;
+  repeated string columns = 2;
+  bool unique = 3;
+  string where_sql = 4;
 }
 
 extend google.protobuf.MessageOptions {

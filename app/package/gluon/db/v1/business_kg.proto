@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package gluon.db.v1;
 
+import "gluon/db/v1/sqlite.proto";
+
 // Shared contract for business-kg.db.
 
 enum BusinessKgTable {
@@ -21,52 +23,95 @@ enum LlmExtractionRunStatus {
 }
 
 message LlmExtractionRunRow {
-  int64 id = 1;
-  string model = 2;
-  LlmExtractionRunStatus status = 3;
-  string started_at = 4;
-  optional string finished_at = 5;
-  optional string error = 6;
-  int64 methods_total = 7;
-  int64 methods_processed = 8;
-  int64 failed = 9;
-  int64 nodes_created = 10;
-  int64 edges_created = 11;
-  int64 evidence_created = 12;
-  int64 input_tokens = 13;
-  int64 output_tokens = 14;
-  int64 cache_creation_input_tokens = 15;
-  int64 cache_read_input_tokens = 16;
-  int64 total_tokens = 17;
+  option (sqlite_table).name = "llm_extraction_runs";
+
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  string model = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  LlmExtractionRunStatus status = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string started_at = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional string finished_at = 5 [(sqlite_column).sql_type = "TEXT"];
+  optional string error = 6 [(sqlite_column).sql_type = "TEXT"];
+  int64 methods_total = 7 [(sqlite_column) = { sql_type: "INTEGER" default_sql: "0" }];
+  int64 methods_processed = 8 [(sqlite_column) = { sql_type: "INTEGER" default_sql: "0" }];
+  int64 failed = 9 [(sqlite_column) = { sql_type: "INTEGER" default_sql: "0" }];
+  int64 nodes_created = 10 [(sqlite_column) = { sql_type: "INTEGER" default_sql: "0" }];
+  int64 edges_created = 11 [(sqlite_column) = { sql_type: "INTEGER" default_sql: "0" }];
+  int64 evidence_created = 12 [(sqlite_column) = { sql_type: "INTEGER" default_sql: "0" }];
+  int64 input_tokens = 13 [(sqlite_column) = { sql_type: "INTEGER" default_sql: "0" }];
+  int64 output_tokens = 14 [(sqlite_column) = { sql_type: "INTEGER" default_sql: "0" }];
+  int64 cache_creation_input_tokens = 15 [(sqlite_column) = { sql_type: "INTEGER" default_sql: "0" }];
+  int64 cache_read_input_tokens = 16 [(sqlite_column) = { sql_type: "INTEGER" default_sql: "0" }];
+  int64 total_tokens = 17 [(sqlite_column) = { sql_type: "INTEGER" default_sql: "0" }];
 }
 
 message BusinessNodeRow {
-  string id = 1;
-  string kind = 2;
-  string name = 3;
-  string statement = 4;
-  double confidence = 5;
-  optional int64 created_by_run_id = 6;
-  string created_at = 7;
+  option (sqlite_table) = {
+    name: "business_nodes"
+    indexes: { name: "idx_business_nodes_kind_name" columns: "kind" columns: "name" }
+    indexes: { name: "idx_business_nodes_run" columns: "created_by_run_id" }
+  };
+
+  string id = 1 [(sqlite_column) = { sql_type: "TEXT" primary_key: true }];
+  string kind = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string name = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string statement = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  double confidence = 5 [(sqlite_column) = { sql_type: "REAL" not_null: true }];
+  optional int64 created_by_run_id = 6 [(sqlite_column) = { sql_type: "INTEGER" references_table: "llm_extraction_runs" references_column: "id" }];
+  string created_at = 7 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message BusinessEdgeRow {
-  int64 id = 1;
-  string source_id = 2;
-  string target_id = 3;
-  string kind = 4;
-  double confidence = 5;
-  optional int64 created_by_run_id = 6;
-  string created_at = 7;
+  option (sqlite_table) = {
+    name: "business_edges"
+    indexes: { name: "idx_business_edges_source" columns: "source_id" }
+    indexes: { name: "idx_business_edges_target" columns: "target_id" }
+    indexes: { name: "idx_business_edges_unique" columns: "source_id" columns: "target_id" columns: "kind" unique: true }
+    indexes: { name: "idx_business_edges_run" columns: "created_by_run_id" }
+  };
+
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  string source_id = 2 [(sqlite_column) = { sql_type: "TEXT" not_null: true references_table: "business_nodes" references_column: "id" }];
+  string target_id = 3 [(sqlite_column) = { sql_type: "TEXT" not_null: true references_table: "business_nodes" references_column: "id" }];
+  string kind = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  double confidence = 5 [(sqlite_column) = { sql_type: "REAL" not_null: true }];
+  optional int64 created_by_run_id = 6 [(sqlite_column) = { sql_type: "INTEGER" references_table: "llm_extraction_runs" references_column: "id" }];
+  string created_at = 7 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
 
 message BusinessEvidenceRow {
-  int64 id = 1;
-  optional string node_id = 2;
-  optional int64 edge_id = 3;
-  string method_id = 4;
-  string source_lines_json = 5;
-  string reason = 6;
-  optional int64 created_by_run_id = 7;
-  string created_at = 8;
+  option (sqlite_table) = {
+    name: "business_evidence"
+    table_constraints: "CHECK ((node_id IS NOT NULL AND edge_id IS NULL) OR (node_id IS NULL AND edge_id IS NOT NULL))"
+    indexes: { name: "idx_business_evidence_method" columns: "method_id" }
+    indexes: { name: "idx_business_evidence_node" columns: "node_id" }
+    indexes: { name: "idx_business_evidence_edge" columns: "edge_id" }
+    indexes: { name: "idx_business_evidence_run" columns: "created_by_run_id" }
+    indexes: {
+      name: "idx_business_evidence_node_unique"
+      columns: "node_id"
+      columns: "method_id"
+      columns: "source_lines_json"
+      columns: "reason"
+      unique: true
+      where_sql: "node_id IS NOT NULL"
+    }
+    indexes: {
+      name: "idx_business_evidence_edge_unique"
+      columns: "edge_id"
+      columns: "method_id"
+      columns: "source_lines_json"
+      columns: "reason"
+      unique: true
+      where_sql: "edge_id IS NOT NULL"
+    }
+  };
+
+  int64 id = 1 [(sqlite_column) = { sql_type: "INTEGER" primary_key: true autoincrement: true }];
+  optional string node_id = 2 [(sqlite_column) = { sql_type: "TEXT" references_table: "business_nodes" references_column: "id" }];
+  optional int64 edge_id = 3 [(sqlite_column) = { sql_type: "INTEGER" references_table: "business_edges" references_column: "id" }];
+  string method_id = 4 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string source_lines_json = 5 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  string reason = 6 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
+  optional int64 created_by_run_id = 7 [(sqlite_column) = { sql_type: "INTEGER" references_table: "llm_extraction_runs" references_column: "id" }];
+  string created_at = 8 [(sqlite_column) = { sql_type: "TEXT" not_null: true }];
 }
