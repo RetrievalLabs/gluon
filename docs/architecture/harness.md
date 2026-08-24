@@ -115,3 +115,4 @@ pipeline commands and resumes failed stages after repair.
    `Makefile`, `.gitignore`, `docs/`, `src/`, `CLAUDE.md`, and `AGENTS.md`.
 5. Use the compatibility report as the source of migration requirements.
    Preserve behavior and avoid unrelated refactors.
+6. We create a multi-agent setup. 
