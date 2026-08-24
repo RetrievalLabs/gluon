@@ -8,7 +8,7 @@ A Java modernization platform that migrates applications from Java 9 to Java 25 
 
 - `app/` - contains different components of the platform
 - `docs/` - contains architecture and planning docs
-- `skills/` contains platform skills used by agents.
+- `skills/` contains skills used by agents.
 
 ## Behavioral Guidelines
 

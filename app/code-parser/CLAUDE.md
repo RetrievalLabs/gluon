@@ -38,7 +38,7 @@ A Rust-based CLI tool for parsing Java build metadata.
 - Add a regression test for each parser bug fix.
 - Keep tests deterministic and offline.
 - Update this file's Structure section whenever code-parser directories or module responsibilities change.
-- Update `../../skills/gluon-cli/SKILL.md` whenever new CLI commands are added so production agents know how to use them.
+- Update `../harness/skills/gluon-cli/SKILL.md` whenever new CLI commands are added so production agents know how to use them.
 
 ## Rust Documentation
 

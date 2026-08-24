@@ -22,3 +22,5 @@ data/nakadi/
 .claude
 .codex
 .agents
+.cursor
+.github
