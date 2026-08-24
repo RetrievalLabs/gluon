@@ -32,7 +32,7 @@ Missing or invalid required config is fatal.
 8. Run `gluon-cli extract-tests` to append test extraction tables to `/opt/gluon/org/extraction.db`.
 9. Run `gluon-cli build-business-kg` to create `business-kg.db`.
 10. Run characterization test generation.
-11. Create migration rewrite workspace and hand off rewrite setup to agents.
+11. Create migration rewrite workspace with deterministic Python setup.
 
 ## Error Handling
 
@@ -118,5 +118,5 @@ pipeline commands and resumes failed stages after repair.
    `Makefile`, `.gitignore`, `docs/`, `src/`, `CLAUDE.md`, and `AGENTS.md`.
 5. Use the compatibility report as the source of migration requirements.
    Preserve behavior and avoid unrelated refactors.
-6. Use a multi-agent handoff: Context Agent reads reports and legacy structure,
-   Rewrite Agent updates scaffold, and Review Agent checks traceability.
+6. Perform this setup deterministically in Python. Do not invoke agents for
+   workspace creation, git setup, tree capture, or scaffold creation.

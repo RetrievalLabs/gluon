@@ -60,7 +60,7 @@ class CoordinatorTests(unittest.TestCase):
                 "migration-rewrite",
             ],
         )
-        self.assertEqual(close_agent.call_count, 2)
+        close_agent.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -37,7 +37,6 @@ class PipelineCoordinator:
 
         gluon = GluonCli(self.config.gluon_cli, self.paths)
         completed: list[str] = []
-        agent_closed = False
         try:
             try:
                 for stage in build_stages(self.config, gluon):
@@ -58,23 +57,13 @@ class PipelineCoordinator:
                         )
                         if scenarios:
                             completed.append("characterization-full-tests")
-                        agent.close()
-                        agent_closed = True
-                        rewrite_agent = ClaudeAgentClient(
-                            self.config,
-                            self.paths.agent_log,
+                        run_migration_rewrite_setup(
+                            self.paths,
+                            repo,
+                            self.config.target_version,
+                            runner,
                         )
-                        try:
-                            run_migration_rewrite_setup(
-                                self.paths,
-                                repo,
-                                self.config.target_version,
-                                runner,
-                                rewrite_agent,
-                            )
-                            completed.append("migration-rewrite")
-                        finally:
-                            rewrite_agent.close()
+                        completed.append("migration-rewrite")
             except StageFailedError as error:
                 summary = RunSummary(
                     status="failed",
@@ -86,8 +75,7 @@ class PipelineCoordinator:
                 write_summary(self.paths.summary, summary)
                 raise
         finally:
-            if not agent_closed:
-                agent.close()
+            agent.close()
 
         summary = RunSummary(status="ok", completed_stages=completed)
         write_summary(self.paths.summary, summary)

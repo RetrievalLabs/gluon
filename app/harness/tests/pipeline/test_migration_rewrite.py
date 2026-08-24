@@ -18,28 +18,18 @@ class FakeRunner:
         return CommandResult(command, str(cwd) if cwd else None, 0, stdout, "", 1)
 
 
-class FakeAgent:
-    def __init__(self) -> None:
-        self.calls = []
-
-    def run_migration_rewrite(self, rewrite_workspace, seed_context):
-        self.calls.append((rewrite_workspace, seed_context))
-
-
 class MigrationRewriteTests(unittest.TestCase):
-    def test_scaffolds_rewrite_workspace_and_invokes_agent(self) -> None:
+    def test_scaffolds_rewrite_workspace_deterministically(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             paths = HarnessPaths.from_org_project("org/project", Path(directory))
             paths.repo.mkdir(parents=True)
             runner = FakeRunner()
-            agent = FakeAgent()
 
             run_migration_rewrite_setup(
                 paths,
                 RepoInfo("https://repo.test/project", "main"),
                 "25",
                 runner,
-                agent,
             )
 
             self.assertEqual(
@@ -74,11 +64,6 @@ class MigrationRewriteTests(unittest.TestCase):
             self.assertEqual(
                 paths.legacy_tree.read_text(encoding="utf-8"),
                 "legacy\n`-- pom.xml\n",
-            )
-            self.assertEqual(agent.calls[0][0], paths.rewrite_workspace)
-            self.assertEqual(
-                agent.calls[0][1]["compatibility_report"],
-                str(paths.compatibility_report),
             )
 
 

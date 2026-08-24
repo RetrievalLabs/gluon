@@ -249,22 +249,6 @@ Stderr:
         self.record(result)
         return result
 
-    def run_migration_rewrite(
-        self,
-        rewrite_workspace: Path,
-        seed_context: dict[str, Any],
-    ) -> AgentAttempt:
-        prompt = self.build_migration_rewrite_prompt(seed_context)
-        agent_result = self.run_agent(rewrite_workspace, prompt)
-        result = AgentAttempt(
-            stage_name="migration-rewrite",
-            attempt=1,
-            status="completed",
-            message=f"migration rewrite setup completed in {rewrite_workspace}: {agent_result}",
-        )
-        self.record(result)
-        return result
-
     def build_characterization_prompt(self, seed_context: dict[str, Any]) -> str:
         return f"""Generate one full characterization test from harness seed context.
 
@@ -290,35 +274,6 @@ Rules:
 - Use git status/diff for review, but do not commit. Harness commits after control returns.
 - Keep generated tests deterministic.
 - If any required database write fails, fix it before returning control.
-
-Seed context:
-```json
-{json.dumps(seed_context, indent=2, sort_keys=True)}
-```
-"""
-
-    def build_migration_rewrite_prompt(self, seed_context: dict[str, Any]) -> str:
-        return f"""Start migration rewrite from harness seed context.
-
-You are the main agent. Follow this order exactly:
-
-1. Read the seed context below.
-2. Use the Task tool to give the seed context to the Context Agent.
-3. Context Agent reads the compatibility report, legacy tree, and legacy source structure, then returns structured JSON context only.
-4. As main agent, use the Task tool to give the context packet and rewrite planning responsibility to the Rewrite Agent.
-5. Rewrite Agent updates only scaffold files needed to start the modernized project plan.
-6. As main agent, use the Task tool to give the rewrite plan and changed files to the Review Agent.
-7. Review Agent verifies every planned migration requirement traces to the compatibility report or legacy structure.
-8. Return control to harness after review. Do not push, do not rewrite git history, and do not modify the legacy checkout.
-
-Rules:
-- Work only inside the rewrite workspace unless reading the legacy checkout and reports from paths in seed context.
-- Use the compatibility report as source of migration requirements.
-- Preserve legacy behavior. Avoid unrelated refactors.
-- Keep scaffold minimal: `Makefile`, `.gitignore`, `docs/`, `src/`, `CLAUDE.md`, and `AGENTS.md`.
-- Use `docs/legacy-tree.txt` to compare legacy structure against the scaffold.
-- Do not run Gluon pipeline commands.
-- Report changed files and remaining blockers.
 
 Seed context:
 ```json
