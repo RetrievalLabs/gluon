@@ -17,3 +17,4 @@ summaries.
 - `models/` - dataclasses shared across harness components.
 - `pipeline/` - stage list, retry loop, coordinator, and summary writer.
 - `tests/` - offline unit tests mirroring production module structure.
+- `skills/` - contains skills used by claude agent sdk during migration.
