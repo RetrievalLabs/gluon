@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from execution.paths import HarnessPaths
 
 
@@ -18,6 +16,8 @@ class GluonCli:
             "--resolve",
             "--format",
             "json",
+            "--output-dir",
+            str(self.paths.build_report_output_dir),
         ]
 
     def analyze_report(self, target_version: str) -> list[str]:
@@ -33,6 +33,8 @@ class GluonCli:
             "json",
             "--source-path",
             str(self.paths.repo),
+            "--output-dir",
+            str(self.paths.compatibility_report_output_dir),
         ]
 
     def extract_business(self) -> list[str]:
@@ -84,11 +86,4 @@ class GluonCli:
             "--output-dir",
             str(self.paths.characterization_output_dir),
         ]
-
-    def write_stdout_target(self, command: list[str]) -> Path | None:
-        if "parse-build" in command:
-            return self.paths.build_report
-        if "analyze-report" in command:
-            return self.paths.compatibility_report
-        return None
 

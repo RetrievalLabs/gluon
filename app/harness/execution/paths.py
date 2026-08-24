@@ -26,10 +26,22 @@ class HarnessPaths:
 
     @property
     def build_report(self) -> Path:
+        return self.build_report_output_dir / self.project / "build-report.json"
+
+    @property
+    def build_report_output_dir(self) -> Path:
         return self.root / "build-report"
 
     @property
     def compatibility_report(self) -> Path:
+        return (
+            self.compatibility_report_output_dir
+            / self.project
+            / "compatibility-report.json"
+        )
+
+    @property
+    def compatibility_report_output_dir(self) -> Path:
         return self.root / "compatibility-report"
 
     @property

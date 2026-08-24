@@ -26,7 +26,8 @@ Missing or invalid required config is fatal.
 3. Request repo URL, source branch, and token from backend. Mock this until backend is ready.
 4. Clone repo, checkout source branch, create migration branch.
 5. Set `JAVA_HOME` to `/opt/jdks/jdk{CURRENT_VERSION}`.
-6. Run `gluon-cli parse-build` and `gluon-cli analyze-report`.
+6. Run `gluon-cli parse-build` and `gluon-cli analyze-report`, passing
+   configured output directories so reports are written by the CLI.
 7. Run `gluon-cli extract-business` to create `/opt/gluon/org/extraction.db`.
 8. Run `gluon-cli extract-tests` to append test extraction tables to `/opt/gluon/org/extraction.db`.
 9. Run `gluon-cli build-business-kg` to create `business-kg.db`.
@@ -47,8 +48,8 @@ Do not skip stages after failure.
 ## Outputs
 
 - repo clone in `/opt/gluon/org/project/{}`
-- `/opt/gluon/org/build-report`
-- `/opt/gluon/org/compatibility-report`
+- `/opt/gluon/org/build-report/<project>/build-report.json`
+- `/opt/gluon/org/compatibility-report/<project>/compatibility-report.json`
 - `/opt/gluon/org/extraction.db`
 - test extraction tables in `/opt/gluon/org/extraction.db`
 - `/opt/gluon/org/business-kg.db`
@@ -101,3 +102,16 @@ Agents may use:
 
 Agents must not run harness-owned Gluon stages. Harness runs `gluon-cli`
 pipeline commands and resumes failed stages after repair.
+
+## Migration Rewrite
+
+1. Create a separate rewrite workspace for the modernized project.
+2. Initialize git in the rewrite workspace, create branch
+   `gluon/java-<target-version>`, and set `origin` to the source repo URL.
+3. Inspect the legacy checkout with `tree` and save the output, for example
+   `docs/legacy-tree.txt`, so agents can compare legacy structure with the new
+   scaffold.
+4. Scaffold only the initial structure needed for rewrite work:
+   `Makefile`, `.gitignore`, `docs/`, `src/`, `CLAUDE.md`, and `AGENTS.md`.
+5. Use the compatibility report as the source of migration requirements.
+   Preserve behavior and avoid unrelated refactors.

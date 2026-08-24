@@ -39,7 +39,7 @@ class PipelineCoordinator:
         try:
             try:
                 for stage in build_stages(self.config, gluon):
-                    result = run_stage_with_repair(
+                    run_stage_with_repair(
                         stage,
                         runner,
                         agent,
@@ -47,9 +47,6 @@ class PipelineCoordinator:
                         self.config.max_agent_attempts,
                         stage_env,
                     )
-                    target = gluon.write_stdout_target(stage.command)
-                    if target is not None:
-                        target.write_text(result.command_result.stdout, encoding="utf-8")
                     completed.append(stage.name)
                     if stage.name == "generate-characterization-tests":
                         scenarios = run_characterization_agent_loop(
