@@ -1,15 +1,14 @@
 ---
 name: java-best-practices
-description: Use this skill when working with Java 11 through Java 25 code, Optional handling, HTTP Client, CompletableFuture, records, sealed classes, virtual threads, scoped values, or Java modernization.
-version: 1.2.0
+description: Use this skill when migrating Java 8, 11, 17, or 21 applications to Java 25, handling removed APIs, JDK internals, dependency upgrades, runtime flags, staged Java LTS upgrades, Optional handling, HTTP Client, CompletableFuture, records, sealed classes, virtual threads, scoped values, or Java modernization.
 metadata:
   mcpmarket-version: 1.0.0
 ---
 # Java Best Practices
 
-Guidance for writing type-safe, concurrent, modern Java 11 through Java 25 code. Covers null safety, concurrency patterns, and modern language features.
+Guidance for migrating Java 8/11/17/21 applications to Java 25 and writing type-safe, concurrent, modern Java code. Covers staged upgrades, removed APIs, dependency readiness, null safety, concurrency patterns, and modern language features.
 
-For Java 8 to Java 25 migration strategy, use sibling skill `../java-8-to-25-migration`.
+Use `patterns/migration-strategy.md` for Java 8 through Java 25 migration guidance before optional source modernization.
 
 ## Core Principles
 
@@ -19,6 +18,7 @@ For Java 8 to Java 25 migration strategy, use sibling skill `../java-8-to-25-mig
 4. **Modern features**: Leverage Java 11-25 features when they reduce code without changing behavior
 5. **Virtual threads for IO**: Use virtual threads (Java 21+) for IO-bound operations
 6. **Preview caution**: Use Java 25 preview/incubator features only when build flags, runtime flags, and upgrade risk are acceptable
+7. **Migration before modernization**: Fix build, dependency, runtime, and removed-API blockers before optional syntax upgrades
 
 ## Type Safety
 
