@@ -1,9 +1,9 @@
 ---
 name: Type Safety
 category: Java
-tags: [java, optional, nullable, null-safety, annotations]
+tags: [java, optional, nullable, null-safety, annotations, java-11]
 activation:
-  keywords: [optional, nullable, null, nonnull, requirenonnull]
+  keywords: [optional, nullable, null, nonnull, requirenonnull, isempty, isblank]
   file_patterns: ["**/*.java"]
 ---
 
@@ -19,6 +19,7 @@ activation:
 3. Use `@Nullable`/`@NonNull` annotations for method parameters
 4. Validate non-null parameters with `Objects.requireNonNull()`
 5. Prefer `orElseGet()` over `orElse()` for expensive defaults
+6. Use Java 11+ string and Optional conveniences when they keep intent clear
 
 **Quick Patterns**:
 
@@ -38,6 +39,11 @@ public User createUser(@NonNull String name, @Nullable String email) {
 String email = findById(id)
     .map(User::getEmail)
     .orElse("unknown@example.com");
+
+// Java 11+ blank checks
+if (name == null || name.isBlank()) {
+    throw new IllegalArgumentException("name is required");
+}
 ```
 
 ---
@@ -120,6 +126,31 @@ Optional<Order> latestOrder = findUserById(id)
     .flatMap(User::getLatestOrder);
 ```
 
+#### 5. Java 11+ API Conveniences
+
+Use Java 11 string helpers for validation and normalization when behavior matches existing code:
+
+```java
+public User createUser(String name) {
+    Objects.requireNonNull(name, "name");
+    if (name.isBlank()) {
+        throw new IllegalArgumentException("name is required");
+    }
+    return new User(name.strip());
+}
+```
+
+Use `Optional.isEmpty()` when it reads better than negating `isPresent()`:
+
+```java
+Optional<User> user = findByEmail(email);
+if (user.isEmpty()) {
+    audit.missingUser(email);
+}
+```
+
+Do not replace `trim()` with `strip()` unless Unicode whitespace handling is intended.
+
 ### Anti-Patterns
 
 - Using `Optional.get()` without checking `isPresent()`
@@ -127,6 +158,7 @@ Optional<Order> latestOrder = findUserById(id)
 - Using `orElse()` with expensive computations (use `orElseGet()`)
 - Returning `null` from methods that could return `Optional`
 - Nesting Optional (`Optional<Optional<T>>`)
+- Replacing `trim()` with `strip()` without checking whitespace semantics
 
 ### Examples
 

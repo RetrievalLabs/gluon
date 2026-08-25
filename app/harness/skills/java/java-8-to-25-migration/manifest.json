@@ -1,0 +1,19 @@
+{
+  "$schema": "../manifest-schema.json",
+  "name": "java-8-to-25-migration",
+  "version": "1.0.0",
+  "description": "Migration strategy, runtime risk, removed API, and modernization guidance for Java 8 to Java 25 upgrades",
+  "author": "Conductor Team",
+  "activation": {
+    "keywords": ["java", "java 8", "java 11", "java 17", "java 21", "java 25", "migration", "upgrade", "jdeps", "jdeprscan", "removed api", "jdk internals", "--add-opens", "--add-exports", "jakarta"],
+    "file_patterns": ["**/*.java", "**/pom.xml", "**/build.gradle", "**/build.gradle.kts"],
+    "tech_stack": {
+      "languages": ["Java"]
+    }
+  },
+  "provides": {
+    "guidance": ["java-8-to-25-migration", "migration-strategy", "removed-apis", "runtime-risk"],
+    "patterns": ["migration-strategy"]
+  },
+  "dependencies": []
+}
