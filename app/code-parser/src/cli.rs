@@ -1305,10 +1305,8 @@ fn read_build_report(path: &Path) -> Result<BuildReport, String> {
         .map_err(|error| format!("failed to parse report {}: {error}", path.display()))?;
     if report.build_tools.is_empty()
         && report.java_versions.is_empty()
-        && report.declared_dependencies.is_empty()
-        && report.resolved_dependencies.is_empty()
-        && report.declared_plugins.is_empty()
-        && report.resolved_plugins.is_empty()
+        && report.direct_dependencies.is_empty()
+        && report.direct_plugins.is_empty()
     {
         report.rebuild_flat_inventory();
     }

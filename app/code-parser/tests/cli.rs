@@ -109,10 +109,8 @@ fn write_build_report(root: &PathBuf, dependency_fragment: &str) -> PathBuf {
               "project_root":"{}",
               "build_tools":[],
               "java_versions":[{{"version":"17","kind":"release","file":"pom.xml","source":"maven:property"}}],
-              "declared_dependencies":[],
               {},
-              "declared_plugins":[],
-              "resolved_plugins":[],
+              "direct_plugins":[],
               "diagnostics":[]
             }}"#,
             root.display(),
@@ -417,12 +415,10 @@ fn parse_build_groups_multi_module_report_sections() {
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["parent"]["path"], ".");
     assert_eq!(value["modules"][0]["path"], "service");
-    assert!(value["declared_dependencies"].is_null());
-    assert!(value["resolved_dependencies"].is_null());
-    assert!(value["declared_plugins"].is_null());
-    assert!(value["resolved_plugins"].is_null());
+    assert!(value["direct_dependencies"].is_null());
+    assert!(value["direct_plugins"].is_null());
     assert_eq!(
-        value["modules"][0]["declared_dependencies"][0]["artifact_id"],
+        value["modules"][0]["direct_dependencies"][0]["artifact_id"],
         "service-api"
     );
     let _ = fs::remove_dir_all(root);
@@ -488,7 +484,7 @@ fn analyze_report_outputs_valid_json() {
     .unwrap();
     let report_path = write_build_report(
         &root,
-        r#""resolved_dependencies":[{"group_id":"org.ow2.asm","artifact_id":"asm","version":"9.7","configuration":null,"scope":null,"file":null,"source":"maven:resolved"}]"#,
+        r#""direct_dependencies":[{"group_id":"org.ow2.asm","artifact_id":"asm","version":"9.7","configuration":null,"scope":null,"file":null,"source":"maven:resolved"}]"#,
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
@@ -519,8 +515,8 @@ fn analyze_report_groups_multi_module_report_sections() {
         format!(
             r#"{{
               "project_root":"{}",
-              "parent":{{"name":"parent","path":".","build_tools":[],"java_versions":[{{"version":"17","kind":"release","file":"pom.xml","source":"pom.xml properties"}}],"declared_dependencies":[],"resolved_dependencies":[],"declared_plugins":[],"resolved_plugins":[]}},
-              "modules":[{{"name":"service","path":"service","build_tools":[],"java_versions":[],"declared_dependencies":[{{"group_id":"org.ow2.asm","artifact_id":"asm","version":"9.7","configuration":null,"scope":null,"file":"service/pom.xml","source":"pom.xml"}}],"resolved_dependencies":[],"declared_plugins":[],"resolved_plugins":[]}}],
+              "parent":{{"name":"parent","path":".","build_tools":[],"java_versions":[{{"version":"17","kind":"release","file":"pom.xml","source":"pom.xml properties"}}],"direct_dependencies":[],"direct_plugins":[]}},
+              "modules":[{{"name":"service","path":"service","build_tools":[],"java_versions":[],"direct_dependencies":[{{"group_id":"org.ow2.asm","artifact_id":"asm","version":"9.7","configuration":null,"scope":null,"file":"service/pom.xml","source":"pom.xml"}}],"direct_plugins":[]}}],
               "diagnostics":[]
             }}"#,
             root.display()
@@ -550,7 +546,7 @@ fn analyze_report_groups_multi_module_report_sections() {
 fn analyze_report_writes_report_to_output_dir() {
     let root = test_dir("analyze-output-project");
     let output_root = test_dir("analyze-output-root");
-    let report_path = write_build_report(&root, r#""resolved_dependencies":[]"#);
+    let report_path = write_build_report(&root, r#""direct_dependencies":[]"#);
 
     let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
         .args(["analyze-report", "--report"])
@@ -617,11 +613,75 @@ fn analyze_report_rejects_invalid_json() {
 }
 
 #[test]
+fn analyze_report_rejects_legacy_dependency_fields() {
+    let root = test_dir("analyze-legacy-dependencies");
+    let report_path = root.join("build-report.json");
+    fs::write(
+        &report_path,
+        format!(
+            r#"{{
+              "project_root":"{}",
+              "build_tools":[],
+              "java_versions":[],
+              "declared_dependencies":[],
+              "declared_plugins":[],
+              "diagnostics":[]
+            }}"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["analyze-report", "--report"])
+        .arg(&report_path)
+        .args(["--target-java", "25"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown field"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn analyze_report_rejects_legacy_plugin_fields() {
+    let root = test_dir("analyze-legacy-plugins");
+    let report_path = root.join("build-report.json");
+    fs::write(
+        &report_path,
+        format!(
+            r#"{{
+              "project_root":"{}",
+              "build_tools":[],
+              "java_versions":[],
+              "direct_dependencies":[],
+              "declared_plugins":[],
+              "diagnostics":[]
+            }}"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["analyze-report", "--report"])
+        .arg(&report_path)
+        .args(["--target-java", "25"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown field"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn analyze_report_warns_for_missing_source_path_and_keeps_dependency_analysis() {
     let root = test_dir("analyze-missing-source");
     let report_path = write_build_report(
         &root,
-        r#""resolved_dependencies":[{"group_id":"org.example","artifact_id":"demo","version":"1.0.0","configuration":null,"scope":null,"file":null,"source":"maven:resolved"}]"#,
+        r#""direct_dependencies":[{"group_id":"org.example","artifact_id":"demo","version":"1.0.0","configuration":null,"scope":null,"file":null,"source":"maven:resolved"}]"#,
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
@@ -650,7 +710,7 @@ fn analyze_report_warns_for_missing_source_path_and_keeps_dependency_analysis() 
 fn analyze_report_jdk_tools_missing_root_emits_warnings() {
     let root = test_dir("analyze-jdk-tools");
     fs::create_dir_all(root.join("target/classes")).unwrap();
-    let report_path = write_build_report(&root, r#""resolved_dependencies":[]"#);
+    let report_path = write_build_report(&root, r#""direct_dependencies":[]"#);
     let missing_jdk_root = root.join("missing-jdks");
 
     let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))

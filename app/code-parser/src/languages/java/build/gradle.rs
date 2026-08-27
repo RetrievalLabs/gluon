@@ -111,7 +111,7 @@ fn push_catalog_dependency(
     if parts.len() < 2 {
         return;
     }
-    report.declared_dependencies.push(DependencyInfo {
+    report.direct_dependencies.push(DependencyInfo {
         group_id: Some(parts[0].to_string()),
         artifact_id: parts[1].to_string(),
         version: version_override
@@ -168,7 +168,7 @@ fn parse_catalog_plugin(
         return;
     };
     let version = capture_version(declaration, versions);
-    report.declared_plugins.push(PluginInfo {
+    report.direct_plugins.push(PluginInfo {
         id,
         version,
         file: Some(file.to_string()),
@@ -239,7 +239,7 @@ fn parse_plugins(contents: &str, file: &str, report: &mut BuildReport) {
     )
     .expect("valid plugin regex");
     for captures in regex.captures_iter(contents) {
-        report.declared_plugins.push(PluginInfo {
+        report.direct_plugins.push(PluginInfo {
             id: captures[1].to_string(),
             version: captures.get(2).map(|value| value.as_str().to_string()),
             file: Some(file.to_string()),
@@ -250,14 +250,16 @@ fn parse_plugins(contents: &str, file: &str, report: &mut BuildReport) {
 
 fn parse_dependencies(contents: &str, file: &str, report: &mut BuildReport) {
     let regex = Regex::new(
-        r#"(?m)^\s*([A-Za-z][A-Za-z0-9_]*)\s*\(?\s*['"]([^:'"]+):([^:'"]+):([^'"]+)['"]\s*\)?"#,
+        r#"(?m)^\s*([A-Za-z][A-Za-z0-9_]*)\s*\(?\s*['"]([^:'"]+):([^:'"]+)(?::([^'"]+))?['"]\s*\)?"#,
     )
     .expect("valid dependency regex");
     for captures in regex.captures_iter(contents) {
-        report.declared_dependencies.push(DependencyInfo {
+        report.direct_dependencies.push(DependencyInfo {
             group_id: Some(captures[2].to_string()),
             artifact_id: captures[3].to_string(),
-            version: Some(captures[4].trim_end_matches(')').to_string()),
+            version: captures
+                .get(4)
+                .map(|value| value.as_str().trim_end_matches(')').to_string()),
             configuration: Some(captures[1].to_string()),
             scope: None,
             file: Some(file.to_string()),
@@ -313,13 +315,13 @@ mod tests {
         );
         assert!(
             report
-                .declared_plugins
+                .direct_plugins
                 .iter()
                 .any(|plugin| plugin.id == "org.springframework.boot")
         );
         assert!(
             report
-                .declared_dependencies
+                .direct_dependencies
                 .iter()
                 .any(|dependency| dependency.artifact_id == "slf4j-api")
         );
@@ -344,9 +346,9 @@ mod tests {
         );
 
         assert_eq!(
-            report.declared_dependencies[0].version.as_deref(),
+            report.direct_dependencies[0].version.as_deref(),
             Some("6.2.0")
         );
-        assert_eq!(report.declared_plugins[0].id, "org.springframework.boot");
+        assert_eq!(report.direct_plugins[0].id, "org.springframework.boot");
     }
 }

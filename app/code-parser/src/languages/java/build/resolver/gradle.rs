@@ -2,7 +2,7 @@ use std::path::Path;
 
 use regex::Regex;
 
-use crate::languages::java::build::model::{BuildReport, DependencyInfo, Diagnostic, PluginInfo};
+use crate::languages::java::build::model::{BuildReport, Diagnostic};
 use crate::languages::java::build::resolver::runner::{
     CommandRunner, is_executable, push_command_diagnostic, push_missing_tool_diagnostic,
 };
@@ -44,34 +44,35 @@ pub(crate) fn resolve_gradle(
 
 fn parse_gradle_dependencies(stdout: &str, report: &mut BuildReport) {
     let dependency_regex = Regex::new(
-        r"(?m)(?:---|\+---|\\---)\s+([A-Za-z0-9_.-]+):([A-Za-z0-9_.-]+):([^\s()]+)(?:\s+->\s+([^\s()]+))?",
+        r"(?m)^(?:\+---|\\---)\s+([A-Za-z0-9_.-]+):([A-Za-z0-9_.-]+):([^\s()]+)(?:\s+->\s+([^\s()]+))?",
     )
     .expect("valid Gradle dependency regex");
     for captures in dependency_regex.captures_iter(stdout) {
-        report.resolved_dependencies.push(DependencyInfo {
-            group_id: Some(captures[1].to_string()),
-            artifact_id: captures[2].to_string(),
-            version: captures
-                .get(4)
-                .or_else(|| captures.get(3))
-                .map(|value| value.as_str().to_string()),
-            configuration: None,
-            scope: None,
-            file: None,
-            source: "gradle dependencies".to_string(),
-        });
+        let group_id = Some(captures[1].to_string());
+        let artifact_id = captures[2].to_string();
+        let version = captures
+            .get(4)
+            .or_else(|| captures.get(3))
+            .map(|value| value.as_str().to_string());
+        for dependency in report.direct_dependencies.iter_mut().filter(|dependency| {
+            dependency.group_id == group_id && dependency.artifact_id == artifact_id
+        }) {
+            dependency.version = version.clone();
+        }
     }
 
     let plugin_regex =
         Regex::new(r"(?m)(?:---|\+---|\\---)\s+([A-Za-z0-9_.-]+):gradle-plugin:([^\s()]+)")
             .expect("valid Gradle plugin regex");
     for captures in plugin_regex.captures_iter(stdout) {
-        report.resolved_plugins.push(PluginInfo {
-            id: captures[1].to_string(),
-            version: Some(captures[2].to_string()),
-            file: None,
-            source: "gradle buildEnvironment".to_string(),
-        });
+        let id = captures[1].to_string();
+        for plugin in report
+            .direct_plugins
+            .iter_mut()
+            .filter(|plugin| plugin.id == id)
+        {
+            plugin.version = Some(captures[2].to_string());
+        }
     }
 }
 

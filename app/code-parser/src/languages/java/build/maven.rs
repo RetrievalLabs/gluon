@@ -65,7 +65,7 @@ pub fn parse_pom_contents(contents: &str, file: &str, report: &mut BuildReport) 
         let Some(artifact_id) = capture_tag(&block, "artifactId") else {
             continue;
         };
-        report.declared_dependencies.push(DependencyInfo {
+        report.direct_dependencies.push(DependencyInfo {
             group_id: capture_tag(&block, "groupId")
                 .map(|value| resolve_property(&value, &properties)),
             artifact_id: resolve_property(&artifact_id, &properties),
@@ -92,7 +92,7 @@ pub fn parse_pom_contents(contents: &str, file: &str, report: &mut BuildReport) 
         };
         let version =
             capture_tag(&block, "version").map(|value| resolve_property(&value, &properties));
-        report.declared_plugins.push(PluginInfo {
+        report.direct_plugins.push(PluginInfo {
             id,
             version,
             file: Some(file.to_string()),
@@ -207,13 +207,13 @@ mod tests {
         parse_pom_contents(pom, "pom.xml", &mut report);
 
         assert_eq!(report.build_tools[0].version.as_deref(), Some("4.0.0"));
-        assert_eq!(report.declared_dependencies[0].artifact_id, "spring-core");
+        assert_eq!(report.direct_dependencies[0].artifact_id, "spring-core");
         assert_eq!(
-            report.declared_dependencies[0].version.as_deref(),
+            report.direct_dependencies[0].version.as_deref(),
             Some("6.2.0")
         );
         assert_eq!(
-            report.declared_plugins[0].id,
+            report.direct_plugins[0].id,
             "org.apache.maven.plugins:maven-compiler-plugin"
         );
         assert!(

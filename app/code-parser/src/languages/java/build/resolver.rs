@@ -75,11 +75,11 @@ mod tests {
     }
 
     #[test]
-    fn resolver_adds_maven_dependency_list_results() {
+    fn resolver_adds_maven_effective_pom_direct_dependency_versions() {
         let root = test_dir("maven-resolve");
         fs::write(
             root.join("pom.xml"),
-            "<project><modelVersion>4.0.0</modelVersion></project>",
+            "<project><modelVersion>4.0.0</modelVersion><dependencies><dependency><groupId>a</groupId><artifactId>b</artifactId></dependency></dependencies></project>",
         )
         .unwrap();
         let mut outputs = HashMap::new();
@@ -91,24 +91,10 @@ mod tests {
                 stderr: String::new(),
             },
         );
-        outputs.insert(
-            "mvn dependency:list -DincludeScope=runtime -DoutputAbsoluteArtifactFilename=false -DskipTests"
-                .to_string(),
-            CommandOutput {
-                status: 0,
-                stdout: "[INFO]    org.slf4j:slf4j-api:jar:2.0.17:compile".to_string(),
-                stderr: String::new(),
-            },
-        );
 
         let report = parse_build_with_runner(&root, true, &MockRunner::new(outputs)).unwrap();
 
-        assert!(
-            report
-                .resolved_dependencies
-                .iter()
-                .any(|dependency| dependency.artifact_id == "slf4j-api")
-        );
+        assert_eq!(report.direct_dependencies[0].version.as_deref(), Some("1"));
         let _ = fs::remove_dir_all(root);
     }
 
@@ -138,7 +124,7 @@ mod tests {
 
         assert!(
             report
-                .declared_plugins
+                .direct_plugins
                 .iter()
                 .any(|plugin| plugin.id == "java")
         );

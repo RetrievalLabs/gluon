@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct BuildReport {
     pub project_root: String,
     #[serde(default)]
@@ -12,13 +13,9 @@ pub struct BuildReport {
     #[serde(default, skip_serializing)]
     pub java_versions: Vec<JavaVersionInfo>,
     #[serde(default, skip_serializing)]
-    pub declared_dependencies: Vec<DependencyInfo>,
+    pub direct_dependencies: Vec<DependencyInfo>,
     #[serde(default, skip_serializing)]
-    pub resolved_dependencies: Vec<DependencyInfo>,
-    #[serde(default, skip_serializing)]
-    pub declared_plugins: Vec<PluginInfo>,
-    #[serde(default, skip_serializing)]
-    pub resolved_plugins: Vec<PluginInfo>,
+    pub direct_plugins: Vec<PluginInfo>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -48,24 +45,14 @@ impl BuildReport {
                 .java_versions
                 .push(item.clone());
         }
-        for item in &self.declared_dependencies {
+        for item in &self.direct_dependencies {
             scope_for_file(item.file.as_deref(), &mut parent, &mut modules)
-                .declared_dependencies
+                .direct_dependencies
                 .push(item.clone());
         }
-        for item in &self.resolved_dependencies {
+        for item in &self.direct_plugins {
             scope_for_file(item.file.as_deref(), &mut parent, &mut modules)
-                .resolved_dependencies
-                .push(item.clone());
-        }
-        for item in &self.declared_plugins {
-            scope_for_file(item.file.as_deref(), &mut parent, &mut modules)
-                .declared_plugins
-                .push(item.clone());
-        }
-        for item in &self.resolved_plugins {
-            scope_for_file(item.file.as_deref(), &mut parent, &mut modules)
-                .resolved_plugins
+                .direct_plugins
                 .push(item.clone());
         }
 
@@ -77,34 +64,28 @@ impl BuildReport {
     pub fn rebuild_flat_inventory(&mut self) {
         self.build_tools.clear();
         self.java_versions.clear();
-        self.declared_dependencies.clear();
-        self.resolved_dependencies.clear();
-        self.declared_plugins.clear();
-        self.resolved_plugins.clear();
+        self.direct_dependencies.clear();
+        self.direct_plugins.clear();
 
         for scope in std::iter::once(&self.parent).chain(self.modules.iter()) {
             self.build_tools.extend(scope.build_tools.clone());
             self.java_versions.extend(scope.java_versions.clone());
-            self.declared_dependencies
-                .extend(scope.declared_dependencies.clone());
-            self.resolved_dependencies
-                .extend(scope.resolved_dependencies.clone());
-            self.declared_plugins.extend(scope.declared_plugins.clone());
-            self.resolved_plugins.extend(scope.resolved_plugins.clone());
+            self.direct_dependencies
+                .extend(scope.direct_dependencies.clone());
+            self.direct_plugins.extend(scope.direct_plugins.clone());
         }
     }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct BuildScopeReport {
     pub name: String,
     pub path: String,
     pub build_tools: Vec<BuildToolInfo>,
     pub java_versions: Vec<JavaVersionInfo>,
-    pub declared_dependencies: Vec<DependencyInfo>,
-    pub resolved_dependencies: Vec<DependencyInfo>,
-    pub declared_plugins: Vec<PluginInfo>,
-    pub resolved_plugins: Vec<PluginInfo>,
+    pub direct_dependencies: Vec<DependencyInfo>,
+    pub direct_plugins: Vec<PluginInfo>,
 }
 
 impl BuildScopeReport {

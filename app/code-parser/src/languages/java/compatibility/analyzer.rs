@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::Path;
 
 use thiserror::Error;
@@ -127,16 +127,10 @@ fn analyze_dependencies(
     target_java: u32,
     rules: &[CompatibilityRule],
 ) -> (Vec<DependencyRecommendation>, Vec<UnknownDependency>) {
-    let declared_sources = dependency_sources(&build_report.declared_dependencies);
-    let inventory = if build_report.resolved_dependencies.is_empty() {
-        &build_report.declared_dependencies
-    } else {
-        &build_report.resolved_dependencies
-    };
     let mut recommendations = Vec::new();
     let mut unknown = Vec::new();
 
-    for dependency in inventory {
+    for dependency in &build_report.direct_dependencies {
         let matched_rule = rules
             .iter()
             .find(|rule| dependency_matches(&rule.match_rule, dependency));
@@ -154,9 +148,9 @@ fn analyze_dependencies(
                         reason: rule.reason.clone(),
                         edit_strategy: rule.edit_strategy.clone(),
                         source_ids: rule.source_ids.clone(),
-                        source: declared_sources
-                            .get(&dependency_key(dependency))
-                            .cloned()
+                        source: dependency
+                            .file
+                            .clone()
                             .unwrap_or_else(|| dependency.source.clone()),
                     });
                 }
@@ -178,16 +172,11 @@ fn analyze_plugins(
     target_java: u32,
     rules: &[CompatibilityRule],
 ) -> (Vec<PluginRecommendation>, Vec<UnknownPlugin>) {
-    let inventory = if build_report.resolved_plugins.is_empty() {
-        &build_report.declared_plugins
-    } else {
-        &build_report.resolved_plugins
-    };
     let mut recommendations = Vec::new();
     let mut unknown = Vec::new();
     let mut matched_plugin_ids = HashSet::new();
 
-    for plugin in inventory {
+    for plugin in &build_report.direct_plugins {
         let matched_rule = rules
             .iter()
             .find(|rule| plugin_matches(&rule.match_rule, plugin));
@@ -206,14 +195,14 @@ fn analyze_plugins(
                         reason: rule.reason.clone(),
                         edit_strategy: rule.edit_strategy.clone(),
                         source_ids: rule.source_ids.clone(),
-                        source: plugin.source.clone(),
+                        source: plugin.file.clone().unwrap_or_else(|| plugin.source.clone()),
                     });
                 }
             }
             None => unknown.push(UnknownPlugin {
                 plugin: plugin.id.clone(),
                 version: plugin.version.clone(),
-                source: plugin.source.clone(),
+                source: plugin.file.clone().unwrap_or_else(|| plugin.source.clone()),
                 message: UNKNOWN_MESSAGE.to_string(),
             }),
         }
@@ -411,21 +400,6 @@ fn detect_source_java(build_report: &BuildReport) -> Option<String> {
         .map(|version| version.version.clone())
 }
 
-fn dependency_sources(dependencies: &[DependencyInfo]) -> HashMap<String, String> {
-    dependencies
-        .iter()
-        .map(|dependency| {
-            (
-                dependency_key(dependency),
-                dependency
-                    .file
-                    .clone()
-                    .unwrap_or_else(|| dependency.source.clone()),
-            )
-        })
-        .collect()
-}
-
 fn dependency_key(dependency: &DependencyInfo) -> String {
     format!(
         "{}:{}",
@@ -554,7 +528,7 @@ mod tests {
     #[test]
     fn known_dependency_below_minimum_emits_recommendation() {
         let report = BuildReport {
-            resolved_dependencies: vec![DependencyInfo {
+            direct_dependencies: vec![DependencyInfo {
                 group_id: Some("org.ow2.asm".to_string()),
                 artifact_id: "asm".to_string(),
                 version: Some("9.7".to_string()),
@@ -575,7 +549,7 @@ mod tests {
     #[test]
     fn unknown_dependency_is_reported() {
         let report = BuildReport {
-            resolved_dependencies: vec![DependencyInfo {
+            direct_dependencies: vec![DependencyInfo {
                 group_id: Some("org.example".to_string()),
                 artifact_id: "demo".to_string(),
                 version: Some("1.0.0".to_string()),
@@ -596,7 +570,7 @@ mod tests {
     #[test]
     fn known_plugin_below_minimum_emits_recommendation() {
         let report = BuildReport {
-            resolved_plugins: vec![PluginInfo {
+            direct_plugins: vec![PluginInfo {
                 id: "maven-compiler-plugin".to_string(),
                 version: Some("3.14.0".to_string()),
                 file: None,
@@ -617,7 +591,7 @@ mod tests {
     #[test]
     fn plugin_rule_does_not_match_unrelated_plugin() {
         let report = BuildReport {
-            resolved_plugins: vec![PluginInfo {
+            direct_plugins: vec![PluginInfo {
                 id: "org.graalvm.buildtools:native-maven-plugin".to_string(),
                 version: Some("0.10.3".to_string()),
                 file: None,

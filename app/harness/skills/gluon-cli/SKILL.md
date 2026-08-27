@@ -41,15 +41,15 @@ Required input:
 Flags:
 
 - `--format json`: output JSON. This is the only supported format.
-- `--resolve`: run Maven or Gradle to collect effective dependency and plugin versions.
+- `--resolve`: run Maven or Gradle to fill direct dependency and plugin versions.
 - `--output-dir <directory>`: write JSON to `<directory>/<project-directory-name>/build-report.json` and print the written path.
 
 Outputs:
 
-- Declared Java versions, build tools, plugins, and dependencies from build files.
+- Declared Java versions, build tools, direct plugins, and direct dependencies from build files.
 - Inventory grouped under `parent` and `modules`. Multi-module projects are
   grouped by module build-file path; single-module projects have only `parent`.
-- Resolved dependencies and plugins when `--resolve` succeeds.
+- Direct dependency and plugin versions when `--resolve` succeeds.
 - Diagnostics for malformed files, missing tools, wrapper issues, and build resolution failures.
 - When `--output-dir` is set, report JSON is written to disk instead of printed to stdout. Stdout and stderr include the generated JSON path.
 - If report diagnostics include errors, stderr summarizes the first error diagnostics and points to the JSON report for full details.

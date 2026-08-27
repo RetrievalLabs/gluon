@@ -1,9 +1,7 @@
 use std::path::Path;
 
-use regex::Regex;
-
 use crate::languages::java::build::maven::parse_pom_contents;
-use crate::languages::java::build::model::{BuildReport, DependencyInfo, Diagnostic};
+use crate::languages::java::build::model::{BuildReport, DependencyInfo, Diagnostic, PluginInfo};
 use crate::languages::java::build::resolver::runner::{
     CommandRunner, is_executable, push_command_diagnostic, push_missing_tool_diagnostic,
 };
@@ -40,24 +38,6 @@ pub(crate) fn resolve_maven(
         ),
         Err(error) => push_missing_tool_diagnostic(report, executable, &effective_args, error),
     }
-
-    let dependency_args = [
-        "dependency:list",
-        "-DincludeScope=runtime",
-        "-DoutputAbsoluteArtifactFilename=false",
-        "-DskipTests",
-    ];
-    match runner.run(executable, &dependency_args, project_root) {
-        Ok(output) if output.status == 0 => parse_maven_dependency_list(&output.stdout, report),
-        Ok(output) => push_command_diagnostic(
-            report,
-            executable,
-            &dependency_args,
-            output.status,
-            &output.stderr,
-        ),
-        Err(error) => push_missing_tool_diagnostic(report, executable, &dependency_args, error),
-    }
 }
 
 fn parse_effective_pom(stdout: &str, report: &mut BuildReport) {
@@ -77,41 +57,41 @@ fn parse_effective_pom(stdout: &str, report: &mut BuildReport) {
         version.source = "maven help:effective-pom".to_string();
         report.push_java_version(version);
     }
-    report
-        .resolved_dependencies
-        .extend(
-            effective
-                .declared_dependencies
-                .into_iter()
-                .map(|mut dependency| {
-                    dependency.source = "maven help:effective-pom".to_string();
-                    dependency.file = None;
-                    dependency
-                }),
-        );
-    report
-        .resolved_plugins
-        .extend(effective.declared_plugins.into_iter().map(|mut plugin| {
-            plugin.source = "maven help:effective-pom".to_string();
-            plugin.file = None;
-            plugin
-        }));
+    enrich_direct_dependency_versions(&effective.direct_dependencies, report);
+    enrich_direct_plugin_versions(&effective.direct_plugins, report);
 }
 
-fn parse_maven_dependency_list(stdout: &str, report: &mut BuildReport) {
-    let regex = Regex::new(
-        r"(?m)^\[INFO\]\s+([A-Za-z0-9_.-]+):([A-Za-z0-9_.-]+):[^:\s]+:(?:[^:\s]+:)?([^:\s]+):([A-Za-z0-9_.-]+)",
-    )
-    .expect("valid Maven dependency list regex");
-    for captures in regex.captures_iter(stdout) {
-        report.resolved_dependencies.push(DependencyInfo {
-            group_id: Some(captures[1].to_string()),
-            artifact_id: captures[2].to_string(),
-            version: Some(captures[3].to_string()),
-            configuration: None,
-            scope: Some(captures[4].to_string()),
-            file: None,
-            source: "maven dependency:list".to_string(),
-        });
+fn enrich_direct_dependency_versions(
+    effective_dependencies: &[DependencyInfo],
+    report: &mut BuildReport,
+) {
+    for dependency in &mut report.direct_dependencies {
+        let Some(effective_dependency) = effective_dependencies
+            .iter()
+            .find(|candidate| same_dependency(candidate, dependency))
+        else {
+            continue;
+        };
+        if effective_dependency.version.is_some() {
+            dependency.version = effective_dependency.version.clone();
+        }
+    }
+}
+
+fn same_dependency(left: &DependencyInfo, right: &DependencyInfo) -> bool {
+    left.group_id == right.group_id && left.artifact_id == right.artifact_id
+}
+
+fn enrich_direct_plugin_versions(effective_plugins: &[PluginInfo], report: &mut BuildReport) {
+    for plugin in &mut report.direct_plugins {
+        let Some(effective_plugin) = effective_plugins
+            .iter()
+            .find(|candidate| candidate.id == plugin.id)
+        else {
+            continue;
+        };
+        if effective_plugin.version.is_some() {
+            plugin.version = effective_plugin.version.clone();
+        }
     }
 }
