@@ -76,22 +76,8 @@ pub fn analyze_report_with_options(
     );
     diagnostics.extend(jdk_tool_diagnostics);
 
-    let code_change_recommendations: Vec<CodeChangeRecommendation> =
-        derive_code_change_recommendations(&api_findings, &kb.replacements, target_java)
-            .into_iter()
-            .chain(
-                kb.migration_steps
-                    .iter()
-                    .map(|step| CodeChangeRecommendation {
-                        id: step.id.clone(),
-                        source: "incremental_migration".to_string(),
-                        reason: step.action.clone(),
-                        guidance: step.guidance.clone().unwrap_or_else(|| step.action.clone()),
-                        related_findings: Vec::new(),
-                        source_ids: Vec::new(),
-                    }),
-            )
-            .collect();
+    let code_change_recommendations =
+        derive_code_change_recommendations(&api_findings, &kb.replacements, target_java);
 
     let (parent, modules) = build_compatibility_scopes(
         build_report,

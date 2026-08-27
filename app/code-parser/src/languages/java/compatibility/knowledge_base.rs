@@ -13,7 +13,6 @@ pub struct JavaCompatibilityKnowledgeBase {
     pub internal_apis: Vec<ApiRule>,
     pub reflective_access: Vec<ApiRule>,
     pub replacements: Vec<ReplacementRule>,
-    pub migration_steps: Vec<MigrationStep>,
 }
 
 impl JavaCompatibilityKnowledgeBase {
@@ -31,8 +30,6 @@ impl JavaCompatibilityKnowledgeBase {
             load_yaml(path.join("deprecated_for_removal.yaml"))?;
         let internal: InternalApisFile = load_yaml(path.join("internal_apis.yaml"))?;
         let replacements: ReplacementsFile = load_yaml(path.join("replacements.yaml"))?;
-        let migration: IncrementalMigrationFile =
-            load_yaml(path.join("incremental_migration.yaml"))?;
 
         Ok(Self {
             dependencies: dependency.dependencies,
@@ -42,7 +39,6 @@ impl JavaCompatibilityKnowledgeBase {
             internal_apis: internal.internal_apis,
             reflective_access: internal.reflective_access,
             replacements: replacements.replacements,
-            migration_steps: migration.migration_strategy.recommended_steps,
         })
     }
 }
@@ -90,18 +86,6 @@ struct InternalApisFile {
 struct ReplacementsFile {
     #[serde(default)]
     replacements: Vec<ReplacementRule>,
-}
-
-#[derive(Debug, Deserialize)]
-struct IncrementalMigrationFile {
-    #[serde(default)]
-    migration_strategy: MigrationStrategy,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct MigrationStrategy {
-    #[serde(default)]
-    recommended_steps: Vec<MigrationStep>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -196,14 +180,6 @@ pub struct ReplacementRule {
     pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct MigrationStep {
-    pub id: String,
-    pub action: String,
-    #[serde(default)]
-    pub guidance: Option<String>,
-}
-
 fn default_warning() -> String {
     "warning".to_string()
 }
@@ -223,6 +199,5 @@ mod tests {
         assert!(!kb.internal_apis.is_empty());
         assert!(!kb.reflective_access.is_empty());
         assert!(!kb.replacements.is_empty());
-        assert!(!kb.migration_steps.is_empty());
     }
 }
