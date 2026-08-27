@@ -99,6 +99,117 @@ mod tests {
     }
 
     #[test]
+    fn resolver_adds_maven_module_effective_pom_direct_dependency_versions() {
+        let root = test_dir("maven-module-resolve");
+        fs::write(
+            root.join("pom.xml"),
+            "<project><modelVersion>4.0.0</modelVersion></project>",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("service")).unwrap();
+        fs::write(
+            root.join("service").join("pom.xml"),
+            "<project><modelVersion>4.0.0</modelVersion><dependencies><dependency><groupId>a</groupId><artifactId>b</artifactId></dependency></dependencies></project>",
+        )
+        .unwrap();
+        let mut outputs = HashMap::new();
+        outputs.insert(
+            "mvn help:effective-pom -DskipTests".to_string(),
+            CommandOutput {
+                status: 0,
+                stdout: "<project><dependencies><dependency><groupId>a</groupId><artifactId>b</artifactId><version>2</version></dependency></dependencies></project>".to_string(),
+                stderr: String::new(),
+            },
+        );
+
+        let report = parse_build_with_runner(&root, true, &MockRunner::new(outputs)).unwrap();
+
+        assert_eq!(report.direct_dependencies[0].version.as_deref(), Some("2"));
+        assert_eq!(
+            report.direct_dependencies[0].file.as_deref(),
+            Some("service/pom.xml")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn resolver_adds_gradle_module_direct_dependency_versions() {
+        let root = test_dir("gradle-module-resolve");
+        fs::write(root.join("settings.gradle"), "include 'service'").unwrap();
+        fs::create_dir_all(root.join("service")).unwrap();
+        fs::write(
+            root.join("service").join("build.gradle"),
+            "plugins { id 'java' }\ndependencies {\n  compile 'org.springframework:spring-context'\n}",
+        )
+        .unwrap();
+        let mut outputs = HashMap::new();
+        outputs.insert(
+            "gradle :service:dependencies --configuration compileClasspath".to_string(),
+            CommandOutput {
+                status: 0,
+                stdout: "\\--- org.springframework:spring-context -> 6.2.0".to_string(),
+                stderr: String::new(),
+            },
+        );
+        outputs.insert(
+            "gradle :service:dependencies --configuration runtimeClasspath".to_string(),
+            CommandOutput {
+                status: 0,
+                stdout: "\\--- org.springframework:spring-context -> 6.2.0".to_string(),
+                stderr: String::new(),
+            },
+        );
+        outputs.insert(
+            "gradle :service:buildEnvironment".to_string(),
+            CommandOutput {
+                status: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+        );
+
+        let report = parse_build_with_runner(&root, true, &MockRunner::new(outputs)).unwrap();
+
+        assert_eq!(
+            report.direct_dependencies[0].version.as_deref(),
+            Some("6.2.0")
+        );
+        assert_eq!(
+            report.direct_dependencies[0].file.as_deref(),
+            Some("service/build.gradle")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn resolver_adds_gradle_buildscript_classpath_versions() {
+        let root = test_dir("gradle-buildscript-resolve");
+        fs::write(
+            root.join("build.gradle"),
+            "buildscript {\n  dependencies {\n    classpath 'org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}'\n  }\n}",
+        )
+        .unwrap();
+        let mut outputs = HashMap::new();
+        outputs.insert(
+            "gradle buildEnvironment".to_string(),
+            CommandOutput {
+                status: 0,
+                stdout: "\\--- org.springframework.boot:spring-boot-gradle-plugin:2.5.12"
+                    .to_string(),
+                stderr: String::new(),
+            },
+        );
+
+        let report = parse_build_with_runner(&root, true, &MockRunner::new(outputs)).unwrap();
+
+        assert_eq!(
+            report.direct_dependencies[0].version.as_deref(),
+            Some("2.5.12")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn resolver_keeps_report_when_gradle_fails() {
         let root = test_dir("gradle-fail");
         fs::write(root.join("build.gradle"), "plugins { id 'java' }").unwrap();

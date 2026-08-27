@@ -235,7 +235,7 @@ fn parse_java_versions(contents: &str, file: &str, report: &mut BuildReport) {
 
 fn parse_plugins(contents: &str, file: &str, report: &mut BuildReport) {
     let regex = Regex::new(
-        r#"id\s*\(?\s*['"]([^'"]+)['"]\s*\)?(?:\s+version\s*\(?\s*['"]([^'"]+)['"]\s*\)?)?"#,
+        r#"id\s*\(?\s*['"]([^'"]+)['"]\s*\)?\s*(?:version\s*\(?\s*['"]([^'"]+)['"]\s*\)?)?"#,
     )
     .expect("valid plugin regex");
     for captures in regex.captures_iter(contents) {
@@ -254,18 +254,46 @@ fn parse_dependencies(contents: &str, file: &str, report: &mut BuildReport) {
     )
     .expect("valid dependency regex");
     for captures in regex.captures_iter(contents) {
+        let configuration = captures[1].to_string();
+        if !is_dependency_configuration(&configuration) {
+            continue;
+        }
         report.direct_dependencies.push(DependencyInfo {
             group_id: Some(captures[2].to_string()),
             artifact_id: captures[3].to_string(),
             version: captures
                 .get(4)
                 .map(|value| value.as_str().trim_end_matches(')').to_string()),
-            configuration: Some(captures[1].to_string()),
+            configuration: Some(configuration),
             scope: None,
             file: Some(file.to_string()),
             source: "gradle build file".to_string(),
         });
     }
+}
+
+fn is_dependency_configuration(configuration: &str) -> bool {
+    matches!(
+        configuration,
+        "api"
+            | "annotationProcessor"
+            | "classpath"
+            | "compile"
+            | "compileOnly"
+            | "implementation"
+            | "runtime"
+            | "runtimeOnly"
+            | "testAnnotationProcessor"
+            | "testCompile"
+            | "testCompileOnly"
+            | "testImplementation"
+            | "testRuntime"
+            | "testRuntimeOnly"
+    ) || configuration.ends_with("Compile")
+        || configuration.ends_with("CompileOnly")
+        || configuration.ends_with("Implementation")
+        || configuration.ends_with("Runtime")
+        || configuration.ends_with("RuntimeOnly")
 }
 
 #[cfg(test)]
@@ -292,6 +320,7 @@ mod tests {
                 plugins {
                     id("java")
                     id("org.springframework.boot") version "3.5.0"
+                    id "com.github.davidmc24.gradle.plugin.avro" version "1.3.0"
                 }
                 java {
                     toolchain {
@@ -319,6 +348,10 @@ mod tests {
                 .iter()
                 .any(|plugin| plugin.id == "org.springframework.boot")
         );
+        assert!(report.direct_plugins.iter().any(|plugin| {
+            plugin.id == "com.github.davidmc24.gradle.plugin.avro"
+                && plugin.version.as_deref() == Some("1.3.0")
+        }));
         assert!(
             report
                 .direct_dependencies
