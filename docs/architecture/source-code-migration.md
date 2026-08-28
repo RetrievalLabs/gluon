@@ -25,8 +25,13 @@ The migration uses two read-only databases:
 - Target Java version.
 - `business-kg.db`.
 - `extraction.db`.
+- `characterization-tests.db`, when present.
 - Characterization test artifacts, when present.
 - Java migration skills available to the source migration agent.
+- Multi-agent orchestration through one main agent, one Context Agent, one
+  Implementation Agent, and one Verification Agent.
+- Web search and fetch for official target Java, framework, and library
+  documentation when local evidence is insufficient.
 
 ## Migration Order
 
@@ -46,6 +51,31 @@ needed by startup, compile, tests, or business behavior.
 
 Do not bulk-copy unrelated packages. Shared utilities are migrated only when
 reachable from migrated code or required by compiler/test feedback.
+
+## Multi-Agent Workflow
+
+Harness invokes one source migration main agent. The main agent coordinates
+bounded specialist agents through the Task tool:
+
+```text
+1. Main Agent receives DB paths, legacy repo, rewrite workspace, and target Java.
+2. Context Agent reads business-kg.db, extraction.db, characterization-tests.db,
+   repository docs, relevant configuration, bounded source context, and
+   official web documentation when needed, then returns a JSON context packet.
+3. Implementation Agent uses the context packet and Java skills to migrate
+   source code and write integration tests in the rewrite workspace.
+4. Verification Agent compiles, runs focused tests, verifies business behavior
+   through characterization-tests.db, and writes or repairs characterization
+   tests needed for migrated business logic.
+5. Main Agent writes docs/migration/source-migration.md and returns control to
+   harness.
+```
+
+The Context Agent does not edit files. The Implementation Agent writes only in
+the rewrite workspace. The Verification Agent may run build and test commands
+and may use bounded Gluon database commands for characterization DB work.
+Web research should prefer official documentation, migration guides, release
+notes, and stable API docs.
 
 ## Database Usage
 
@@ -140,6 +170,12 @@ WHERE tt.target_id = ?
 ORDER BY tt.confidence DESC;
 ```
 
+Use `characterization-tests.db` to verify migrated business behavior. The
+Verification Agent should find scenarios linked to migrated business methods,
+run or repair their generated tests, and compare modernized behavior to stored
+legacy observations. Expected outputs must come from stored observations, not
+from agent guesses.
+
 ## Agent Rules
 
 The source migration agent must:
@@ -148,8 +184,16 @@ The source migration agent must:
 - Write only inside the rewrite workspace.
 - Read `version-rewrite-modernization` and `java-best-practices` before source
   edits.
+- Read repository docs and relevant configuration when needed to understand
+  behavior.
+- Use web search/fetch for official target Java, framework, or library docs
+  when local evidence is not enough.
 - Use framework and domain skills only when touched code requires them, such as
   Spring Boot, Spring Security, Jakarta EE, persistence, or testing.
+- Write integration tests for migrated entrypoints or business slices when
+  existing tests do not cover the migrated path.
+- Use `characterization-tests.db` to write, repair, or run characterization
+  tests for migrated business logic when artifacts are present.
 - Preserve package names, public APIs, resource paths, configuration keys,
   serialization formats, security behavior, transactions, null handling,
   ordering, exceptions, and concurrency semantics.
@@ -164,7 +208,8 @@ business behavior, or one tightly related group of files required by compile or
 startup.
 
 Run focused tests selected from `extraction.db.test_targets` when available.
-Run characterization tests in assert mode when characterization artifacts exist.
+Run integration tests written for migrated source paths. Run characterization
+tests in assert mode when characterization artifacts exist.
 Compilation proves type compatibility only; behavior is accepted only after
 tests or characterization checks confirm it.
 
@@ -188,6 +233,8 @@ The report must include:
 - Source roots, resources, and tests copied.
 - Java compatibility changes made.
 - Java skills used.
+- Integration tests written.
+- Characterization tests written or reused.
 - Verification commands and outcomes.
 - Skipped files or behaviors with reasons.
 - Remaining blockers.

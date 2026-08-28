@@ -244,6 +244,56 @@ class ClaudeAgentClient:
             "env": self.agent_env(),
         }
 
+    def source_migration_agent_options_kwargs(self, rewrite_workspace: Path) -> dict[str, Any]:
+        return {
+            "model": self.config.anthropic_model,
+            "cwd": rewrite_workspace,
+            "tools": [
+                "Task",
+                "Read",
+                "Write",
+                "Edit",
+                "MultiEdit",
+                "Glob",
+                "Grep",
+                "LS",
+                "Bash",
+                "WebSearch",
+                "WebFetch",
+            ],
+            "allowed_tools": [
+                "Task",
+                "Read",
+                "Write",
+                "Edit",
+                "MultiEdit",
+                "Glob",
+                "Grep",
+                "LS",
+                "Bash",
+                "WebSearch",
+                "WebFetch",
+            ],
+            "permission_mode": "dontAsk",
+            "hooks": {
+                "PreToolUse": [
+                    SimpleNamespace(
+                        matcher="Bash",
+                        hooks=[self.block_gluon_cli_hook],
+                    )
+                ]
+            },
+            "max_turns": 120,
+            "skills": ["version-rewrite-modernization", "java-best-practices"],
+            "system_prompt": {
+                "type": "preset",
+                "preset": "claude_code",
+                "append": self.source_migration_system_prompt(),
+                "exclude_dynamic_sections": True,
+            },
+            "env": self.agent_env(),
+        }
+
     def agent_env(self) -> dict[str, str]:
         env = dict(os.environ)
         env["ANTHROPIC_API_KEY"] = self.config.anthropic_api_key
@@ -303,6 +353,38 @@ Rules:
 - Use web search/fetch only to verify exact stable Maven, Gradle, or plugin versions from official project sources.
 - Do not choose milestone, RC, snapshot, or development releases.
 - Do not run build or test commands.
+"""
+
+    def source_migration_system_prompt(self) -> str:
+        return """You are a source migration agent for the Gluon Java modernization harness.
+
+Goal: migrate legacy Java source into the rewrite workspace for the target Java version, verify it, write the source migration report, then stop.
+
+Agent workflow:
+- You are the main agent.
+- Use the Task tool to give database/source discovery work to the Context Agent.
+- Context Agent returns a structured context packet with entry points, source files, reachable relationships, business KG priorities, existing tests, and characterization scenarios.
+- Use the Task tool to give the context packet and code-writing responsibility to the Implementation Agent.
+- Implementation Agent migrates source code and writes integration tests inside the rewrite workspace.
+- Use the Task tool to give migrated code, tests, and context packet to the Verification Agent.
+- Verification Agent runs compile/tests, verifies business behavior with characterization-tests.db when present, writes or repairs characterization tests needed for migrated business logic, and reports remaining failures.
+- Return control only after source migration report is written and verification status is clear.
+
+Rules:
+- Treat the legacy repository as read-only reference.
+- Write only inside the rewrite workspace.
+- Use business-kg.db to prioritize business behavior, extraction.db to resolve entry points, methods, classes, relationships, tests, and source locations, and characterization-tests.db to verify business behavior when present.
+- Read repository docs, configuration, and bounded legacy source context needed to understand migrated behavior.
+- Use WebSearch and WebFetch for target Java, framework, or library documentation when local evidence is not enough. Prefer official documentation, migration guides, release notes, and stable API docs.
+- Start from main/runtime entry points, then expand through reachable startup, external entry points, services, domain, persistence, and utilities.
+- Copy only source, resources, configuration, and tests required by runtime reachability, business behavior, compile feedback, or focused tests.
+- Preserve package names, public APIs, resource paths, configuration keys, serialization formats, security behavior, transaction behavior, null handling, ordering, exceptions, and concurrency semantics.
+- Read and apply version-rewrite-modernization and java-best-practices before editing source.
+- Use framework or domain skills when touched code requires them.
+- Avoid optional syntax modernization unless benefit is clear, semantics are known, and verification is available.
+- Do not run Gluon pipeline commands. Harness owns Gluon stages.
+- You may run only `gluon[-cli] code-parser db ...` or `gluon[-cli] db ...` commands for bounded characterization database inspection and status updates when needed.
+- Verify with rewrite-workspace compile, focused tests, integration tests, and characterization checks when possible.
 """
 
     async def block_gluon_cli_hook(
@@ -522,6 +604,99 @@ Rules:
         )
         self.record(result)
         return result
+
+    def run_source_migration(
+        self,
+        rewrite_workspace: Path,
+        legacy_repo_path: Path,
+        business_kg_db_path: Path,
+        extraction_db_path: Path,
+        characterization_db_path: Path,
+        characterization_output_dir: Path,
+        target_version: str,
+        output_path: Path,
+    ) -> AgentAttempt:
+        prompt = self.build_source_migration_prompt(
+            legacy_repo_path,
+            business_kg_db_path,
+            extraction_db_path,
+            characterization_db_path,
+            characterization_output_dir,
+            target_version,
+            output_path,
+        )
+        agent_result = self.run_agent_with_options(
+            self.source_migration_agent_options_kwargs(rewrite_workspace),
+            prompt,
+        )
+        result = AgentAttempt(
+            stage_name="source-migration",
+            attempt=1,
+            status="completed",
+            message=(
+                f"source migration generated in {rewrite_workspace}; "
+                f"report at {output_path}: {agent_result}"
+            ),
+        )
+        self.record(result)
+        return result
+
+    def build_source_migration_prompt(
+        self,
+        legacy_repo_path: Path,
+        business_kg_db_path: Path,
+        extraction_db_path: Path,
+        characterization_db_path: Path,
+        characterization_output_dir: Path,
+        target_version: str,
+        output_path: Path,
+    ) -> str:
+        return f"""Migrate Java source code into the rewrite workspace.
+
+Inputs:
+- Legacy repository reference: {legacy_repo_path}
+- Business KG database: {business_kg_db_path}
+- Extraction database: {extraction_db_path}
+- Characterization database: {characterization_db_path}
+- Characterization artifacts: {characterization_output_dir}
+- Target Java version: {target_version}
+- Output Markdown: {output_path}
+
+Instructions:
+1. Read version-rewrite-modernization and java-best-practices before source edits.
+2. As main agent, use the Task tool to ask the Context Agent for a JSON context packet from business-kg.db, extraction.db, characterization-tests.db, repository docs, relevant configuration, bounded source reads, and official web documentation when needed.
+3. Context Agent must identify entry points, source files, reachable relationships, business KG priorities, existing tests, characterization scenarios, and any external documentation used.
+4. As main agent, use the Task tool to give the context packet to the Implementation Agent.
+5. Implementation Agent must migrate source code and write integration tests inside the rewrite workspace.
+6. Implementation Agent must start with Main, Lifecycle, Http, Cli, Scheduled, and Message entry points in that order.
+7. Implementation Agent must copy the smallest required source, resources, configuration, and tests from the legacy repository into the rewrite workspace.
+8. Implementation Agent must use extraction.db relationships to expand through direct reachable dependencies.
+9. Implementation Agent must use business-kg.db business_evidence.method_id to prioritize high-confidence business behavior after startup code.
+10. As main agent, use the Task tool to give migrated code, integration tests, and context packet to the Verification Agent.
+11. Verification Agent must run rewrite-workspace compile/tests when possible, verify business logic with characterization-tests.db, and write or repair characterization tests needed for migrated business logic.
+12. Write exactly one Markdown report at `{output_path}`.
+
+Markdown requirements:
+- Migrated entry points.
+- Migrated business nodes and method IDs.
+- Source roots, resources, and tests copied.
+- Java compatibility changes made.
+- Java skills used.
+- Integration tests written.
+- Characterization tests written or reused.
+- Verification commands and outcomes.
+- Skipped files or behaviors with reasons.
+- Remaining blockers.
+
+Rules:
+- Do not edit the legacy repository.
+- Do not write outside the rewrite workspace.
+- Do not use build-report.json, compatibility-report.json, dependency-selection.md, build-structure.md, or legacy-tree as required inputs.
+- Treat existing rewrite workspace build files as authoritative.
+- Preserve legacy behavior unless an intentional behavior change is explicitly required.
+- Use only `gluon[-cli] code-parser db ...` or `gluon[-cli] db ...` for bounded characterization database work.
+- Do not commit. Harness commits after this stage succeeds.
+"""
 
     def build_build_structure_prompt(
         self,

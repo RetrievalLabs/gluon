@@ -349,6 +349,68 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertIn("java-build-tool-best-practices", prompt)
         self.assertIn("Create module directories", prompt)
 
+    def test_source_migration_agent_options_use_task_and_java_skills(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+
+        options = ClaudeAgentClient(config).source_migration_agent_options_kwargs(
+            Path("/rewrite")
+        )
+
+        self.assertEqual(options["cwd"], Path("/rewrite"))
+        self.assertIn("Task", options["tools"])
+        self.assertIn("Bash", options["allowed_tools"])
+        self.assertIn("WebSearch", options["tools"])
+        self.assertIn("WebFetch", options["allowed_tools"])
+        self.assertIn("version-rewrite-modernization", options["skills"])
+        self.assertIn("java-best-practices", options["skills"])
+
+    def test_source_migration_prompt_uses_databases_and_multi_agent_flow(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+        prompt = ClaudeAgentClient(config).build_source_migration_prompt(
+            Path("/legacy"),
+            Path("/data/business-kg.db"),
+            Path("/data/extraction.db"),
+            Path("/legacy/gluon/tests/characterization-tests.db"),
+            Path("/legacy/gluon/tests"),
+            "25",
+            Path("/rewrite/docs/migration/source-migration.md"),
+        )
+
+        self.assertIn("Legacy repository reference: /legacy", prompt)
+        self.assertIn("Business KG database: /data/business-kg.db", prompt)
+        self.assertIn("Extraction database: /data/extraction.db", prompt)
+        self.assertIn(
+            "Characterization database: /legacy/gluon/tests/characterization-tests.db",
+            prompt,
+        )
+        self.assertIn("Context Agent", prompt)
+        self.assertIn("Implementation Agent", prompt)
+        self.assertIn("Verification Agent", prompt)
+        self.assertIn("official web documentation", prompt)
+        self.assertIn("integration tests", prompt)
+        self.assertIn("characterization-tests.db", prompt)
+        self.assertIn("Do not use build-report.json", prompt)
+        self.assertIn("version-rewrite-modernization", prompt)
+        self.assertIn("java-best-practices", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
