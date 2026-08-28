@@ -56,7 +56,7 @@ Do not skip stages after failure.
 - `/opt/gluon/org/business-kg.db`
 - characterization test artifacts in `<repo-path>/gluon/tests/*`
 - rewrite workspace in `/opt/gluon/org/rewrite/<project>`
-- legacy tree snapshot in `/opt/gluon/org/rewrite/<project>/docs/legacy-tree.txt`
+- legacy tree snapshot in `/opt/gluon/org/rewrite/<project>/docs/migration/legacy-tree`
 
 ## Characterization Test Generation
 
@@ -112,10 +112,10 @@ pipeline commands and resumes failed stages after repair.
 2. Initialize git in the rewrite workspace, create branch
    `gluon/java-<target-version>`, and set `origin` to the source repo URL.
 3. Inspect the legacy checkout with `tree` and save the output, for example
-   `docs/legacy-tree.txt`, so agents can compare legacy structure with the new
+   `docs/migration/legacy-tree`, so agents can compare legacy structure with the new
    scaffold.
 4. Scaffold only the initial structure needed for rewrite work:
-   `Makefile`, `.gitignore`, `docs/`, `src/`, `CLAUDE.md`, and `AGENTS.md`.
+   `Makefile`, `.gitignore`, `docs/migration/`, `src/`, `CLAUDE.md`, and `AGENTS.md`.
 5. Use the compatibility report as the source of migration requirements.
    Preserve behavior and avoid unrelated refactors.
 6. Perform this setup deterministically in Python. Do not invoke agents for

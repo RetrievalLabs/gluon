@@ -10,10 +10,13 @@ class HarnessPathsTests(unittest.TestCase):
 
         self.assertEqual(paths.repo, Path("/opt/gluon/org/project/project"))
         self.assertEqual(paths.rewrite_workspace, Path("/opt/gluon/org/rewrite/project"))
-        self.assertEqual(paths.rewrite_docs_dir, Path("/opt/gluon/org/rewrite/project/docs"))
+        self.assertEqual(
+            paths.rewrite_docs_dir,
+            Path("/opt/gluon/org/rewrite/project/docs/migration"),
+        )
         self.assertEqual(
             paths.legacy_tree,
-            Path("/opt/gluon/org/rewrite/project/docs/legacy-tree.txt"),
+            Path("/opt/gluon/org/rewrite/project/docs/migration/legacy-tree"),
         )
         self.assertEqual(
             paths.build_report,

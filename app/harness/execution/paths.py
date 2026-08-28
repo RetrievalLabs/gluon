@@ -30,11 +30,11 @@ class HarnessPaths:
 
     @property
     def rewrite_docs_dir(self) -> Path:
-        return self.rewrite_workspace / "docs"
+        return self.rewrite_workspace / "docs" / "migration"
 
     @property
     def legacy_tree(self) -> Path:
-        return self.rewrite_docs_dir / "legacy-tree.txt"
+        return self.rewrite_docs_dir / "legacy-tree"
 
     @property
     def build_report(self) -> Path:
