@@ -19,6 +19,10 @@ class HarnessPathsTests(unittest.TestCase):
             Path("/opt/gluon/org/rewrite/project/docs/migration/legacy-tree"),
         )
         self.assertEqual(
+            paths.dependency_selection_report,
+            Path("/opt/gluon/org/rewrite/project/docs/migration/dependency-selection.md"),
+        )
+        self.assertEqual(
             paths.build_report,
             Path("/opt/gluon/org/build-report/project/build-report.json"),
         )

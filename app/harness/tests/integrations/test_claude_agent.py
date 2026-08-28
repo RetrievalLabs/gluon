@@ -236,6 +236,60 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertIn("Return control to harness", prompt)
         self.assertIn("Do not select the next scenario", prompt)
 
+    def test_dependency_selection_agent_options_allow_web_research(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+
+        options = ClaudeAgentClient(config).dependency_selection_agent_options_kwargs(
+            Path("/rewrite")
+        )
+
+        self.assertEqual(options["cwd"], Path("/rewrite"))
+        self.assertIn("WebSearch", options["tools"])
+        self.assertIn("WebFetch", options["allowed_tools"])
+        self.assertIn("Write", options["allowed_tools"])
+        self.assertEqual(options["skills"], ["java-dependency-selection-best-practices"])
+        self.assertEqual(options["permission_mode"], "dontAsk")
+
+    def test_dependency_selection_prompt_names_inputs_and_output(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+        prompt = ClaudeAgentClient(config).build_dependency_selection_prompt(
+            Path("/repo"),
+            Path("/data/project/build-report.json"),
+            Path("/data/project/compatibility-report.json"),
+            "25",
+            Path("/rewrite/docs/migration/dependency-selection.md"),
+        )
+
+        self.assertIn("Build report: /data/project/build-report.json", prompt)
+        self.assertIn(
+            "Compatibility report: /data/project/compatibility-report.json",
+            prompt,
+        )
+        self.assertIn("Target Java version: 25", prompt)
+        self.assertIn("/rewrite/docs/migration/dependency-selection.md", prompt)
+        self.assertIn("Parent Dependencies", prompt)
+        self.assertIn("Module Dependencies", prompt)
+        self.assertIn("WebSearch and WebFetch", prompt)
+        self.assertIn("java-dependency-selection-best-practices", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -54,9 +54,32 @@ class ClaudeAgentClient:
             self.run_agent_async(repo_path, prompt)
         )
 
+    def run_agent_with_options(self, options_kwargs: dict[str, Any], prompt: str) -> str:
+        return self.event_loop().run_until_complete(
+            self.run_agent_with_options_async(options_kwargs, prompt)
+        )
+
     async def run_agent_async(self, repo_path: Path, prompt: str) -> str:
         client = await self.agent_client(repo_path)
         await client.query(prompt)
+        return await self.receive_agent_result(client)
+
+    async def run_agent_with_options_async(
+        self,
+        options_kwargs: dict[str, Any],
+        prompt: str,
+    ) -> str:
+        from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+
+        client = ClaudeSDKClient(options=ClaudeAgentOptions(**options_kwargs))
+        await client.connect()
+        try:
+            await client.query(prompt)
+            return await self.receive_agent_result(client)
+        finally:
+            await client.disconnect()
+
+    async def receive_agent_result(self, client: Any) -> str:
         result_text = "no result message returned"
         async for message in client.receive_messages():
             if hasattr(message, "result") and getattr(message, "result"):
@@ -147,6 +170,42 @@ class ClaudeAgentClient:
             "env": self.agent_env(),
         }
 
+    def dependency_selection_agent_options_kwargs(self, rewrite_workspace: Path) -> dict[str, Any]:
+        return {
+            "model": self.config.anthropic_model,
+            "cwd": rewrite_workspace,
+            "tools": [
+                "Read",
+                "Write",
+                "Edit",
+                "Glob",
+                "Grep",
+                "LS",
+                "WebSearch",
+                "WebFetch",
+            ],
+            "allowed_tools": [
+                "Read",
+                "Write",
+                "Edit",
+                "Glob",
+                "Grep",
+                "LS",
+                "WebSearch",
+                "WebFetch",
+            ],
+            "permission_mode": "dontAsk",
+            "max_turns": 40,
+            "skills": ["java-dependency-selection-best-practices"],
+            "system_prompt": {
+                "type": "preset",
+                "preset": "claude_code",
+                "append": self.dependency_selection_system_prompt(),
+                "exclude_dynamic_sections": True,
+            },
+            "env": self.agent_env(),
+        }
+
     def agent_env(self) -> dict[str, str]:
         env = dict(os.environ)
         env["ANTHROPIC_API_KEY"] = self.config.anthropic_api_key
@@ -172,6 +231,22 @@ Rules:
 - Prefer local project conventions and existing tests.
 - Verify with local build or tests when useful, but leave Gluon CLI stage reruns to harness.
 - Report changed files, verification command, and remaining blocker if any.
+"""
+
+    def dependency_selection_system_prompt(self) -> str:
+        return """You are a dependency-selection agent for the Gluon Java modernization harness.
+
+Goal: produce one Markdown dependency selection report, then stop.
+
+Rules:
+- Read the supplied build report and compatibility report before writing.
+- Use the java-dependency-selection-best-practices skill.
+- Use web search/fetch only to verify exact current stable versions from official project sources.
+- Write only the supplied dependency-selection Markdown path.
+- Do not edit source code, build files, generated reports, or other migration docs.
+- Prefer platform-managed versions over manual dependency pins.
+- Preserve existing dependency roles and avoid optional modernization unless required for target Java compatibility.
+- Do not choose milestone, RC, snapshot, or development releases.
 """
 
     async def block_gluon_cli_hook(
@@ -279,6 +354,79 @@ Seed context:
 ```json
 {json.dumps(seed_context, indent=2, sort_keys=True)}
 ```
+"""
+
+    def run_dependency_selection(
+        self,
+        rewrite_workspace: Path,
+        legacy_repo_path: Path,
+        build_report_path: Path,
+        compatibility_report_path: Path,
+        target_version: str,
+        output_path: Path,
+    ) -> AgentAttempt:
+        prompt = self.build_dependency_selection_prompt(
+            legacy_repo_path,
+            build_report_path,
+            compatibility_report_path,
+            target_version,
+            output_path,
+        )
+        agent_result = self.run_agent_with_options(
+            self.dependency_selection_agent_options_kwargs(rewrite_workspace),
+            prompt,
+        )
+        result = AgentAttempt(
+            stage_name="dependency-selection",
+            attempt=1,
+            status="completed",
+            message=(
+                f"dependency selection report generated at "
+                f"{output_path}: {agent_result}"
+            ),
+        )
+        self.record(result)
+        return result
+
+    def build_dependency_selection_prompt(
+        self,
+        legacy_repo_path: Path,
+        build_report_path: Path,
+        compatibility_report_path: Path,
+        target_version: str,
+        output_path: Path,
+    ) -> str:
+        return f"""Generate Java dependency selection report.
+
+Inputs:
+- Legacy repository: {legacy_repo_path}
+- Build report: {build_report_path}
+- Compatibility report: {compatibility_report_path}
+- Target Java version: {target_version}
+- Output Markdown: {output_path}
+
+Instructions:
+1. Read build-report.json for parent and module dependency/plugin inventory.
+2. Read compatibility-report.json for required Java compatibility recommendations.
+3. Use java-dependency-selection-best-practices to select dependency versions or platform-managed versions that support target Java {target_version}.
+4. Use WebSearch and WebFetch for exact current stable versions only when local reports/skill guidance do not provide enough evidence. Prefer official project documentation, release pages, or Maven Central pages.
+5. Write exactly one Markdown file at `{output_path}`.
+
+Markdown requirements:
+- Title with target Java version.
+- Parent Dependencies section with coordinates, current version, selected version, selection type, reason, and source.
+- Module Dependencies section grouped by module path with the same fields.
+- Build Plugins section when plugin recommendations or build tools exist.
+- Unknown Inventory section for dependencies or plugins with no compatibility KB rule.
+- Research Sources section listing official URLs used for version verification.
+
+Rules:
+- Do not edit any file except `{output_path}`.
+- Do not modify build files.
+- Prefer BOM/platform-managed versions where applicable.
+- Mark managed dependencies as managed by platform instead of inventing direct pins.
+- Use only stable versions. No milestone, RC, snapshot, or development releases.
+- Keep report concise and actionable.
 """
 
     def record(self, attempt: AgentAttempt) -> None:

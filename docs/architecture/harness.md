@@ -57,6 +57,7 @@ Do not skip stages after failure.
 - characterization test artifacts in `<repo-path>/gluon/tests/*`
 - rewrite workspace in `/opt/gluon/org/rewrite/<project>`
 - legacy tree snapshot in `/opt/gluon/org/rewrite/<project>/docs/migration/legacy-tree`
+- dependency selection report in `/opt/gluon/org/rewrite/<project>/docs/migration/dependency-selection.md`
 
 ## Characterization Test Generation
 
@@ -118,5 +119,9 @@ pipeline commands and resumes failed stages after repair.
    `Makefile`, `.gitignore`, `docs/migration/`, `src/`, `CLAUDE.md`, and `AGENTS.md`.
 5. Use the compatibility report as the source of migration requirements.
    Preserve behavior and avoid unrelated refactors.
-6. Perform this setup deterministically in Python. Do not invoke agents for
+6. Run a dependency-selection agent with `build-report.json`,
+   `compatibility-report.json`, and the `java-dependency-selection-best-practices`
+   skill. It may use web search for official stable version verification and
+   writes `docs/migration/dependency-selection.md`.
+7. Perform workspace setup deterministically in Python. Do not invoke agents for
    workspace creation, git setup, tree capture, or scaffold creation.

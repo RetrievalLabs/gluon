@@ -10,6 +10,7 @@ from integrations.gluon_cli import GluonCli
 from models.config import HarnessConfig
 from models.summary import RunSummary
 from pipeline.characterization import run_characterization_agent_loop
+from pipeline.dependency_selection import run_dependency_selection_agent
 from pipeline.migration_rewrite import run_migration_rewrite_setup
 from pipeline.retry import run_stage_with_repair
 from pipeline.stages import build_stages
@@ -37,9 +38,11 @@ class PipelineCoordinator:
 
         gluon = GluonCli(self.config.gluon_cli, self.paths)
         completed: list[str] = []
+        failed_stage_name = ""
         try:
             try:
                 for stage in build_stages(self.config, gluon):
+                    failed_stage_name = stage.name
                     run_stage_with_repair(
                         stage,
                         runner,
@@ -57,6 +60,7 @@ class PipelineCoordinator:
                         )
                         if scenarios:
                             completed.append("characterization-full-tests")
+                        failed_stage_name = "migration-rewrite"
                         run_migration_rewrite_setup(
                             self.paths,
                             repo,
@@ -64,11 +68,18 @@ class PipelineCoordinator:
                             runner,
                         )
                         completed.append("migration-rewrite")
+                        failed_stage_name = "dependency-selection"
+                        run_dependency_selection_agent(
+                            self.paths,
+                            agent,
+                            self.config.target_version,
+                        )
+                        completed.append("dependency-selection")
             except StageFailedError as error:
                 summary = RunSummary(
                     status="failed",
                     completed_stages=completed,
-                    failed_stage=stage.name,
+                    failed_stage=failed_stage_name,
                     attempts_used=self.config.max_agent_attempts,
                     message=str(error),
                 )
