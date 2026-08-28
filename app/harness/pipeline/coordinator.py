@@ -9,8 +9,10 @@ from integrations.claude_agent import ClaudeAgentClient
 from integrations.gluon_cli import GluonCli
 from models.config import HarnessConfig
 from models.summary import RunSummary
+from pipeline.build_structure import run_build_structure_agent
 from pipeline.characterization import run_characterization_agent_loop
 from pipeline.dependency_selection import run_dependency_selection_agent
+from pipeline.migration_commit import commit_rewrite_workspace
 from pipeline.migration_rewrite import run_migration_rewrite_setup
 from pipeline.retry import run_stage_with_repair
 from pipeline.stages import build_stages
@@ -75,6 +77,27 @@ class PipelineCoordinator:
                             self.config.target_version,
                         )
                         completed.append("dependency-selection")
+                        failed_stage_name = "dependency-selection-commit"
+                        commit_rewrite_workspace(
+                            runner,
+                            self.paths.rewrite_workspace,
+                            "Add dependency selection report",
+                        )
+                        completed.append("dependency-selection-commit")
+                        failed_stage_name = "build-structure"
+                        run_build_structure_agent(
+                            self.paths,
+                            agent,
+                            self.config.target_version,
+                        )
+                        completed.append("build-structure")
+                        failed_stage_name = "build-structure-commit"
+                        commit_rewrite_workspace(
+                            runner,
+                            self.paths.rewrite_workspace,
+                            "Add Java migration build structure",
+                        )
+                        completed.append("build-structure-commit")
             except StageFailedError as error:
                 summary = RunSummary(
                     status="failed",

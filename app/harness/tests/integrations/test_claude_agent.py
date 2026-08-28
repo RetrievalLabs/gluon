@@ -290,6 +290,65 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertIn("WebSearch and WebFetch", prompt)
         self.assertIn("java-dependency-selection-best-practices", prompt)
 
+    def test_build_structure_agent_options_allow_build_writes_without_bash(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+
+        options = ClaudeAgentClient(config).build_structure_agent_options_kwargs(
+            Path("/rewrite")
+        )
+
+        self.assertEqual(options["cwd"], Path("/rewrite"))
+        self.assertIn("Write", options["allowed_tools"])
+        self.assertIn("MultiEdit", options["allowed_tools"])
+        self.assertIn("WebSearch", options["tools"])
+        self.assertIn("WebFetch", options["allowed_tools"])
+        self.assertNotIn("Bash", options["tools"])
+        self.assertEqual(options["skills"], ["java-build-tool-best-practices"])
+
+    def test_build_structure_prompt_limits_legacy_reads(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+        prompt = ClaudeAgentClient(config).build_build_structure_prompt(
+            Path("/legacy"),
+            Path("/data/project/build-report.json"),
+            Path("/data/project/compatibility-report.json"),
+            Path("/rewrite/docs/migration/legacy-tree"),
+            Path("/rewrite/docs/migration/dependency-selection.md"),
+            Path("/rewrite/docs/migration/build-structure.md"),
+            "25",
+            [
+                Path("/legacy/pom.xml"),
+                Path("/legacy/service/pom.xml"),
+            ],
+        )
+
+        self.assertIn("Legacy repository reference: /legacy", prompt)
+        self.assertIn("/data/project/build-report.json", prompt)
+        self.assertIn("/rewrite/docs/migration/dependency-selection.md", prompt)
+        self.assertIn("/rewrite/docs/migration/build-structure.md", prompt)
+        self.assertIn("- /legacy/pom.xml", prompt)
+        self.assertIn("- /legacy/service/pom.xml", prompt)
+        self.assertIn("Do not read legacy source files", prompt)
+        self.assertIn("java-build-tool-best-practices", prompt)
+        self.assertIn("Create module directories", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

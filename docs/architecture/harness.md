@@ -58,6 +58,7 @@ Do not skip stages after failure.
 - rewrite workspace in `/opt/gluon/org/rewrite/<project>`
 - legacy tree snapshot in `/opt/gluon/org/rewrite/<project>/docs/migration/legacy-tree`
 - dependency selection report in `/opt/gluon/org/rewrite/<project>/docs/migration/dependency-selection.md`
+- build structure report in `/opt/gluon/org/rewrite/<project>/docs/migration/build-structure.md`
 
 ## Characterization Test Generation
 
@@ -123,5 +124,15 @@ pipeline commands and resumes failed stages after repair.
    `compatibility-report.json`, and the `java-dependency-selection-best-practices`
    skill. It may use web search for official stable version verification and
    writes `docs/migration/dependency-selection.md`.
-7. Perform workspace setup deterministically in Python. Do not invoke agents for
+7. After dependency-selection agent returns, harness commits rewrite workspace
+   changes with message `Add dependency selection report`.
+8. Run a build-structure agent with `build-report.json`,
+   `compatibility-report.json`, `docs/migration/legacy-tree`,
+   `docs/migration/dependency-selection.md`, and the
+   `java-build-tool-best-practices` skill. It reads only harness-discovered
+   legacy build files and creates the new build structure in the rewrite
+   workspace.
+9. After build-structure agent returns, harness commits rewrite workspace
+   changes with message `Add Java migration build structure`.
+10. Perform workspace setup deterministically in Python. Do not invoke agents for
    workspace creation, git setup, tree capture, or scaffold creation.

@@ -41,6 +41,10 @@ class HarnessPaths:
         return self.rewrite_docs_dir / "dependency-selection.md"
 
     @property
+    def build_structure_report(self) -> Path:
+        return self.rewrite_docs_dir / "build-structure.md"
+
+    @property
     def build_report(self) -> Path:
         return self.build_report_output_dir / self.project / "build-report.json"
 

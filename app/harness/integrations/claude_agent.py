@@ -206,6 +206,44 @@ class ClaudeAgentClient:
             "env": self.agent_env(),
         }
 
+    def build_structure_agent_options_kwargs(self, rewrite_workspace: Path) -> dict[str, Any]:
+        return {
+            "model": self.config.anthropic_model,
+            "cwd": rewrite_workspace,
+            "tools": [
+                "Read",
+                "Write",
+                "Edit",
+                "MultiEdit",
+                "Glob",
+                "Grep",
+                "LS",
+                "WebSearch",
+                "WebFetch",
+            ],
+            "allowed_tools": [
+                "Read",
+                "Write",
+                "Edit",
+                "MultiEdit",
+                "Glob",
+                "Grep",
+                "LS",
+                "WebSearch",
+                "WebFetch",
+            ],
+            "permission_mode": "dontAsk",
+            "max_turns": 60,
+            "skills": ["java-build-tool-best-practices"],
+            "system_prompt": {
+                "type": "preset",
+                "preset": "claude_code",
+                "append": self.build_structure_system_prompt(),
+                "exclude_dynamic_sections": True,
+            },
+            "env": self.agent_env(),
+        }
+
     def agent_env(self) -> dict[str, str]:
         env = dict(os.environ)
         env["ANTHROPIC_API_KEY"] = self.config.anthropic_api_key
@@ -247,6 +285,24 @@ Rules:
 - Prefer platform-managed versions over manual dependency pins.
 - Preserve existing dependency roles and avoid optional modernization unless required for target Java compatibility.
 - Do not choose milestone, RC, snapshot, or development releases.
+"""
+
+    def build_structure_system_prompt(self) -> str:
+        return """You are a build-structure agent for the Gluon Java modernization harness.
+
+Goal: create initial Maven or Gradle build structure in the rewrite workspace, then stop.
+
+Rules:
+- Use the java-build-tool-best-practices skill.
+- Treat the legacy repository as read-only reference.
+- Read only the explicitly allowed legacy build files supplied in the prompt.
+- Do not read legacy source files, test files, resources, or arbitrary repository files.
+- Write only inside the rewrite workspace.
+- Preserve the legacy build system and module paths. Do not convert Maven to Gradle, Gradle to Maven, or Gradle Groovy DSL to Kotlin DSL.
+- Use docs/migration/dependency-selection.md for selected dependency and platform versions.
+- Use web search/fetch only to verify exact stable Maven, Gradle, or plugin versions from official project sources.
+- Do not choose milestone, RC, snapshot, or development releases.
+- Do not run build or test commands.
 """
 
     async def block_gluon_cli_hook(
@@ -427,6 +483,93 @@ Rules:
 - Mark managed dependencies as managed by platform instead of inventing direct pins.
 - Use only stable versions. No milestone, RC, snapshot, or development releases.
 - Keep report concise and actionable.
+"""
+
+    def run_build_structure(
+        self,
+        rewrite_workspace: Path,
+        legacy_repo_path: Path,
+        build_report_path: Path,
+        compatibility_report_path: Path,
+        legacy_tree_path: Path,
+        dependency_selection_report_path: Path,
+        build_structure_report_path: Path,
+        target_version: str,
+        allowed_legacy_build_files: list[Path],
+    ) -> AgentAttempt:
+        prompt = self.build_build_structure_prompt(
+            legacy_repo_path,
+            build_report_path,
+            compatibility_report_path,
+            legacy_tree_path,
+            dependency_selection_report_path,
+            build_structure_report_path,
+            target_version,
+            allowed_legacy_build_files,
+        )
+        agent_result = self.run_agent_with_options(
+            self.build_structure_agent_options_kwargs(rewrite_workspace),
+            prompt,
+        )
+        result = AgentAttempt(
+            stage_name="build-structure",
+            attempt=1,
+            status="completed",
+            message=(
+                f"build structure generated in {rewrite_workspace}; "
+                f"report at {build_structure_report_path}: {agent_result}"
+            ),
+        )
+        self.record(result)
+        return result
+
+    def build_build_structure_prompt(
+        self,
+        legacy_repo_path: Path,
+        build_report_path: Path,
+        compatibility_report_path: Path,
+        legacy_tree_path: Path,
+        dependency_selection_report_path: Path,
+        build_structure_report_path: Path,
+        target_version: str,
+        allowed_legacy_build_files: list[Path],
+    ) -> str:
+        allowed_files = "\n".join(f"- {path}" for path in allowed_legacy_build_files)
+        if not allowed_files:
+            allowed_files = "- No legacy build files were found by harness discovery."
+        return f"""Create Java build structure in the rewrite workspace.
+
+Inputs:
+- Legacy repository reference: {legacy_repo_path}
+- Build report: {build_report_path}
+- Compatibility report: {compatibility_report_path}
+- Legacy tree: {legacy_tree_path}
+- Dependency selection report: {dependency_selection_report_path}
+- Build structure report: {build_structure_report_path}
+- Target Java version: {target_version}
+
+Allowed legacy build files:
+{allowed_files}
+
+Instructions:
+1. Read the build report, compatibility report, legacy tree, and dependency selection report.
+2. Read only the allowed legacy build files listed above. Do not read any other legacy repository files.
+3. Use java-build-tool-best-practices to create root build files in the rewrite workspace matching the legacy build system.
+4. Create module directories and module build files when build-report.json contains modules or the allowed build files show module builds.
+5. Set Java release/source/target/toolchain settings for Java {target_version}.
+6. Apply selected dependency and plugin versions from docs/migration/dependency-selection.md. Prefer BOM/platform-managed versions when that report says versions are managed.
+7. Use WebSearch and WebFetch only when exact stable Maven, Gradle, wrapper, or plugin versions need official verification.
+8. Write `{build_structure_report_path}` describing generated root structure, modules, allowed legacy build files read, build system choices, and blockers.
+
+Rules:
+- Do not read legacy source files, test files, resources, or arbitrary legacy files.
+- Do not copy Java source code from the legacy repository.
+- Do not write outside the rewrite workspace.
+- Preserve Maven vs Gradle and Gradle DSL choice.
+- Preserve module names and paths from the reports.
+- Do not invent application dependencies absent from the reports or dependency selection doc.
+- Do not run build or test commands.
+- Use only stable versions. No milestone, RC, snapshot, or development releases.
 """
 
     def record(self, attempt: AgentAttempt) -> None:
