@@ -9,4 +9,4 @@ Architecture docs are split by subsystem:
 - [Business Knowledge Graph](architecture/business-kg.md)
 - [Harness](architecture/harness.md)
 - [Characterization Tests](architecture/characterization-tests.md)
-
+- [Source Code Migration](architecture/source-code-migration.md)
