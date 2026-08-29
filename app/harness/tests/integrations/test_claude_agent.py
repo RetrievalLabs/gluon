@@ -403,6 +403,10 @@ class ClaudeAgentTests(unittest.TestCase):
         )
         self.assertIn("Context Agent", prompt)
         self.assertIn("Implementation Agent", prompt)
+        self.assertIn(
+            "Implementation Agent must read and apply version-rewrite-modernization",
+            prompt,
+        )
         self.assertIn("Verification Agent", prompt)
         self.assertIn("official web documentation", prompt)
         self.assertIn("integration tests", prompt)

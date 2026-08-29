@@ -365,7 +365,7 @@ Agent workflow:
 - Use the Task tool to give database/source discovery work to the Context Agent.
 - Context Agent returns a structured context packet with entry points, source files, reachable relationships, business KG priorities, existing tests, and characterization scenarios.
 - Use the Task tool to give the context packet and code-writing responsibility to the Implementation Agent.
-- Implementation Agent migrates source code and writes integration tests inside the rewrite workspace.
+- Implementation Agent reads and applies version-rewrite-modernization and java-best-practices, migrates source code, and writes integration tests inside the rewrite workspace.
 - Use the Task tool to give migrated code, tests, and context packet to the Verification Agent.
 - Verification Agent runs compile/tests, verifies business behavior with characterization-tests.db when present, writes or repairs characterization tests needed for migrated business logic, and reports remaining failures.
 - Return control only after source migration report is written and verification status is clear.
@@ -667,7 +667,7 @@ Instructions:
 2. As main agent, use the Task tool to ask the Context Agent for a JSON context packet from business-kg.db, extraction.db, characterization-tests.db, repository docs, relevant configuration, bounded source reads, and official web documentation when needed.
 3. Context Agent must identify entry points, source files, reachable relationships, business KG priorities, existing tests, characterization scenarios, and any external documentation used.
 4. As main agent, use the Task tool to give the context packet to the Implementation Agent.
-5. Implementation Agent must migrate source code and write integration tests inside the rewrite workspace.
+5. Implementation Agent must read and apply version-rewrite-modernization and java-best-practices before source edits, migrate source code, and write integration tests inside the rewrite workspace.
 6. Implementation Agent must start with Main, Lifecycle, Http, Cli, Scheduled, and Message entry points in that order.
 7. Implementation Agent must copy the smallest required source, resources, configuration, and tests from the legacy repository into the rewrite workspace.
 8. Implementation Agent must use extraction.db relationships to expand through direct reachable dependencies.
