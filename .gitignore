@@ -24,3 +24,4 @@ data/
 .agents
 .cursor
 .github
+.pytest_cache/
