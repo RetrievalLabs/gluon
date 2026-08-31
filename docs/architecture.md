@@ -10,3 +10,4 @@ Architecture docs are split by subsystem:
 - [Harness](architecture/harness.md)
 - [Characterization Tests](architecture/characterization-tests.md)
 - [Source Code Migration](architecture/source-code-migration.md)
+- [Agentic Execution](architecture/agentic-execution.md)
