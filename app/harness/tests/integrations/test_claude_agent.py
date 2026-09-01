@@ -386,6 +386,8 @@ class ClaudeAgentTests(unittest.TestCase):
         )
         prompt = ClaudeAgentClient(config).build_source_migration_prompt(
             Path("/legacy"),
+            Path("/data/project/build-report.json"),
+            Path("/data/project/compatibility-report.json"),
             Path("/data/business-kg.db"),
             Path("/data/extraction.db"),
             Path("/legacy/gluon/tests/characterization-tests.db"),
@@ -395,6 +397,11 @@ class ClaudeAgentTests(unittest.TestCase):
         )
 
         self.assertIn("Legacy repository reference: /legacy", prompt)
+        self.assertIn("Build report: /data/project/build-report.json", prompt)
+        self.assertIn(
+            "Compatibility report: /data/project/compatibility-report.json",
+            prompt,
+        )
         self.assertIn("Business KG database: /data/business-kg.db", prompt)
         self.assertIn("Extraction database: /data/extraction.db", prompt)
         self.assertIn(
@@ -411,7 +418,8 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertIn("official web documentation", prompt)
         self.assertIn("integration tests", prompt)
         self.assertIn("characterization-tests.db", prompt)
-        self.assertIn("Do not use build-report.json", prompt)
+        self.assertIn("build-report.json, compatibility-report.json", prompt)
+        self.assertNotIn("Do not use build-report.json", prompt)
         self.assertIn("version-rewrite-modernization", prompt)
         self.assertIn("java-best-practices", prompt)
 

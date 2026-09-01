@@ -17,6 +17,8 @@ class FakeAgent:
         self,
         rewrite_workspace,
         legacy_repo_path,
+        build_report_path,
+        compatibility_report_path,
         business_kg_db_path,
         extraction_db_path,
         characterization_db_path,
@@ -28,6 +30,8 @@ class FakeAgent:
             (
                 rewrite_workspace,
                 legacy_repo_path,
+                build_report_path,
+                compatibility_report_path,
                 business_kg_db_path,
                 extraction_db_path,
                 characterization_db_path,
@@ -56,12 +60,14 @@ class SourceMigrationTests(unittest.TestCase):
             call = agent.calls[0]
             self.assertEqual(call[0], paths.rewrite_workspace)
             self.assertEqual(call[1], paths.repo)
-            self.assertEqual(call[2], paths.business_kg_db)
-            self.assertEqual(call[3], paths.extraction_db)
-            self.assertEqual(call[4], paths.characterization_db)
-            self.assertEqual(call[5], paths.characterization_output_dir)
-            self.assertEqual(call[6], "25")
-            self.assertEqual(call[7], paths.source_migration_report)
+            self.assertEqual(call[2], paths.build_report)
+            self.assertEqual(call[3], paths.compatibility_report)
+            self.assertEqual(call[4], paths.business_kg_db)
+            self.assertEqual(call[5], paths.extraction_db)
+            self.assertEqual(call[6], paths.characterization_db)
+            self.assertEqual(call[7], paths.characterization_output_dir)
+            self.assertEqual(call[8], "25")
+            self.assertEqual(call[9], paths.source_migration_report)
 
     def test_fails_when_agent_does_not_write_source(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

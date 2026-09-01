@@ -14,6 +14,8 @@ def run_source_migration_agent(
     agent.run_source_migration(
         paths.rewrite_workspace,
         paths.repo,
+        paths.build_report,
+        paths.compatibility_report,
         paths.business_kg_db,
         paths.extraction_db,
         paths.characterization_db,

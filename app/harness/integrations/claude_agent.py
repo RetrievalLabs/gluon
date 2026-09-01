@@ -609,6 +609,8 @@ Rules:
         self,
         rewrite_workspace: Path,
         legacy_repo_path: Path,
+        build_report_path: Path,
+        compatibility_report_path: Path,
         business_kg_db_path: Path,
         extraction_db_path: Path,
         characterization_db_path: Path,
@@ -618,6 +620,8 @@ Rules:
     ) -> AgentAttempt:
         prompt = self.build_source_migration_prompt(
             legacy_repo_path,
+            build_report_path,
+            compatibility_report_path,
             business_kg_db_path,
             extraction_db_path,
             characterization_db_path,
@@ -644,6 +648,8 @@ Rules:
     def build_source_migration_prompt(
         self,
         legacy_repo_path: Path,
+        build_report_path: Path,
+        compatibility_report_path: Path,
         business_kg_db_path: Path,
         extraction_db_path: Path,
         characterization_db_path: Path,
@@ -655,6 +661,8 @@ Rules:
 
 Inputs:
 - Legacy repository reference: {legacy_repo_path}
+- Build report: {build_report_path}
+- Compatibility report: {compatibility_report_path}
 - Business KG database: {business_kg_db_path}
 - Extraction database: {extraction_db_path}
 - Characterization database: {characterization_db_path}
@@ -664,7 +672,7 @@ Inputs:
 
 Instructions:
 1. Read version-rewrite-modernization and java-best-practices before source edits.
-2. As main agent, use the Task tool to ask the Context Agent for a JSON context packet from business-kg.db, extraction.db, characterization-tests.db, repository docs, relevant configuration, bounded source reads, and official web documentation when needed.
+2. As main agent, use the Task tool to ask the Context Agent for a JSON context packet from build-report.json, compatibility-report.json, business-kg.db, extraction.db, characterization-tests.db, repository docs, relevant configuration, bounded source reads, and official web documentation when needed.
 3. Context Agent must identify entry points, source files, reachable relationships, business KG priorities, existing tests, characterization scenarios, and any external documentation used.
 4. As main agent, use the Task tool to give the context packet to the Implementation Agent.
 5. Implementation Agent must read and apply version-rewrite-modernization and java-best-practices before source edits, migrate source code, and write integration tests inside the rewrite workspace.
@@ -691,7 +699,7 @@ Markdown requirements:
 Rules:
 - Do not edit the legacy repository.
 - Do not write outside the rewrite workspace.
-- Do not use build-report.json, compatibility-report.json, dependency-selection.md, build-structure.md, or legacy-tree as required inputs.
+- Do not use dependency-selection.md, build-structure.md, or legacy-tree as required inputs.
 - Treat existing rewrite workspace build files as authoritative.
 - Preserve legacy behavior unless an intentional behavior change is explicitly required.
 - Use only `gluon[-cli] code-parser db ...` or `gluon[-cli] db ...` for bounded characterization database work.
