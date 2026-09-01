@@ -24,7 +24,7 @@ impl BuildReport {
         if self
             .java_versions
             .iter()
-            .any(|existing| existing.version == version.version)
+            .any(|existing| existing.version == version.version && existing.file == version.file)
         {
             return;
         }
@@ -209,5 +209,44 @@ impl Diagnostic {
             exit_code: None,
             stderr: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn java_version(version: &str, file: &str) -> JavaVersionInfo {
+        JavaVersionInfo {
+            version: version.to_string(),
+            kind: "maven.compiler.release".to_string(),
+            file: file.to_string(),
+            source: "pom.xml properties".to_string(),
+        }
+    }
+
+    #[test]
+    fn push_java_version_keeps_same_version_from_different_files() {
+        let mut report = BuildReport::default();
+
+        report.push_java_version(java_version("17", "pom.xml"));
+        report.push_java_version(java_version("17", "service/pom.xml"));
+        report.rebuild_scopes();
+
+        assert_eq!(report.java_versions.len(), 2);
+        assert_eq!(report.parent.java_versions.len(), 1);
+        assert_eq!(report.modules.len(), 1);
+        assert_eq!(report.modules[0].path, "service");
+        assert_eq!(report.modules[0].java_versions.len(), 1);
+    }
+
+    #[test]
+    fn push_java_version_deduplicates_same_version_from_same_file() {
+        let mut report = BuildReport::default();
+
+        report.push_java_version(java_version("17", "pom.xml"));
+        report.push_java_version(java_version("17", "pom.xml"));
+
+        assert_eq!(report.java_versions.len(), 1);
     }
 }
