@@ -490,7 +490,8 @@ fn analyze_report_outputs_valid_json() {
     let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
         .args(["analyze-report", "--report"])
         .arg(&report_path)
-        .args(["--target-java", "25"])
+        .args(["--target-java", "25", "--jdtls-command"])
+        .arg(write_fake_jdtls(&root))
         .output()
         .unwrap();
 
@@ -502,7 +503,8 @@ fn analyze_report_outputs_valid_json() {
         value["parent"]["dependency_recommendations"][0]["id"],
         "asm-java25"
     );
-    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+    assert_eq!(value["parent"]["api_findings"].as_array().unwrap().len(), 0);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("jdtls compatibility definitions"));
     let _ = fs::remove_dir_all(root);
 }
 
@@ -527,7 +529,8 @@ fn analyze_report_groups_multi_module_report_sections() {
     let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
         .args(["analyze-report", "--report"])
         .arg(&report_path)
-        .args(["--target-java", "25"])
+        .args(["--target-java", "25", "--jdtls-command"])
+        .arg(write_fake_jdtls(&root))
         .output()
         .unwrap();
 
@@ -553,6 +556,8 @@ fn analyze_report_writes_report_to_output_dir() {
         .arg(&report_path)
         .args(["--target-java", "25", "--output-dir"])
         .arg(&output_root)
+        .args(["--jdtls-command"])
+        .arg(write_fake_jdtls(&root))
         .output()
         .unwrap();
 
@@ -707,6 +712,37 @@ fn analyze_report_warns_for_missing_source_path_and_keeps_dependency_analysis() 
 }
 
 #[test]
+fn analyze_report_rejects_missing_jdtls_for_source_analysis() {
+    let root = test_dir("analyze-missing-jdtls");
+    fs::create_dir_all(root.join("src/main/java/demo")).unwrap();
+    fs::write(
+        root.join("src/main/java/demo/Demo.java"),
+        "package demo; class Demo { void run() { Thread.currentThread(); } }",
+    )
+    .unwrap();
+    let report_path = write_build_report(&root, r#""direct_dependencies":[]"#);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["analyze-report", "--report"])
+        .arg(&report_path)
+        .args([
+            "--target-java",
+            "25",
+            "--jdtls-command",
+            "definitely-missing-jdtls-for-gluon-test",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Java source analysis failed"));
+    assert!(stderr.contains("JDTLS executable not found"));
+    assert!(stderr.contains("--jdtls-command"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn analyze_report_jdk_tools_missing_root_emits_warnings() {
     let root = test_dir("analyze-jdk-tools");
     fs::create_dir_all(root.join("target/classes")).unwrap();
@@ -716,7 +752,9 @@ fn analyze_report_jdk_tools_missing_root_emits_warnings() {
     let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
         .args(["analyze-report", "--report"])
         .arg(&report_path)
-        .args(["--target-java", "25", "--enable-jdk-tools", "--jdk-root"])
+        .args(["--target-java", "25", "--jdtls-command"])
+        .arg(write_fake_jdtls(&root))
+        .args(["--enable-jdk-tools", "--jdk-root"])
         .arg(&missing_jdk_root)
         .args(["--classes-path"])
         .arg(root.join("target/classes"))

@@ -7,6 +7,7 @@ use crate::core::error::KnowledgeBaseError;
 use crate::languages::java::build::model::{
     BuildReport, BuildToolInfo, DependencyInfo, Diagnostic, PluginInfo,
 };
+use crate::languages::java::business::jdtls::JdtlsOptions;
 use crate::languages::java::compatibility::jdk_tools::{JdkToolOptions, run_jdk_tools};
 use crate::languages::java::compatibility::knowledge_base::{
     CompatibilityRule, JavaCompatibilityKnowledgeBase, MatchRule, ReplacementRule,
@@ -15,7 +16,7 @@ use crate::languages::java::compatibility::model::{
     CodeChangeRecommendation, CompatibilityReport, CompatibilityScopeReport,
     DependencyRecommendation, PluginRecommendation, UnknownDependency, UnknownPlugin,
 };
-use crate::languages::java::compatibility::source_scan::scan_java_sources;
+use crate::languages::java::compatibility::source_scan::scan_java_sources_with_jdtls;
 
 const UNKNOWN_MESSAGE: &str = "No KB rule; verify via official docs or ask LLM/research agent.";
 
@@ -25,6 +26,8 @@ pub type CompatibilityResult<T> = Result<T, CompatibilityError>;
 pub enum CompatibilityError {
     #[error("failed to load Java compatibility knowledge base: {0}")]
     KnowledgeBase(#[from] KnowledgeBaseError),
+    #[error("Java source analysis failed: {0}")]
+    SourceAnalysis(String),
 }
 
 pub fn analyze_report(
@@ -32,11 +35,17 @@ pub fn analyze_report(
     target_java: u32,
     source_path: &Path,
 ) -> CompatibilityResult<CompatibilityReport> {
+    let jdtls_options = JdtlsOptions {
+        command: "jdtls".to_string(),
+        workspace: source_path.join(".gluon-jdtls-analyze-workspace"),
+        max_in_flight: 32,
+    };
     analyze_report_with_options(
         build_report,
         target_java,
         source_path,
         &JdkToolOptions::default(),
+        &jdtls_options,
     )
 }
 
@@ -45,6 +54,7 @@ pub fn analyze_report_with_options(
     target_java: u32,
     source_path: &Path,
     jdk_tool_options: &JdkToolOptions,
+    jdtls_options: &JdtlsOptions,
 ) -> CompatibilityResult<CompatibilityReport> {
     let kb = JavaCompatibilityKnowledgeBase::load_default()
         .map_err(|error| KnowledgeBaseError::Load(error))?;
@@ -56,7 +66,7 @@ pub fn analyze_report_with_options(
     let (plugin_recommendations, unknown_plugins) =
         analyze_plugins(build_report, target_java, &kb.plugins);
 
-    let (api_findings, scan_diagnostics) = scan_java_sources(
+    let (api_findings, scan_diagnostics) = scan_java_sources_with_jdtls(
         source_path,
         target_java,
         &[
@@ -65,7 +75,9 @@ pub fn analyze_report_with_options(
             ("internal_api", &kb.internal_apis),
             ("reflective_access", &kb.reflective_access),
         ],
-    );
+        jdtls_options,
+    )
+    .map_err(CompatibilityError::SourceAnalysis)?;
     diagnostics.extend(scan_diagnostics);
 
     let (jdk_tool_findings, jdk_tool_diagnostics) = run_jdk_tools(

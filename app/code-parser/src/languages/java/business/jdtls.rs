@@ -35,6 +35,22 @@ pub struct JdtlsDefinition {
     pub line: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct JdtlsSymbolRequest {
+    pub file: String,
+    pub name: String,
+    pub line: usize,
+    pub column: usize,
+    pub values: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct JdtlsResolvedSymbol {
+    pub file: String,
+    pub line: usize,
+    pub values: Vec<String>,
+}
+
 pub fn enrich_with_jdtls(
     project_root: &Path,
     options: &JdtlsOptions,
@@ -95,6 +111,37 @@ pub fn resolve_test_definitions(
     let definitions = client.resolve_definition_requests(project_root, requests, max_in_flight)?;
     client.shutdown();
     Ok(definitions)
+}
+
+pub fn resolve_compatibility_symbols(
+    project_root: &Path,
+    options: &JdtlsOptions,
+    java_files: &[String],
+    requests: &[JdtlsSymbolRequest],
+) -> Result<Vec<JdtlsResolvedSymbol>, String> {
+    if !command_available(&options.command) {
+        return Err(format!(
+            "JDTLS executable not found.\ncommand: {}\nPATH: {}\nhint: install Eclipse JDT Language Server or pass --jdtls-command <path-to-jdtls>",
+            options.command,
+            env::var("PATH").unwrap_or_else(|_| "<unset>".to_string())
+        ));
+    }
+
+    fs::create_dir_all(&options.workspace).map_err(|error| {
+        format!(
+            "failed to create JDTLS workspace {}: {error}",
+            options.workspace.display()
+        )
+    })?;
+
+    let max_in_flight = options.max_in_flight.max(1);
+    let mut client = LspClient::start(&options.command, project_root, &options.workspace)?;
+    client.initialize(project_root)?;
+    client.open_java_file_paths(project_root, java_files)?;
+    let symbols =
+        client.resolve_compatibility_symbol_requests(project_root, requests, max_in_flight)?;
+    client.shutdown();
+    Ok(symbols)
 }
 
 fn command_available(command: &str) -> bool {
@@ -330,6 +377,92 @@ impl LspClient {
             );
         }
         Ok(definitions)
+    }
+
+    fn resolve_compatibility_symbol_requests(
+        &mut self,
+        project_root: &Path,
+        requests: &[JdtlsSymbolRequest],
+        max_in_flight: usize,
+    ) -> Result<Vec<JdtlsResolvedSymbol>, String> {
+        let total = requests.len();
+        let started_at = Instant::now();
+        let mut next = 0;
+        let mut complete = 0;
+        let mut pending = BTreeMap::new();
+        let mut symbols = Vec::new();
+        log_phase_start("compatibility definitions", total, max_in_flight);
+
+        while next < total || !pending.is_empty() {
+            while pending.len() < max_in_flight && next < total {
+                let request = requests[next].clone();
+                next += 1;
+                let path = project_root.join(&request.file);
+                let id = self
+                    .send_request(
+                        "textDocument/definition",
+                        json!({
+                            "textDocument": { "uri": file_uri(&path) },
+                            "position": {
+                                "line": request.line.saturating_sub(1),
+                                "character": request.column
+                            }
+                        }),
+                    )
+                    .map_err(|error| {
+                        self.verbose_error(
+                            "textDocument/definition",
+                            project_root,
+                            Some(&request.file),
+                            &format!(
+                                "JDTLS definition request failed for compatibility symbol {} at {}:{}:{}.\nerror: {error}",
+                                request.name, request.file, request.line, request.column
+                            ),
+                        )
+                    })?;
+                pending.insert(id, request);
+            }
+
+            let response = self.read_response()?;
+            let Some(request) = pending.remove(&response.id) else {
+                continue;
+            };
+            let result = response.result.map_err(|error| {
+                self.verbose_error(
+                    "textDocument/definition",
+                    project_root,
+                    Some(&request.file),
+                    &format!(
+                        "JDTLS definition request failed for compatibility symbol {} at {}:{}:{}.\nerror: {error}",
+                        request.name, request.file, request.line, request.column
+                    ),
+                )
+            })?;
+            let mut values = Vec::new();
+            for location in locations_from_value(&result) {
+                if relative_uri_path(project_root, &location.uri).is_none() {
+                    values.extend(symbol_values_for_location(&request, &location));
+                }
+            }
+            values.sort();
+            values.dedup();
+            if !values.is_empty() {
+                symbols.push(JdtlsResolvedSymbol {
+                    file: request.file,
+                    line: request.line,
+                    values,
+                });
+            }
+            complete += 1;
+            log_phase_progress(
+                "compatibility definitions",
+                complete,
+                total,
+                pending.len(),
+                started_at,
+            );
+        }
+        Ok(symbols)
     }
 
     fn require_document_symbols(
@@ -834,6 +967,61 @@ fn location_from_value(value: &Value) -> Option<LspLocation> {
     Some(LspLocation { uri, line })
 }
 
+fn symbol_values_for_location(request: &JdtlsSymbolRequest, location: &LspLocation) -> Vec<String> {
+    let mut values = Vec::new();
+    let Some(class_name) = class_name_from_uri(&location.uri) else {
+        return values;
+    };
+    values.push(class_name.clone());
+    if let Some(method) = method_name_from_values(&request.values) {
+        values.push(format!("{class_name}.{method}"));
+        if class_name == "java.lang.Class" && method.starts_with("forName(") {
+            values.extend(
+                request
+                    .values
+                    .iter()
+                    .filter(|value| value.starts_with("Class.forName(\""))
+                    .cloned(),
+            );
+        }
+        if class_name == "java.lang.reflect.AccessibleObject"
+            && request
+                .values
+                .iter()
+                .any(|value| value == "setAccessible(true)")
+        {
+            values.push("setAccessible(true)".to_string());
+        }
+    }
+    values
+}
+
+fn method_name_from_values(values: &[String]) -> Option<String> {
+    for value in values {
+        let Some((before_args, args)) = value.split_once('(') else {
+            continue;
+        };
+        let Some(method) = before_args.rsplit('.').next().map(str::trim) else {
+            continue;
+        };
+        if !method.is_empty() {
+            return Some(format!("{method}({args}"));
+        }
+    }
+    None
+}
+
+fn class_name_from_uri(uri: &str) -> Option<String> {
+    let marker = uri.find(".class").or_else(|| uri.find(".java"))?;
+    let before = &uri[..marker];
+    for package in ["java/", "javax/", "jdk/", "sun/", "com/sun/", "org/omg/"] {
+        if let Some(index) = before.find(package) {
+            return Some(before[index..].replace('/', "."));
+        }
+    }
+    None
+}
+
 fn method_id_for_location(
     project_root: &Path,
     model: &CodeModel,
@@ -891,4 +1079,70 @@ fn percent_decode(value: &str) -> String {
         .replace("%23", "#")
         .replace("%3F", "?")
         .replace("%25", "%")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compatibility_symbols_extract_jdk_class_and_method() {
+        let request = JdtlsSymbolRequest {
+            file: "src/main/java/demo/Demo.java".to_string(),
+            name: "currentThread()".to_string(),
+            line: 1,
+            column: 42,
+            values: vec!["currentThread()".to_string()],
+        };
+        let location = LspLocation {
+            uri: "jdt://contents/java.base/java/lang/Thread.class".to_string(),
+            line: 1,
+        };
+
+        let values = symbol_values_for_location(&request, &location);
+
+        assert!(values.contains(&"java.lang.Thread".to_string()));
+        assert!(values.contains(&"java.lang.Thread.currentThread()".to_string()));
+    }
+
+    #[test]
+    fn compatibility_symbols_keep_reflective_literal_after_class_for_name_resolves() {
+        let request = JdtlsSymbolRequest {
+            file: "src/main/java/demo/Demo.java".to_string(),
+            name: "Class.forName(\"sun.misc.Unsafe\")".to_string(),
+            line: 1,
+            column: 42,
+            values: vec![
+                "Class.forName(\"sun.misc.Unsafe\")".to_string(),
+                "forName(\"sun.misc.Unsafe\")".to_string(),
+            ],
+        };
+        let location = LspLocation {
+            uri: "jdt://contents/java.base/java/lang/Class.class".to_string(),
+            line: 1,
+        };
+
+        let values = symbol_values_for_location(&request, &location);
+
+        assert!(values.contains(&"Class.forName(\"sun.misc.Unsafe\")".to_string()));
+    }
+
+    #[test]
+    fn compatibility_symbols_gate_set_accessible_to_reflection_api() {
+        let request = JdtlsSymbolRequest {
+            file: "src/main/java/demo/Demo.java".to_string(),
+            name: "setAccessible(true)".to_string(),
+            line: 1,
+            column: 42,
+            values: vec!["setAccessible(true)".to_string()],
+        };
+        let location = LspLocation {
+            uri: "jdt://contents/java.base/java/lang/reflect/AccessibleObject.class".to_string(),
+            line: 1,
+        };
+
+        let values = symbol_values_for_location(&request, &location);
+
+        assert!(values.contains(&"setAccessible(true)".to_string()));
+    }
 }

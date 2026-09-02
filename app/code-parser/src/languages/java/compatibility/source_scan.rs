@@ -6,15 +6,18 @@ use tree_sitter::{Node, Parser, TreeCursor};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::languages::java::build::model::Diagnostic;
+use crate::languages::java::business::jdtls::{
+    JdtlsOptions, JdtlsSymbolRequest, resolve_compatibility_symbols,
+};
 use crate::languages::java::compatibility::knowledge_base::ApiRule;
 use crate::languages::java::compatibility::model::ApiFinding;
 
-pub fn scan_java_sources(
+pub fn scan_java_sources_with_jdtls(
     source_path: &Path,
     target_java: u32,
     kb_rules: &[(&str, &[ApiRule])],
-) -> (Vec<ApiFinding>, Vec<Diagnostic>) {
-    let mut findings = Vec::new();
+    jdtls_options: &JdtlsOptions,
+) -> Result<(Vec<ApiFinding>, Vec<Diagnostic>), String> {
     let mut diagnostics = Vec::new();
 
     if !source_path.exists() {
@@ -23,8 +26,11 @@ pub fn scan_java_sources(
             format!("source path does not exist: {}", source_path.display()),
             Some(source_path.display().to_string()),
         ));
-        return (findings, diagnostics);
+        return Ok((Vec::new(), diagnostics));
     }
+
+    let mut candidates = Vec::new();
+    let mut java_files = Vec::new();
 
     for entry in WalkDir::new(source_path)
         .into_iter()
@@ -44,15 +50,18 @@ pub fn scan_java_sources(
         }
         match fs::read_to_string(entry.path()) {
             Ok(contents) => {
-                if let Err(diagnostic) = scan_file(
-                    source_path,
-                    entry.path(),
-                    &contents,
-                    target_java,
-                    kb_rules,
-                    &mut findings,
-                ) {
-                    diagnostics.push(diagnostic);
+                let display_path = relative_path(source_path, entry.path());
+                java_files.push(display_path.clone());
+                match syntax_candidates(&contents, &display_path) {
+                    Ok(file_candidates) => candidates.extend(file_candidates),
+                    Err(error) => diagnostics.push(Diagnostic::warning(
+                        "source_scan",
+                        format!(
+                            "failed to parse Java source {}: {error}",
+                            entry.path().display()
+                        ),
+                        Some(entry.path().display().to_string()),
+                    )),
                 }
             }
             Err(error) => diagnostics.push(Diagnostic::warning(
@@ -63,68 +72,85 @@ pub fn scan_java_sources(
         }
     }
 
-    (findings, diagnostics)
-}
-
-fn scan_file(
-    source_root: &Path,
-    file: &Path,
-    contents: &str,
-    target_java: u32,
-    kb_rules: &[(&str, &[ApiRule])],
-    findings: &mut Vec<ApiFinding>,
-) -> Result<(), Diagnostic> {
-    let display_path = relative_path(source_root, file);
-    let candidates = syntax_candidates(contents).map_err(|error| {
-        Diagnostic::warning(
-            "source_scan",
-            format!("failed to parse Java source {}: {error}", file.display()),
-            Some(file.display().to_string()),
-        )
-    })?;
+    let requests = candidates
+        .iter()
+        .map(|candidate| JdtlsSymbolRequest {
+            file: candidate.file.clone(),
+            name: candidate.name.clone(),
+            line: candidate.line,
+            column: candidate.column,
+            values: candidate.values.clone(),
+        })
+        .collect::<Vec<_>>();
+    let resolved =
+        resolve_compatibility_symbols(source_path, jdtls_options, &java_files, &requests)?;
+    let mut findings = Vec::new();
     let mut seen = HashSet::new();
 
-    for candidate in candidates {
-        for (category, rules) in kb_rules {
-            for rule in *rules {
-                if let Some(minimum) = rule.applies_when_target_java_at_least {
-                    if target_java < minimum {
-                        continue;
-                    }
+    for symbol in resolved {
+        scan_resolved_symbol(
+            &symbol.file,
+            symbol.line,
+            &symbol.values,
+            target_java,
+            kb_rules,
+            &mut seen,
+            &mut findings,
+        );
+    }
+
+    Ok((findings, diagnostics))
+}
+
+fn scan_resolved_symbol(
+    display_path: &str,
+    line: usize,
+    values: &[String],
+    target_java: u32,
+    kb_rules: &[(&str, &[ApiRule])],
+    seen: &mut HashSet<String>,
+    findings: &mut Vec<ApiFinding>,
+) {
+    for (category, rules) in kb_rules {
+        for rule in *rules {
+            if let Some(minimum) = rule.applies_when_target_java_at_least {
+                if target_java < minimum {
+                    continue;
                 }
-                for matched_text in matched_terms(rule, &candidate.values) {
-                    let key = format!(
-                        "{}\0{}\0{}\0{}\0{}",
-                        rule.id, category, display_path, candidate.line, matched_text
-                    );
-                    if !seen.insert(key) {
-                        continue;
-                    }
-                    findings.push(ApiFinding {
-                        rule_id: rule.id.clone(),
-                        category: (*category).to_string(),
-                        severity: rule.severity.clone(),
-                        file: display_path.clone(),
-                        line: candidate.line,
-                        matched_text,
-                        guidance: rule.guidance.clone(),
-                        source_ids: rule.source_ids.clone(),
-                    });
+            }
+            for matched_text in matched_terms(rule, values) {
+                let key = format!(
+                    "{}\0{}\0{}\0{}\0{}",
+                    rule.id, category, display_path, line, matched_text
+                );
+                if !seen.insert(key) {
+                    continue;
                 }
+                findings.push(ApiFinding {
+                    rule_id: rule.id.clone(),
+                    category: (*category).to_string(),
+                    severity: rule.severity.clone(),
+                    file: display_path.to_string(),
+                    line,
+                    matched_text,
+                    guidance: rule.guidance.clone(),
+                    source_ids: rule.source_ids.clone(),
+                });
             }
         }
     }
-
-    Ok(())
 }
 
 #[derive(Debug)]
 struct SourceCandidate {
+    file: String,
+    name: String,
     line: usize,
+    column: usize,
     values: Vec<String>,
 }
 
-fn syntax_candidates(contents: &str) -> Result<Vec<SourceCandidate>, String> {
+fn syntax_candidates(contents: &str, file: &str) -> Result<Vec<SourceCandidate>, String> {
     let mut parser = Parser::new();
     parser
         .set_language(&tree_sitter_java::LANGUAGE.into())
@@ -137,21 +163,22 @@ fn syntax_candidates(contents: &str) -> Result<Vec<SourceCandidate>, String> {
     }
     let mut candidates = Vec::new();
     let mut cursor = tree.walk();
-    collect_syntax_candidates(contents, &mut cursor, &mut candidates);
+    collect_syntax_candidates(contents, file, &mut cursor, &mut candidates);
     Ok(candidates)
 }
 
 fn collect_syntax_candidates(
     contents: &str,
+    file: &str,
     cursor: &mut TreeCursor<'_>,
     candidates: &mut Vec<SourceCandidate>,
 ) {
     let node = cursor.node();
-    collect_node_candidates(contents, node, candidates);
+    collect_node_candidates(contents, file, node, candidates);
 
     if cursor.goto_first_child() {
         loop {
-            collect_syntax_candidates(contents, cursor, candidates);
+            collect_syntax_candidates(contents, file, cursor, candidates);
             if !cursor.goto_next_sibling() {
                 break;
             }
@@ -160,7 +187,12 @@ fn collect_syntax_candidates(
     }
 }
 
-fn collect_node_candidates(contents: &str, node: Node<'_>, candidates: &mut Vec<SourceCandidate>) {
+fn collect_node_candidates(
+    contents: &str,
+    file: &str,
+    node: Node<'_>,
+    candidates: &mut Vec<SourceCandidate>,
+) {
     if !node.is_named() || is_ignored_syntax_node(node.kind()) {
         return;
     }
@@ -182,10 +214,24 @@ fn collect_node_candidates(contents: &str, node: Node<'_>, candidates: &mut Vec<
     }
     values.sort();
     values.dedup();
+    let target = definition_target_node(node).unwrap_or(node);
     candidates.push(SourceCandidate {
+        file: file.to_string(),
+        name: candidate_name(&values),
         line: node.start_position().row + 1,
+        column: target.start_position().column,
         values,
     });
+}
+
+fn definition_target_node<'tree>(node: Node<'tree>) -> Option<Node<'tree>> {
+    node.child_by_field_name("name")
+        .or_else(|| node.child_by_field_name("type"))
+        .or_else(|| node.named_child(0))
+}
+
+fn candidate_name(values: &[String]) -> String {
+    values.first().cloned().unwrap_or_default()
 }
 
 fn import_candidates(raw: &str) -> Vec<String> {
@@ -344,26 +390,18 @@ mod tests {
     }
 
     #[test]
-    fn detects_java_api_patterns() {
-        let root = test_dir("source-scan");
-        fs::create_dir_all(root.join("src/main/java/demo")).unwrap();
-        fs::write(
-            root.join("src/main/java/demo/Demo.java"),
-            r#"
-            package demo;
-            import javax.xml.bind.JAXBContext;
-            import sun.misc.BASE64Encoder;
-            class Demo {
-              void x() throws Exception {
-                Demo.class.getDeclaredField("x").setAccessible(true);
-              }
-            }
-            "#,
-        )
-        .unwrap();
+    fn resolved_symbols_match_java_api_patterns() {
         let kb = JavaCompatibilityKnowledgeBase::load_default().unwrap();
-        let (findings, diagnostics) = scan_java_sources(
-            &root,
+        let mut findings = Vec::new();
+        let mut seen = HashSet::new();
+        scan_resolved_symbol(
+            "src/main/java/demo/Demo.java",
+            3,
+            &[
+                "javax.xml.bind.JAXBContext".to_string(),
+                "sun.misc.BASE64Encoder".to_string(),
+                "setAccessible(true)".to_string(),
+            ],
             25,
             &[
                 ("removed_api", &kb.removed_apis),
@@ -371,9 +409,10 @@ mod tests {
                 ("internal_api", &kb.internal_apis),
                 ("reflective_access", &kb.reflective_access),
             ],
+            &mut seen,
+            &mut findings,
         );
 
-        assert!(diagnostics.is_empty());
         assert!(
             findings
                 .iter()
@@ -389,90 +428,60 @@ mod tests {
                 .iter()
                 .any(|finding| finding.matched_text == "setAccessible(true)")
         );
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn ignores_comments_and_non_reflective_strings() {
+    fn syntax_candidates_ignore_comments_and_non_reflective_strings() {
         let root = test_dir("source-scan-comments");
         fs::create_dir_all(root.join("src/main/java/demo")).unwrap();
-        fs::write(
-            root.join("src/main/java/demo/Demo.java"),
-            r#"
+        let contents = r#"
             package demo;
             class Demo {
               // import javax.xml.bind.JAXBContext;
               String text = "sun.misc.BASE64Encoder";
             }
-            "#,
-        )
-        .unwrap();
-        let kb = JavaCompatibilityKnowledgeBase::load_default().unwrap();
-        let (findings, diagnostics) = scan_java_sources(
-            &root,
-            25,
-            &[
-                ("removed_api", &kb.removed_apis),
-                ("internal_api", &kb.internal_apis),
-            ],
-        );
+            "#;
+        fs::write(root.join("src/main/java/demo/Demo.java"), contents).unwrap();
+        let candidates = syntax_candidates(contents, "src/main/java/demo/Demo.java").unwrap();
 
-        assert!(diagnostics.is_empty());
-        assert!(findings.is_empty());
+        assert!(candidates.is_empty());
         let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn detects_reflective_class_for_name_literal() {
-        let root = test_dir("source-scan-reflection");
-        fs::create_dir_all(root.join("src/main/java/demo")).unwrap();
-        fs::write(
-            root.join("src/main/java/demo/Demo.java"),
-            r#"
-            package demo;
-            class Demo {
-              Class<?> type = Class.forName("sun.misc.Unsafe");
-            }
-            "#,
-        )
-        .unwrap();
+    fn resolved_symbols_detect_reflective_class_for_name_literal() {
         let kb = JavaCompatibilityKnowledgeBase::load_default().unwrap();
-        let (findings, diagnostics) =
-            scan_java_sources(&root, 25, &[("reflective_access", &kb.reflective_access)]);
+        let mut findings = Vec::new();
+        let mut seen = HashSet::new();
+        scan_resolved_symbol(
+            "src/main/java/demo/Demo.java",
+            4,
+            &["Class.forName(\"sun.misc.Unsafe".to_string()],
+            25,
+            &[("reflective_access", &kb.reflective_access)],
+            &mut seen,
+            &mut findings,
+        );
 
-        assert!(diagnostics.is_empty());
         assert!(
             findings
                 .iter()
                 .any(|finding| finding.matched_text == "Class.forName(\"sun.")
         );
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn malformed_java_emits_warning_without_line_scan_fallback() {
-        let root = test_dir("source-scan-malformed");
-        fs::create_dir_all(root.join("src/main/java/demo")).unwrap();
-        fs::write(
-            root.join("src/main/java/demo/Demo.java"),
+    fn malformed_java_returns_parse_error_without_line_scan_fallback() {
+        let error = syntax_candidates(
             r#"
             package demo;
             import javax.xml.bind.JAXBContext
             class Demo {
             "#,
+            "src/main/java/demo/Demo.java",
         )
-        .unwrap();
-        let kb = JavaCompatibilityKnowledgeBase::load_default().unwrap();
-        let (findings, diagnostics) =
-            scan_java_sources(&root, 25, &[("removed_api", &kb.removed_apis)]);
+        .expect_err("parse error");
 
-        assert!(findings.is_empty());
-        assert_eq!(diagnostics.len(), 1);
-        assert!(
-            diagnostics[0]
-                .message
-                .contains("failed to parse Java source")
-        );
-        let _ = fs::remove_dir_all(root);
+        assert!(error.contains("syntax tree contains parse errors"));
     }
 }

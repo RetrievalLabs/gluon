@@ -10,6 +10,7 @@ use crate::languages::business::{
 };
 use crate::languages::java::build::model::BuildReport;
 use crate::languages::java::build::{BuildParseError, parse_build};
+use crate::languages::java::business::jdtls::JdtlsOptions;
 use crate::languages::java::business::{
     BusinessExtractionError, TestExtractionError, TestExtractionOptions, extract_business,
     extract_tests,
@@ -47,6 +48,9 @@ struct AnalyzeReportOptions {
     enable_jdk_tools: bool,
     jdk_root: PathBuf,
     classes_paths: Vec<PathBuf>,
+    jdtls_command: String,
+    jdtls_workspace: Option<PathBuf>,
+    jdtls_max_in_flight: usize,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -256,6 +260,9 @@ fn parse_analyze_report_args(
     let mut enable_jdk_tools = false;
     let mut jdk_root = default_jdk_root();
     let mut classes_paths = Vec::new();
+    let mut jdtls_command = "jdtls".to_string();
+    let mut jdtls_workspace = None;
+    let mut jdtls_max_in_flight = 32;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -293,6 +300,24 @@ fn parse_analyze_report_args(
                 let value = args.next().ok_or("--classes-path requires a value")?;
                 classes_paths.push(PathBuf::from(value));
             }
+            "--jdtls-command" => {
+                jdtls_command = args.next().ok_or("--jdtls-command requires a value")?;
+            }
+            "--jdtls-workspace" => {
+                let value = args.next().ok_or("--jdtls-workspace requires a value")?;
+                jdtls_workspace = Some(PathBuf::from(value));
+            }
+            "--jdtls-max-in-flight" => {
+                let value = args
+                    .next()
+                    .ok_or("--jdtls-max-in-flight requires a value")?;
+                jdtls_max_in_flight = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid --jdtls-max-in-flight: {value}"))?;
+                if jdtls_max_in_flight == 0 {
+                    return Err("--jdtls-max-in-flight must be greater than 0".to_string());
+                }
+            }
             "--help" | "-h" => return Err("help requested".to_string()),
             other => return Err(format!("unsupported argument: {other}")),
         }
@@ -311,6 +336,9 @@ fn parse_analyze_report_args(
         enable_jdk_tools,
         jdk_root,
         classes_paths,
+        jdtls_command,
+        jdtls_workspace,
+        jdtls_max_in_flight,
     })
 }
 
@@ -751,12 +779,20 @@ fn run_analyze_report(options: AnalyzeReportOptions) -> i32 {
         jdk_root: options.jdk_root,
         classes_paths: options.classes_paths,
     };
+    let jdtls_options = JdtlsOptions {
+        command: options.jdtls_command,
+        workspace: options
+            .jdtls_workspace
+            .unwrap_or_else(|| source_path.join(".gluon-jdtls-analyze-workspace")),
+        max_in_flight: options.jdtls_max_in_flight,
+    };
 
     match analyze_report_with_options(
         &build_report,
         options.target_java,
         &source_path,
         &jdk_tool_options,
+        &jdtls_options,
     ) {
         Ok(report) => match serde_json::to_string_pretty(&report) {
             Ok(json) => {
@@ -1288,7 +1324,7 @@ fn hex_string(value: &[u8]) -> String {
 
 fn print_usage() {
     eprintln!(
-        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--continue]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]\n       code-parser generate-characterization-tests --business-database <business-extraction.db> --kg-database <business-kg.db> --source-path <legacy-project-root> --output-dir <gluon-output-dir> [--max-behaviors <count>] [--node-kind BusinessRule|Workflow|Invariant|StateTransition|SideEffect] [--continue] [--force]\n       code-parser db tables --database <database.db>\n       code-parser db schema --database <database.db> [--table <table>]\n       code-parser db rows --database <database.db> --table <table> [--limit <1-100>] [--offset <count>]\n       code-parser db insert --database <database.db> --table <table> --set <column=value> [--set <column=value> ...]\n       code-parser db update --database <database.db> --table <table> --id-column <column> --id <value> --set <column=value> [--set <column=value> ...]"
+        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--continue]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]\n       code-parser generate-characterization-tests --business-database <business-extraction.db> --kg-database <business-kg.db> --source-path <legacy-project-root> --output-dir <gluon-output-dir> [--max-behaviors <count>] [--node-kind BusinessRule|Workflow|Invariant|StateTransition|SideEffect] [--continue] [--force]\n       code-parser db tables --database <database.db>\n       code-parser db schema --database <database.db> [--table <table>]\n       code-parser db rows --database <database.db> --table <table> [--limit <1-100>] [--offset <count>]\n       code-parser db insert --database <database.db> --table <table> --set <column=value> [--set <column=value> ...]\n       code-parser db update --database <database.db> --table <table> --id-column <column> --id <value> --set <column=value> [--set <column=value> ...]"
     );
 }
 
@@ -1588,6 +1624,9 @@ mod tests {
                 enable_jdk_tools: false,
                 jdk_root: default_jdk_root(),
                 classes_paths: Vec::new(),
+                jdtls_command: "jdtls".to_string(),
+                jdtls_workspace: None,
+                jdtls_max_in_flight: 32,
             })
         );
     }
@@ -1608,6 +1647,12 @@ mod tests {
             "target/classes",
             "--classes-path",
             "target/test-classes",
+            "--jdtls-command",
+            "/bin/jdtls",
+            "--jdtls-workspace",
+            ".jdtls",
+            "--jdtls-max-in-flight",
+            "8",
         ])
         .expect("valid arguments");
 
@@ -1625,6 +1670,9 @@ mod tests {
                     PathBuf::from("target/classes"),
                     PathBuf::from("target/test-classes"),
                 ],
+                jdtls_command: "/bin/jdtls".to_string(),
+                jdtls_workspace: Some(PathBuf::from(".jdtls")),
+                jdtls_max_in_flight: 8,
             })
         );
     }

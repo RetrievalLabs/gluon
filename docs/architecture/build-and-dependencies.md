@@ -20,7 +20,7 @@
 - `code-parser analyze-report` consumes a `build-report.json` with `direct_dependencies` and `direct_plugins`, loads Java compatibility KB files, and produces a separate `compatibility-report.json` with dependency, plugin, API, source-change, unknown-inventory, and diagnostic sections.
 - Compatibility reports group recommendations and findings under `parent` and `modules` using build-report module paths.
 - Compatibility analysis uses only direct dependencies and direct plugins with versions for dependency and plugin recommendations.
-- Java source analysis parses `.java` files with tree-sitter and matches syntax candidates against compatibility rules. It ignores build output and VCS directories and reports findings only; it does not edit source files.
+- Java source analysis requires JDTLS. Tree-sitter finds candidate source positions, JDTLS resolves symbols, and compatibility rules match only resolved external or JDK symbols. It ignores build output and VCS directories and reports findings only; it does not edit source files.
 - Optional JDK tool enrichment uses `GLUON_JDK_ROOT` when set, otherwise `/opt/jdks`, compiling with `jdk<source_java>` and running target JDK `jdeps --jdk-internals` plus `jdeprscan --release <target> --for-removal` on compiled class directories.
 - JDK tool findings are post-compile verification data. Missing JDKs, compile failures, absent class directories, or tool failures are warnings so source and build inventory analysis still completes.
 - Compatibility recommendations are advisory. Automated source or build-file rewrites happen in later migration steps after report review and test-backed planning.

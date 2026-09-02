@@ -78,6 +78,9 @@ Flags:
 - `--format json`: output JSON. This is the only supported format.
 - `--source-path <project-root>`: source tree to scan. Defaults to `project_root` from the build report.
 - `--output-dir <directory>`: write JSON to `<directory>/<project-directory-name>/compatibility-report.json` and print the written path.
+- `--jdtls-command <command>`: JDTLS executable. Defaults to `jdtls`.
+- `--jdtls-workspace <directory>`: JDTLS workspace directory. Defaults to `.gluon-jdtls-analyze-workspace` under the source path.
+- `--jdtls-max-in-flight <count>`: maximum concurrent JDTLS definition requests for compatibility source analysis. Defaults to `32`.
 - `--enable-jdk-tools`: compile project with the detected source Java JDK and run target JDK `jdeps` and `jdeprscan` on compiled classes.
 - `--jdk-root <directory>`: root containing `jdk8`, `jdk11`, `jdk17`, `jdk21`, and `jdk25`. Defaults to `GLUON_JDK_ROOT` when set, otherwise `/opt/jdks`.
 - `--classes-path <directory>`: compiled classes directory to scan. May be repeated. When omitted, the command attempts compilation and discovers common Maven/Gradle class directories.
@@ -87,11 +90,12 @@ Outputs:
 - Source and target Java versions.
 - Recommendations and findings grouped under `parent` and `modules`.
 - Dependency and plugin update recommendations from curated KB rules.
-- Removed, deprecated-for-removal, internal API, and reflective access findings from tree-sitter Java syntax scanning.
+- Removed, deprecated-for-removal, internal API, and reflective access findings from JDTLS-resolved Java source symbols. Tree-sitter is used only to collect candidate source positions.
 - Optional `jdk_tool_findings` from `jdeps --jdk-internals` and `jdeprscan --release <target> --for-removal`.
 - Code-change recommendations derived from API findings, replacements, and incremental migration guidance.
 - Unknown dependencies and plugins that need official-source verification before automated upgrades.
 - Diagnostics for missing or unreadable source paths while preserving dependency and plugin analysis.
+- Missing JDTLS blocks source analysis and exits with failure. Pass `--jdtls-command` when JDTLS is not on `PATH`.
 - When `--output-dir` is set, report JSON is written to disk instead of printed to stdout. Stdout and stderr include the generated JSON path.
 - If report diagnostics include errors, stderr summarizes the first error diagnostics and points to the JSON report for full details.
 
