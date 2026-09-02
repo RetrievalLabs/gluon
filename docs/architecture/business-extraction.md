@@ -434,7 +434,7 @@ The CLI should print a short summary to stdout, including database path, module 
 The CLI command is:
 
 ```bash
-code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]
+code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--build-report <build-report.json>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]
 ```
 
 `--jdtls-command` defaults to `jdtls`. The command is mandatory for v1 extraction.
@@ -454,7 +454,7 @@ context_packets
 diagnostics
 ```
 
-For multi-module Maven and Gradle repositories, module ownership is persisted directly. The `modules` table records root and discovered modules, and classes and methods store `module_id` so agents can query boundaries without inferring them from paths.
+For multi-module Maven and Gradle repositories, module ownership is persisted directly. When `--build-report` is provided, extraction reuses the report's `parent` and `modules` scopes. Otherwise, modules are discovered from Maven and Gradle files under `--path`. The `modules` table records root and module scopes, and classes and methods store `module_id` so agents can query boundaries without inferring them from paths.
 
 Graph-like relationships are stored as edges:
 

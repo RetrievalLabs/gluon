@@ -19,7 +19,7 @@ A Rust-based CLI tool for parsing Java build metadata.
 - `src/languages/java/business/` - Java business logic extraction, JDTLS semantic enrichment, candidate scoring, and SQLite extraction storage.
 - `src/languages/java/business/tree_sitter.rs` - tree-sitter Java structural extraction for classes, methods, annotations, entry points, and call sites.
 - `src/languages/java/business/jdtls.rs` - required Eclipse JDTLS LSP client for semantic definitions and references.
-- `src/languages/java/business/modules.rs` - Maven and Gradle multi-module discovery and source-file module ownership mapping.
+- `src/languages/java/business/modules.rs` - Maven and Gradle module ownership from build reports or source-tree discovery.
 - `src/languages/java/business/scoring.rs` - deterministic business-logic candidate scoring.
 - `src/languages/java/business/store.rs` - SQLite schema creation and persistence for `business-extraction.db`.
 - `src/languages/java/compatibility/` - Java compatibility analysis from resolved build reports and curated KB files.

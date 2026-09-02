@@ -957,6 +957,61 @@ fn extract_business_persists_multi_module_ownership() {
 }
 
 #[test]
+fn extract_business_uses_build_report_modules_when_provided() {
+    let root = test_dir("extract-build-report-modules");
+    fs::create_dir_all(root.join("service/src/main/java/demo")).unwrap();
+    fs::write(
+        root.join("service/src/main/java/demo/OrderService.java"),
+        "package demo; class OrderService { void approve() {} }",
+    )
+    .unwrap();
+    let build_report = root.join("build-report.json");
+    fs::write(
+        &build_report,
+        format!(
+            r#"{{
+              "project_root":"{}",
+              "parent":{{"name":"parent","path":".","build_tools":[],"java_versions":[],"direct_dependencies":[],"direct_plugins":[]}},
+              "modules":[{{"name":"service","path":"service","build_tools":[],"java_versions":[],"direct_dependencies":[],"direct_plugins":[]}}],
+              "diagnostics":[]
+            }}"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+    let output_root = test_dir("extract-build-report-modules-output");
+    let fake_jdtls = write_fake_jdtls(&root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["extract-business", "--path"])
+        .arg(&root)
+        .args(["--output-dir"])
+        .arg(&output_root)
+        .args(["--build-report"])
+        .arg(&build_report)
+        .args(["--jdtls-command"])
+        .arg(&fake_jdtls)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let db = output_root
+        .join(root.file_name().unwrap())
+        .join("business-extraction.db");
+    let connection = Connection::open(&db).unwrap();
+    let service_method_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM methods WHERE module_id = 'module:service'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(service_method_count, 1);
+    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_dir_all(output_root);
+}
+
+#[test]
 fn extract_tests_appends_test_tables_to_business_database() {
     let root = test_dir("extract-tests");
     fs::create_dir_all(root.join("src/main/java/demo")).unwrap();

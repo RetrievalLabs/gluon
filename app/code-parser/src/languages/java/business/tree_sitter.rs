@@ -5,7 +5,7 @@ use tree_sitter::{Node, Parser, TreeCursor};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::languages::business::model::{
-    ClassInfo, CodeModel, EntryPointInfo, InvocationInfo, MethodInfo, ParameterInfo,
+    ClassInfo, CodeModel, EntryPointInfo, InvocationInfo, MethodInfo, ModuleInfo, ParameterInfo,
     RelationshipInfo,
 };
 use crate::languages::java::build::model::Diagnostic;
@@ -38,6 +38,13 @@ pub struct StructureExtractionResult {
 pub fn extract_structure_with_stats(
     project_root: &Path,
 ) -> Result<StructureExtractionResult, String> {
+    extract_structure_with_modules(project_root, None)
+}
+
+pub fn extract_structure_with_modules(
+    project_root: &Path,
+    modules: Option<Vec<ModuleInfo>>,
+) -> Result<StructureExtractionResult, String> {
     if !project_root.exists() {
         return Err(format!("path does not exist: {}", project_root.display()));
     }
@@ -46,7 +53,7 @@ pub fn extract_structure_with_stats(
         project_root: project_root.display().to_string(),
         ..CodeModel::default()
     };
-    model.modules = discover_modules(project_root);
+    model.modules = modules.unwrap_or_else(|| discover_modules(project_root));
     let mut stats = StructureExtractionStats::default();
 
     for entry in WalkDir::new(project_root)

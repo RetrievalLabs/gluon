@@ -6,6 +6,7 @@ use regex::Regex;
 use walkdir::{DirEntry, WalkDir};
 
 use crate::languages::business::model::ModuleInfo;
+use crate::languages::java::build::model::{BuildReport, BuildScopeReport};
 
 pub fn discover_modules(project_root: &Path) -> Vec<ModuleInfo> {
     let mut modules = BTreeMap::new();
@@ -100,6 +101,71 @@ pub fn discover_modules(project_root: &Path) -> Vec<ModuleInfo> {
     result
 }
 
+pub fn modules_from_build_report(build_report: &BuildReport) -> Vec<ModuleInfo> {
+    let mut drafts = BTreeMap::new();
+    let parent_name = if build_report.parent.name.is_empty() {
+        Path::new(&build_report.project_root)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("root")
+            .to_string()
+    } else {
+        build_report.parent.name.clone()
+    };
+    drafts.insert(
+        ".".to_string(),
+        ModuleDraft {
+            name: parent_name,
+            path: ".".to_string(),
+            build_system: build_system_from_scope(&build_report.parent),
+            build_file: build_file_from_scope(&build_report.parent),
+        },
+    );
+
+    for scope in &build_report.modules {
+        let path = if scope.path.is_empty() {
+            ".".to_string()
+        } else {
+            scope.path.clone()
+        };
+        let name = if scope.name.is_empty() {
+            path.rsplit('/').next().unwrap_or(&path).to_string()
+        } else {
+            scope.name.clone()
+        };
+        drafts.insert(
+            path.clone(),
+            ModuleDraft {
+                name,
+                path,
+                build_system: build_system_from_scope(scope),
+                build_file: build_file_from_scope(scope),
+            },
+        );
+    }
+
+    let mut result: Vec<_> = drafts
+        .into_values()
+        .map(|module| ModuleInfo {
+            id: module_id(&module.path),
+            parent_id: None,
+            name: module.name,
+            path: module.path,
+            build_system: module.build_system,
+            build_file: module.build_file,
+        })
+        .collect();
+    result.sort_by(|left, right| left.path.cmp(&right.path));
+    let ids_by_path: Vec<_> = result
+        .iter()
+        .map(|module| (module.path.clone(), module.id.clone()))
+        .collect();
+    for module in &mut result {
+        module.parent_id = parent_module_id(&module.path, &ids_by_path);
+    }
+    result
+}
+
 pub fn module_id_for_file(file: &str, modules: &[ModuleInfo]) -> String {
     modules
         .iter()
@@ -111,6 +177,22 @@ pub fn module_id_for_file(file: &str, modules: &[ModuleInfo]) -> String {
         .max_by_key(|module| module.path.len())
         .map(|module| module.id.clone())
         .unwrap_or_else(|| "module:.".to_string())
+}
+
+fn build_system_from_scope(scope: &BuildScopeReport) -> Option<String> {
+    scope.build_tools.iter().find_map(|tool| {
+        if tool.tool.starts_with("maven") {
+            Some("maven".to_string())
+        } else if tool.tool.starts_with("gradle") {
+            Some("gradle".to_string())
+        } else {
+            None
+        }
+    })
+}
+
+fn build_file_from_scope(scope: &BuildScopeReport) -> Option<String> {
+    scope.build_tools.iter().find_map(|tool| tool.file.clone())
 }
 
 fn insert_build_module(
@@ -288,6 +370,8 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use crate::languages::java::build::model::{BuildScopeReport, BuildToolInfo};
+
     use super::*;
 
     fn test_dir(name: &str) -> PathBuf {
@@ -350,5 +434,58 @@ mod tests {
                 .any(|module| module.id == "module:service/impl")
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn converts_build_report_modules_and_assigns_parent() {
+        let build_report = BuildReport {
+            project_root: "/tmp/demo".to_string(),
+            parent: BuildScopeReport {
+                name: "demo".to_string(),
+                path: ".".to_string(),
+                build_tools: vec![BuildToolInfo {
+                    tool: "maven-model".to_string(),
+                    version: None,
+                    file: Some("pom.xml".to_string()),
+                    source: "pom.xml".to_string(),
+                }],
+                ..BuildScopeReport::default()
+            },
+            modules: vec![
+                BuildScopeReport {
+                    name: "service".to_string(),
+                    path: "service".to_string(),
+                    build_tools: vec![BuildToolInfo {
+                        tool: "maven-model".to_string(),
+                        version: None,
+                        file: Some("service/pom.xml".to_string()),
+                        source: "pom.xml".to_string(),
+                    }],
+                    ..BuildScopeReport::default()
+                },
+                BuildScopeReport {
+                    name: "impl".to_string(),
+                    path: "service/impl".to_string(),
+                    ..BuildScopeReport::default()
+                },
+            ],
+            diagnostics: Vec::new(),
+            ..BuildReport::default()
+        };
+
+        let modules = modules_from_build_report(&build_report);
+
+        assert!(modules.iter().any(|module| module.id == "module:service"
+            && module.parent_id.as_deref() == Some("module:.")));
+        assert!(
+            modules
+                .iter()
+                .any(|module| module.id == "module:service/impl"
+                    && module.parent_id.as_deref() == Some("module:service"))
+        );
+        assert_eq!(
+            module_id_for_file("service/src/main/java/demo/Order.java", &modules),
+            "module:service"
+        );
     }
 }

@@ -12,11 +12,13 @@ use crate::languages::business::model::{CodeModel, ExtractionSummary};
 use crate::languages::business::{
     BusinessDatabasePath, BusinessExtractionOptions, BusinessExtractor,
 };
+use crate::languages::java::build::model::BuildReport;
 use crate::languages::java::business::default_database_path;
 use crate::languages::java::business::jdtls::{JdtlsOptions, enrich_with_jdtls};
+use crate::languages::java::business::modules::modules_from_build_report;
 use crate::languages::java::business::scoring::score_candidates;
 use crate::languages::java::business::store::write_database;
-use crate::languages::java::business::tree_sitter::extract_structure_with_stats;
+use crate::languages::java::business::tree_sitter::extract_structure_with_modules;
 
 pub struct JavaBusinessExtractor;
 
@@ -137,7 +139,12 @@ pub fn extract_business(
             project_root.display()
         );
         let phase_started_at = Instant::now();
-        let extraction = extract_structure_with_stats(&project_root)
+        let modules = options
+            .build_report
+            .as_deref()
+            .map(load_modules_from_build_report)
+            .transpose()?;
+        let extraction = extract_structure_with_modules(&project_root, modules)
             .map_err(|error| ParserError::Operation(error))?;
         let model = extraction.model;
         eprintln!(
@@ -322,6 +329,26 @@ fn temp_database_path(database: &Path) -> PathBuf {
         .and_then(|name| name.to_str())
         .unwrap_or("business-extraction.db");
     database.with_file_name(format!(".{file_name}.tmp"))
+}
+
+fn load_modules_from_build_report(
+    path: &Path,
+) -> BusinessExtractionResult<Vec<crate::languages::business::model::ModuleInfo>> {
+    let data = fs::read_to_string(path).map_err(|source| FileError::Read {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut build_report: BuildReport = serde_json::from_str(&data).map_err(|error| {
+        ParserError::Operation(format!("failed to parse build report: {error}"))
+    })?;
+    if build_report.build_tools.is_empty()
+        && build_report.java_versions.is_empty()
+        && build_report.direct_dependencies.is_empty()
+        && build_report.direct_plugins.is_empty()
+    {
+        build_report.rebuild_flat_inventory();
+    }
+    Ok(modules_from_build_report(&build_report))
 }
 
 fn checkpoint_path(database: &Path) -> PathBuf {

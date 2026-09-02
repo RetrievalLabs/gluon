@@ -58,6 +58,7 @@ struct ExtractBusinessOptions {
     path: PathBuf,
     output_dir: PathBuf,
     database: Option<PathBuf>,
+    build_report: Option<PathBuf>,
     jdtls_command: String,
     jdtls_workspace: Option<PathBuf>,
     jdtls_max_in_flight: usize,
@@ -348,6 +349,7 @@ fn parse_extract_business_args(
     let mut path = None;
     let mut output_dir = None;
     let mut database = None;
+    let mut build_report = None;
     let mut jdtls_command = "jdtls".to_string();
     let mut jdtls_workspace = None;
     let mut jdtls_max_in_flight = 32;
@@ -366,6 +368,10 @@ fn parse_extract_business_args(
             "--database" => {
                 let value = args.next().ok_or("--database requires a value")?;
                 database = Some(PathBuf::from(value));
+            }
+            "--build-report" => {
+                let value = args.next().ok_or("--build-report requires a value")?;
+                build_report = Some(PathBuf::from(value));
             }
             "--jdtls-command" => {
                 jdtls_command = args.next().ok_or("--jdtls-command requires a value")?;
@@ -397,6 +403,7 @@ fn parse_extract_business_args(
         path: path.ok_or("missing required --path")?,
         output_dir: output_dir.ok_or("missing required --output-dir")?,
         database,
+        build_report,
         jdtls_command,
         jdtls_workspace,
         jdtls_max_in_flight,
@@ -833,6 +840,7 @@ fn run_extract_business(options: ExtractBusinessOptions) -> i32 {
         path: options.path,
         output_dir: options.output_dir,
         database: options.database,
+        build_report: options.build_report,
         jdtls_command: options.jdtls_command,
         jdtls_workspace: options.jdtls_workspace,
         jdtls_max_in_flight: options.jdtls_max_in_flight,
@@ -1324,7 +1332,7 @@ fn hex_string(value: &[u8]) -> String {
 
 fn print_usage() {
     eprintln!(
-        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--continue]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]\n       code-parser generate-characterization-tests --business-database <business-extraction.db> --kg-database <business-kg.db> --source-path <legacy-project-root> --output-dir <gluon-output-dir> [--max-behaviors <count>] [--node-kind BusinessRule|Workflow|Invariant|StateTransition|SideEffect] [--continue] [--force]\n       code-parser db tables --database <database.db>\n       code-parser db schema --database <database.db> [--table <table>]\n       code-parser db rows --database <database.db> --table <table> [--limit <1-100>] [--offset <count>]\n       code-parser db insert --database <database.db> --table <table> --set <column=value> [--set <column=value> ...]\n       code-parser db update --database <database.db> --table <table> --id-column <column> --id <value> --set <column=value> [--set <column=value> ...]"
+        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--build-report <build-report.json>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--continue]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]\n       code-parser generate-characterization-tests --business-database <business-extraction.db> --kg-database <business-kg.db> --source-path <legacy-project-root> --output-dir <gluon-output-dir> [--max-behaviors <count>] [--node-kind BusinessRule|Workflow|Invariant|StateTransition|SideEffect] [--continue] [--force]\n       code-parser db tables --database <database.db>\n       code-parser db schema --database <database.db> [--table <table>]\n       code-parser db rows --database <database.db> --table <table> [--limit <1-100>] [--offset <count>]\n       code-parser db insert --database <database.db> --table <table> --set <column=value> [--set <column=value> ...]\n       code-parser db update --database <database.db> --table <table> --id-column <column> --id <value> --set <column=value> [--set <column=value> ...]"
     );
 }
 
@@ -1688,6 +1696,8 @@ mod tests {
             "data",
             "--database",
             "business.db",
+            "--build-report",
+            "build-report.json",
             "--jdtls-command",
             "/bin/jdtls",
             "--jdtls-workspace",
@@ -1704,6 +1714,7 @@ mod tests {
                 path: PathBuf::from("project"),
                 output_dir: PathBuf::from("data"),
                 database: Some(PathBuf::from("business.db")),
+                build_report: Some(PathBuf::from("build-report.json")),
                 jdtls_command: "/bin/jdtls".to_string(),
                 jdtls_workspace: Some(PathBuf::from("workspace")),
                 jdtls_max_in_flight: 24,

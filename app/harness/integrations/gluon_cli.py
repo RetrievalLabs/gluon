@@ -44,8 +44,12 @@ class GluonCli:
             "extract-business",
             "--path",
             str(self.paths.repo),
+            "--output-dir",
+            str(self.paths.root),
             "--database",
             str(self.paths.extraction_db),
+            "--build-report",
+            str(self.paths.build_report),
         ]
 
     def extract_tests(self) -> list[str]:
@@ -86,4 +90,3 @@ class GluonCli:
             "--output-dir",
             str(self.paths.characterization_output_dir),
         ]
-

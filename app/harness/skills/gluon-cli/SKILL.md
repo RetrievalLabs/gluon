@@ -125,6 +125,7 @@ Required input:
 Flags:
 
 - `--database <path>`: write SQLite database to an explicit path instead of the default output path.
+- `--build-report <build-report.json>`: reuse `parent` and `modules` scopes from `parse-build` for source ownership. When omitted, modules are discovered from Maven and Gradle files under `--path`.
 - `--jdtls-command <command>`: JDTLS executable. Defaults to `jdtls`.
 - `--jdtls-workspace <directory>`: JDTLS workspace directory. Defaults beside the database path.
 - `--jdtls-max-in-flight <count>`: maximum concurrent JDTLS requests within an enrichment phase. Defaults to `32`; references and implementations are capped at `16`.
@@ -134,7 +135,7 @@ Outputs:
 - SQLite `business-extraction.db` with modules, classes, methods, relationships, entry points, candidate scores, signals, evidence ranges, context packets, and diagnostics.
 - Stdout summary with database path, module count, class count, method count, relationship count, candidate counts by priority, and diagnostic count.
 - Stderr phase status for tree-sitter scan, skipped source counts, JDTLS progress, scoring, database write, and total elapsed time.
-- Multi-module Maven and Gradle projects are stored as one database with `modules` rows and `module_id` on classes and methods.
+- Multi-module Maven and Gradle projects are stored as one database with `modules` rows and `module_id` on classes and methods. In the harness pipeline, module rows come from `build-report.json`.
 - Unit tests, integration tests, acceptance tests, common test-suffixed files, and generated Java sources are skipped.
 - No JSON report in v1.
 - JDTLS is required. Missing executable, startup failure, initialization failure, or semantic request failure blocks extraction and prints verbose stderr with command, path, phase, and available failure details.
@@ -144,11 +145,11 @@ Outputs:
 Example:
 
 ```bash
-gluon-cli code-parser extract-business --path /path/to/project --output-dir /path/to/gluon/data
+gluon-cli code-parser extract-business --path /path/to/project --output-dir /path/to/gluon/data --build-report /path/to/gluon/data/project/build-report.json
 ```
 
 ```bash
-gluon-cli code-parser extract-business --path /path/to/project --output-dir /path/to/gluon/data --jdtls-command /opt/jdtls/bin/jdtls
+gluon-cli code-parser extract-business --path /path/to/project --output-dir /path/to/gluon/data --build-report /path/to/gluon/data/project/build-report.json --jdtls-command /opt/jdtls/bin/jdtls
 ```
 
 ### `code-parser extract-tests`
