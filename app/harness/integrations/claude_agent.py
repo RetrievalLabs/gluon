@@ -139,6 +139,8 @@ class ClaudeAgentClient:
                 "Glob",
                 "Grep",
                 "LS",
+                "WebSearch",
+                "WebFetch",
             ],
             "allowed_tools": [
                 "Task",
@@ -149,6 +151,8 @@ class ClaudeAgentClient:
                 "Glob",
                 "Grep",
                 "LS",
+                "WebSearch",
+                "WebFetch",
             ],
             "permission_mode": "dontAsk",
             "hooks": {
