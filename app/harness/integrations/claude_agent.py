@@ -70,6 +70,16 @@ class ClaudeAgentClient:
             self.compact_agent_context_async(repo_path, prompt)
         )
 
+    def compact_characterization_context(
+        self,
+        repo_path: Path,
+        scenario_id: str,
+    ) -> None:
+        prompt = self.build_characterization_compaction_prompt(repo_path, scenario_id)
+        self.event_loop().run_until_complete(
+            self.compact_agent_context_async(repo_path, prompt)
+        )
+
     async def compact_agent_context_async(self, repo_path: Path, prompt: str) -> None:
         client = await self.agent_client(repo_path)
         await client.query(prompt)
@@ -503,6 +513,23 @@ Stderr:
             f"repair attempt {attempt}, changed files, verification results, "
             "active blockers, current failed command context, and constraints. "
             "Drop raw stdout/stderr, tool traces, and stale exploration details."
+        )
+
+    def build_characterization_compaction_prompt(
+        self,
+        repo_path: Path,
+        scenario_id: str,
+    ) -> str:
+        return (
+            "/compact Keep only facts needed to continue the characterization "
+            f"test loop: repository path {repo_path}, completed scenario "
+            f"{scenario_id}, generated or changed test files, characterization "
+            "database input/observation/status results, commit result if known, "
+            "reusable lessons or blockers for later scenarios, and constraints. "
+            "Preserve JSON subagent handoff rules, deterministic test "
+            "requirements, and the rule against editing production source or "
+            "user-authored tests. Drop raw logs, tool traces, and stale "
+            "scenario exploration details."
         )
 
     def run_characterization_scenario(

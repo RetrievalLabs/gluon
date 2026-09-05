@@ -215,6 +215,35 @@ class ClaudeAgentTests(unittest.TestCase):
             self.assertEqual(record["stage_name"], "parse-build")
             self.assertEqual(record["message"], VALID_AGENT_JSON)
 
+    def test_characterization_compaction_uses_scenario_prompt(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+        client = ClaudeAgentClient(config)
+        sdk_client = FakeSdkClient()
+        client._client = sdk_client
+        client._client_repo_path = Path("/repo")
+
+        try:
+            client.compact_characterization_context(Path("/repo"), "scenario:one")
+        finally:
+            client.close()
+
+        self.assertEqual(len(sdk_client.prompts), 1)
+        self.assertTrue(sdk_client.prompts[0].startswith("/compact "))
+        self.assertIn("characterization test loop", sdk_client.prompts[0])
+        self.assertIn("completed scenario scenario:one", sdk_client.prompts[0])
+        self.assertIn("JSON subagent handoff rules", sdk_client.prompts[0])
+        self.assertIn("deterministic test", sdk_client.prompts[0])
+        self.assertTrue(sdk_client.disconnected)
+
     def test_blocks_gluon_cli_bash_commands(self) -> None:
         config = HarnessConfig(
             backend_url="mock://local",

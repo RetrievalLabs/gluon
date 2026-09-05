@@ -150,6 +150,7 @@ def run_characterization_agent_loop(
             scenario.get("scaffold_path"),
         )
         completed.append(scenario_id)
+        agent.compact_characterization_context(paths.repo, scenario_id)
 
     return completed
 

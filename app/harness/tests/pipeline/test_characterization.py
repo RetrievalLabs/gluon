@@ -155,6 +155,7 @@ class FakeAgent:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, Path, dict[str, object]]] = []
+        self.compactions: list[tuple[Path, str]] = []
 
     def run_characterization_scenario(
         self,
@@ -199,13 +200,23 @@ class FakeAgent:
                         [f"observation:{scenario_id}:{method}", scenario_id, input_id],
                     )
 
+    def compact_characterization_context(
+        self,
+        repo_path: Path,
+        scenario_id: str,
+    ) -> None:
+        self.compactions.append((repo_path, scenario_id))
+
 
 class FakeRunner:
-    def __init__(self) -> None:
+    def __init__(self, events: list[str] | None = None) -> None:
         self.commands: list[list[str]] = []
+        self.events = events
 
     def run(self, command: list[str], cwd: Path | None = None, env=None):
         self.commands.append(command)
+        if self.events is not None:
+            self.events.append("commit" if command[:2] == ["git", "commit"] else "run")
         stdout = (
             " M gluon/tests/GeneratedTest.java\n"
             if command[:2] == ["git", "status"]
@@ -264,6 +275,51 @@ class CharacterizationLoopTests(unittest.TestCase):
         self.assertIn(
             ["git", "commit", "-m", "Add characterization test for scenario:one"],
             runner.commands,
+        )
+        self.assertEqual(agent.compactions, [(paths.repo, "scenario:one")])
+
+    def test_compacts_after_commit_before_next_scenario_selection(self) -> None:
+        events: list[str] = []
+
+        class OrderedAgent(FakeAgent):
+            def run_characterization_scenario(
+                self,
+                scenario_id: str,
+                repo_path: Path,
+                seed_context: dict[str, object],
+            ) -> None:
+                events.append(f"agent:{scenario_id}")
+                super().run_characterization_scenario(
+                    scenario_id,
+                    repo_path,
+                    seed_context,
+                )
+
+            def compact_characterization_context(
+                self,
+                repo_path: Path,
+                scenario_id: str,
+            ) -> None:
+                events.append(f"compact:{scenario_id}")
+                super().compact_characterization_context(repo_path, scenario_id)
+
+        with tempfile.TemporaryDirectory() as directory:
+            paths = HarnessPaths.from_org_project("org/project", Path(directory))
+            paths.characterization_db.parent.mkdir(parents=True)
+            write_characterization_db(paths.characterization_db)
+            write_characterization_test_file(paths.repo)
+            agent = OrderedAgent()
+
+            completed = run_characterization_agent_loop(
+                paths,
+                agent,
+                FakeRunner(events),
+            )
+
+        self.assertEqual(completed, ["scenario:one"])
+        self.assertLess(
+            events.index("commit"),
+            events.index("compact:scenario:one"),
         )
 
     def test_fails_when_agent_does_not_store_inputs_and_outputs(self) -> None:
