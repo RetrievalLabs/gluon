@@ -1,363 +1,617 @@
 # Gluon
 
-**Agentic legacy code migration**
+**Agentic Legacy Code Migration**
 
-Gluon modernizes legacy applications by combining **deterministic code
-analysis**, **business-logic understanding**, **characterization
-tests**, and **agent-driven migration**.
+> Understand the code → understand the business → capture behavior → migrate → verify.
 
-> **Goal:** Modernize legacy systems without breaking business behavior.
+---
 
-------------------------------------------------------------------------
+# 1. Platform Architecture
 
-## Architecture
-
-``` text
+```text
 Frontend
    │
    ▼
-Backend ── GitHub auth, repo/language/target selection
+Backend
+   │
+   ├── GitHub authorization
+   ├── Repository selection
+   ├── Language selection
+   └── Target version selection
    │
    ▼
-VM Orchestration ── creates isolated migration microVM
+VM Orchestration
    │
-   ├── Gluon CLI (Rust) ── analysis & knowledge extraction
-   └── Harness (Python) ── agents, migration & verification
+   ▼
+┌─────────────────────────────────┐
+│            microVM              │
+│                                 │
+│ Source Code                     │
+│ Language Runtime / JDK          │
+│ Language Server                 │
+│ Git                             │
+│ Build Tools                     │
+│ Gluon CLI                       │
+│ Harness                         │
+└─────────────────────────────────┘
 ```
 
 ### Components
 
--   **Frontend** --- Web UI.
--   **Backend** --- GitHub authorization, repository selection, language
-    and target-version selection.
--   **VM Orchestration** --- Creates a microVM containing the
-    repository, JDK, language server, Git, build tools, Gluon CLI, and
-    Harness.
--   **Gluon CLI** --- Deterministic analysis and knowledge-extraction
-    engine written in Rust.
--   **Harness** --- Python service that orchestrates agents and performs
-    the migration.
--   **Package** --- Shared contracts/protobuf definitions.
+| Component | Responsibility |
+|---|---|
+| Frontend | Web interface |
+| Backend | Authentication and migration configuration |
+| VM Orchestration | Creates isolated migration environments |
+| Gluon CLI | Analyzes the legacy application |
+| Harness | Performs migration and verification |
+| Package | Shared contracts and protobuf definitions |
 
-------------------------------------------------------------------------
+---
 
-## Milestone 1 --- Java 8 → Java 25
+# 2. First Milestone — Java 8 → Java 25
 
-Java is the first target because of its large enterprise footprint and
-the number of organizations still maintaining Java 8 applications.
+```text
+Legacy Java 8
+      │
+      ▼
+    Gluon
+      │
+      ▼
+Modern Java 25
+```
 
-The migration pipeline targets **Java 25** while preserving existing
-application behavior.
+Java is the first target because of its large enterprise footprint and the number of organizations still maintaining legacy Java applications.
 
-------------------------------------------------------------------------
+---
 
-## Gluon CLI
+# 3. Competitor — Moderne / OpenRewrite
 
-The CLI combines:
+```text
+Source Code
+     │
+     ▼
+  LST / AST
+     │
+     ▼
+Migration Recipe
+     │
+     ▼
+Tree Transformation
+     │
+     ▼
+Updated Source
+```
 
--   Tree-sitter
--   JDTLS / Java language server
--   `jdeps` and JDK tooling
--   Maven / Gradle
--   deterministic YAML migration rules
--   SQLite
--   controlled LLM analysis
+Moderne/OpenRewrite is strong at deterministic, predefined transformations.
 
-### Compatibility Rules
+Gluon adds business understanding and behavior preservation on top of deterministic analysis.
 
-  -----------------------------------------------------------------------
-  File                                Purpose
-  ----------------------------------- -----------------------------------
-  `dependency_compatibility.yaml`     Compatible dependency versions
+---
 
-  `plugins_compatibility.yaml`        Compatible build-plugin versions
+# 4. Gluon CLI
 
-  `deprecated_for_removal.yaml`       Deprecated APIs/symbols
+The **Gluon CLI** is a Rust-based analysis and knowledge-extraction engine.
 
-  `internal_apis.yaml`                Restricted JDK internal APIs
+Its responsibility is to understand the legacy application before migration begins.
 
-  `removed_apis.yaml`                 Removed Java APIs/modules
+## 4.1 Migration Rules
 
-  `replacements.yaml`                 Replacement APIs/dependencies and
-                                      Jakarta alternatives
-  -----------------------------------------------------------------------
+```text
+Migration Rules
+│
+├── dependency_compatibility.yaml
+│      └── Dependency versions
+│
+├── plugins_compatibility.yaml
+│      └── Plugin versions
+│
+├── deprecated_for_removal.yaml
+│      └── Deprecated APIs / symbols
+│
+├── internal_apis.yaml
+│      └── Restricted JDK APIs
+│
+├── removed_apis.yaml
+│      └── Removed APIs / modules
+│
+└── replacements.yaml
+       └── Replacement APIs / dependencies
+```
 
-------------------------------------------------------------------------
+---
 
-## CLI Pipeline
+## 4.2 CLI Pipeline
 
-### 1. Build Report
+```text
+Legacy Repository
+       │
+       ▼
+Build Report
+       │
+       ▼
+Compatibility Analysis
+       │
+       ▼
+CodeModel Extraction
+       │
+       ▼
+JDTLS Resolution
+       │
+       ▼
+Business-Relevance Scoring
+       │
+       ▼
+TestModel Extraction
+       │
+       ▼
+Business Knowledge Graph
+       │
+       ▼
+Characterization Scenarios
+```
 
-Parses Maven/Gradle projects and resolves:
+---
 
--   Java version
--   build tool + version
--   modules
--   dependencies + versions
--   plugins + versions
+## 4.3 Build Report
 
-Supports multi-module repositories.
-
-``` text
+```text
 pom.xml / build.gradle
-        ↓
-Maven / Gradle resolution
-        ↓
-build-report.json
+        │
+        ▼
+Detect Build Tool
+        │
+   ┌────┴────┐
+   ▼         ▼
+ Maven     Gradle
+   │         │
+   └────┬────┘
+        ▼
+Resolve Build
+        │
+        ▼
+┌──────────────────────────┐
+│       Build Report       │
+│                          │
+│ • Build tool + version   │
+│ • Java version           │
+│ • Modules                │
+│ • Dependencies           │
+│ • Plugins                │
+└──────────────────────────┘
 ```
 
-### 2. Compatibility Analysis
+Supports multi-module Maven and Gradle repositories.
 
-Compares the build report and source code against migration rules.
+---
 
-Uses **Tree-sitter + JDTLS + JDK tools** to detect:
+## 4.4 Compatibility Analysis
 
--   incompatible dependencies/plugins
--   removed APIs
--   deprecated APIs
--   restricted internal APIs
--   symbols requiring migration
-
-Findings contain **file, line, symbol, issue, and recommended action**.
-
-### 3. Business Logic Extraction
-
-Tree-sitter converts Java source into a `CodeModel` containing classes,
-methods, modules, annotations, entry points, and calls.
-
-Unresolved calls start with low confidence and are resolved using JDTLS.
-
-``` text
-Tree-sitter call   → confidence ~0.25
-        ↓ JDTLS
-Resolved call      → confidence ~0.95
+```text
+Build Report ───────────┐
+                        │
+Migration Rules ────────┼──► Compatibility Analysis
+                        │
+Source Code ────────────┘
+                              │
+                   ┌──────────┼──────────┐
+                   ▼          ▼          ▼
+              Tree-sitter   JDTLS      jdeps
+                              │
+                              ▼
+                    Compatibility Report
 ```
 
-Methods are scored for business relevance using signals such as
-branches, persistence calls, business terms, annotations, exceptions,
-loops, state changes, external calls, authorization, and transactions.
+The report identifies:
 
-``` text
-score >= 18  → HIGH
-score >= 8   → MEDIUM
-score < 8    → LOW
+- Dependency upgrades
+- Plugin upgrades
+- Removed APIs
+- Deprecated APIs
+- Restricted internal APIs
+- Symbols requiring migration
+
+Source findings contain:
+
+```text
+File → Line → Symbol → Problem → Recommendation
 ```
 
-### 4. Integration / E2E Test Extraction
+---
 
-Extracts existing behavioral tests into a `TestModel` containing:
+## 4.5 Business Logic Extraction
 
--   suites and test cases
--   assertions
--   fixtures
--   invoked methods
--   test targets
+### CodeModel
+
+```text
+Java Source
+     │
+     ▼
+Tree-sitter
+     │
+     ▼
+┌────────────────────┐
+│     CodeModel      │
+│                    │
+│ Classes            │
+│ Methods            │
+│ Modules            │
+│ Annotations        │
+│ Entry Points       │
+│ Method Calls       │
+└─────────┬──────────┘
+          │
+          ▼
+        SQLite
+```
+
+### Method Resolution
+
+```text
+Method Invocation
+       │
+       ▼
+Tree-sitter
+       │
+       ▼
+Unresolved Call
+Confidence ≈ 0.25
+       │
+       ▼
+JDTLS
+       │
+       ▼
+Resolved Call
+Confidence ≈ 0.95
+```
+
+### Business-Relevance Scoring
+
+```text
+Method
+  │
+  ▼
+Detect Signals
+  │
+  ├── Branches
+  ├── Persistence Calls
+  ├── Business Terms
+  ├── Annotations
+  ├── Exceptions
+  ├── Loops
+  ├── State Changes
+  └── Transactions
+  │
+  ▼
+Total Score
+  │
+  ├── >= 18 → HIGH
+  ├── >= 8  → MEDIUM
+  └── < 8   → LOW
+```
+
+High-priority methods are selected for business-knowledge extraction.
+
+---
+
+## 4.6 Integration / E2E Test Extraction
+
+```text
+Existing Tests
+      │
+      ▼
+Tree-sitter + JDTLS
+      │
+      ▼
+┌────────────────────┐
+│     TestModel      │
+│                    │
+│ Test Suites        │
+│ Test Cases         │
+│ Assertions         │
+│ Fixtures           │
+│ Invoked Methods    │
+│ Test Targets       │
+└──────────┬─────────┘
+           │
+           ▼
+         SQLite
+```
 
 Unit tests are skipped.
 
-### 5. Business Knowledge Graph
+---
 
-High-priority methods are sent to an LLM to extract their business
-meaning.
+## 4.7 Business Knowledge Graph
 
-Each method receives a small seed of up to **20 existing KG nodes**. The
-LLM can request more context through:
-
--   `find_business_nodes`
--   `get_business_node`
--   `get_business_neighbors`
-
-**Nodes**
-
-`BusinessRule` · `Workflow` · `Invariant` · `StateTransition` ·
-`SideEffect` · `BusinessConcept`
-
-**Edges**
-
-`SUPPORTED_BY` · `DEPENDS_ON` · `TRIGGERS` · `TRANSITIONS_TO` ·
-`MENTIONS`
-
-The graph is validated and stored in SQLite.
-
-### 6. Characterization Scenarios
-
-Behavioral KG nodes with source evidence are converted into abstract
-characterization scenarios.
-
-The CLI generates:
-
--   scenario/scaffold files
--   `characterization-tests.db`
-
-The Harness later turns them into executable tests.
-
-------------------------------------------------------------------------
-
-## Harness
-
-The Harness performs the actual migration and coordinates agents.
-
-``` text
-Clone legacy repo
-      ↓
-Run Gluon CLI pipeline
-      ↓
-Create characterization tests
-      ↓
-Create clean target project
-      ↓
-Select target dependencies
-      ↓
-Create Maven/Gradle structure
-      ↓
-Migrate source code
-      ↓
-Verify behavior
+```text
+High-Priority Method
+        │
+        ▼
+Seed Context
+        │
+        ├── Method
+        ├── Source Evidence
+        └── Up to 20 Existing KG Nodes
+        │
+        ▼
+       LLM
+        │
+        │ Need more context?
+        │
+        ├── find_business_nodes
+        ├── get_business_node
+        └── get_business_neighbors
+        │
+        ▼
+Nodes + Edges
+        │
+        ▼
+Validation
+        │
+        ▼
+Business Knowledge Graph
+        │
+        ▼
+      SQLite
 ```
 
-### CLI Error Repair
+### Nodes
 
-Every CLI stage follows a repair loop:
-
-``` text
-Run command
-    ↓
-Success? ── Yes ──→ Next stage
-    │
-    No
-    ↓
-Give error + context to agent
-    ↓
-Agent repairs repository
-    ↓
-Retry command
+```text
+BusinessRule
+Workflow
+Invariant
+StateTransition
+SideEffect
+BusinessConcept
 ```
 
-------------------------------------------------------------------------
+### Edges
 
-## Characterization Test Loop
+```text
+SUPPORTED_BY
+DEPENDS_ON
+TRIGGERS
+TRANSITIONS_TO
+MENTIONS
+```
 
-The purpose is to capture legacy behavior **before rewriting the
-application**.
+---
 
-``` text
-Pending scenario
-      ↓
-Seed context
-      ↓
+## 4.8 Characterization Scenario Generation
+
+```text
+Business Knowledge Graph
+          │
+          ▼
+Select Behavioral Nodes
+          │
+          ▼
+Require Source Evidence
+          │
+          ▼
+Build Scaffold Context
+          │
+          ▼
+Characterization Scenario
+          │
+     ┌────┴─────┐
+     ▼          ▼
+TODO Files   characterization-tests.db
+```
+
+These are abstract scenarios. The Harness turns them into executable tests.
+
+---
+
+# 5. Harness
+
+The **Harness** is the Python service that performs the actual migration and coordinates agents.
+
+## 5.1 Agent Skills
+
+```text
+Harness Skills
+│
+├── gluon-cli
+│
+├── java/
+│   ├── java-best-practices
+│   ├── java-build-tool-best-practices
+│   ├── java-dependency-selection-best-practices
+│   ├── database-orm-best-practices
+│   ├── jakarta-ee-best-practices
+│   ├── junit-mockito-testing-best-practices
+│   ├── spring-boot-best-practices
+│   ├── spring-mvc-best-practices
+│   └── spring-security-best-practices
+│
+└── version-rewrite-modernization
+```
+
+---
+
+## 5.2 Harness Pipeline
+
+```text
+Clone Legacy Repository
+        │
+        ▼
+Run Gluon CLI Stages
+        │
+        ▼
+Implement Characterization Tests
+        │
+        ▼
+Create Target Project
+        │
+        ▼
+Select Dependencies
+        │
+        ▼
+Create Build Structure
+        │
+        ▼
+Migrate Source
+        │
+        ▼
+Verify Behavior
+```
+
+---
+
+## 5.3 CLI Repair Loop
+
+If a CLI command fails, the Harness gives the error and relevant context to an agent.
+
+```text
+Run CLI Command
+      │
+      ▼
+   Success?
+   │      │
+  Yes     No
+   │      │
+   ▼      ▼
+ Next   Capture Error
+Stage      │
+           ▼
+      Agent Repair
+           │
+           ▼
+      Retry Command
+```
+
+---
+
+## 5.4 Characterization Test Implementation
+
+```text
+characterization-tests.db
+          │
+          ▼
+Pending Scenario
+          │
+          ▼
+Seed Context
+          │
+          ▼
 Context Agent
-      ↓
+          │
+          ├── DB
+          ├── Source
+          ├── Existing Tests
+          └── JDTLS
+          │
+          ▼
 Implementation Agent
-      ↓
-Executable characterization test
-      ↓
-Input/Output Agent
-      ↓
-Run + record observations
-      ↓
-Harness verifies + commits
+          │
+          ▼
+Executable Characterization Test
+          │
+          ▼
+Input / Output Agent
+          │
+          ├── Run deterministic inputs
+          ├── Capture observations
+          └── Mark scenario accepted
+          │
+          ▼
+Harness Verification
+          │
+          ▼
+Commit
 ```
 
-### Agents
+---
 
--   **Context Agent** --- Expands context using DB rows, source, tests,
-    and JDTLS.
--   **Implementation Agent** --- Writes executable tests with
-    mocks/fakes.
--   **Input/Output Agent** --- Runs deterministic inputs and records
-    observed behavior.
+## 5.5 Target Project Creation
 
-------------------------------------------------------------------------
-
-## Target Project Creation
-
-After characterization, the Harness creates a new project while keeping
-the legacy repository intact.
-
-### Dependency Selection
-
-The agent reads Gluon build/compatibility reports and writes:
-
-`docs/migration/dependency-selection.md`
-
-It selects target-compatible dependency and plugin versions.
-
-### Build Structure
-
-The next agent creates:
-
--   root/module Maven or Gradle files
--   Java 25 configuration
--   selected dependencies
--   compatible plugins
-
-------------------------------------------------------------------------
-
-## Source Migration --- WIP
-
-
-------------------------------------------------------------------------
-
-## Agent Skills
-
-  Skill                                        Focus
-  -------------------------------------------- -----------------------------
-  `gluon-cli`                                  Gluon CLI usage
-  `java-best-practices`                        Java 8/11/17/21 → 25
-  `java-build-tool-best-practices`             Maven / Gradle
-  `java-dependency-selection-best-practices`   Dependency selection
-  `database-orm-best-practices`                JPA / ORM / persistence
-  `jakarta-ee-best-practices`                  Jakarta EE
-  `junit-mockito-testing-best-practices`       Testing
-  `spring-boot-best-practices`                 Spring Boot
-  `spring-mvc-best-practices`                  Spring MVC
-  `spring-security-best-practices`             Spring Security
-  `version-rewrite-modernization`              Behavior-preserving rewrite
-
-------------------------------------------------------------------------
-
-## Core Design
-
-Gluon separates modernization into three layers:
-
-``` text
-1. Deterministic Understanding
-   Build + AST + JDTLS + jdeps + YAML rules
-                  ↓
-2. Behavioral Understanding
-   Business KG + Characterization Tests
-                  ↓
-3. Agentic Transformation
-   Dependencies + Build + Source + Verification
+```text
+Legacy Project Structure
+          │
+          ▼
+Create New Project Folder
+          │
+          ├── git init
+          ├── configure remote
+          └── checkout branch
+          │
+          ▼
+Recreate High-Level Structure
 ```
 
-**Deterministic tools discover facts.**\
-**LLMs interpret application-specific business meaning.**\
-**Characterization tests capture existing behavior.**\
-**Agents perform the migration within those constraints.**
+---
 
-------------------------------------------------------------------------
+## 5.6 Dependency Selection
 
-## Current Status
+```text
+Build Report ────────────────┐
+                             │
+Compatibility Report ────────┼──► Dependency Selection Agent
+                             │
+Migration Skill ─────────────┘
+                                      │
+                                      ▼
+                         Target-Compatible
+                         Dependencies + Plugins
+                                      │
+                                      ▼
+                  docs/migration/dependency-selection.md
+```
 
-  Stage                          Status
-  ------------------------------ --------
-  Build analysis                 ✅
-  Compatibility analysis         ✅
-  CodeModel + JDTLS resolution   ✅
-  Business scoring               ✅
-  TestModel extraction           ✅
-  Business Knowledge Graph       ✅
-  Characterization scaffolding   ✅
-  Characterization agent loop    ✅
-  Dependency selection           ✅
-  Target build structure         ✅
-  Source migration               🚧 WIP
+Skill:
 
-------------------------------------------------------------------------
+`java-dependency-selection-best-practices`
 
-## Gluon in One Line
+---
 
-> **Deterministic analysis + business understanding + characterization
-> tests + specialized agents → behavior-preserving legacy
-> modernization.**
+## 5.7 Build Structure
+
+```text
+dependency-selection.md
+          │
+          ▼
+Build Agent
+          │
+          ▼
+┌──────────────────────────┐
+│ Target Build Structure   │
+│                          │
+│ Root Build File          │
+│ Module Build Files       │
+│ Java 25 Configuration    │
+│ Dependencies             │
+│ Plugins                  │
+└──────────────────────────┘
+```
+
+Skill:
+
+`java-build-tool-best-practices`
+
+---
+
+## 5.8 Source Migration — WIP
+
+The objective is to preserve legacy behavior, not only to make the project compile on Java 25.
+
+---
+
+# 6. Current Status
+
+| Stage | Status |
+|---|---|
+| Build Report | ✅ |
+| Compatibility Analysis | ✅ |
+| CodeModel Extraction | ✅ |
+| JDTLS Resolution | ✅ |
+| Business Scoring | ✅ |
+| TestModel Extraction | ✅ |
+| Business Knowledge Graph | ✅ |
+| Characterization Scenarios | ✅ |
+| Characterization Agent Loop | ✅ |
+| Dependency Selection | ✅ |
+| Build Structure | ✅ |
+| Source Migration | 🚧 WIP |
