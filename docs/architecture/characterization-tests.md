@@ -173,6 +173,11 @@ multi-agent workflows, or commit repository changes.
    the next pending scenario, collects fresh seed context, and gives control
    back to the main agent.
 
+Subagent Task calls are self-contained request/response handoffs. The main
+agent may call the same subagent role again during a scenario, but it must pass
+prior JSON output and current scenario state in the new request instead of
+relying on live subagent memory.
+
 Failures stop the current scenario after recording diagnostics. The next run
 resumes from unfinished or failed scenarios.
 
@@ -538,6 +543,7 @@ main agent gives implementation responsibility to Implementation Agent
 Implementation Agent writes full test with mocks/fakes
 main agent gives written test and context to Input/Output Agent
 Input/Output Agent generates inputs, runs test, and captures outputs
+main agent may make another self-contained Task call with prior JSON if needed
 harness verifies project test command
 harness commits accepted generated test
 control returns to harness for next scenario

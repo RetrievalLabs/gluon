@@ -97,6 +97,11 @@ Full-test generation uses a multi-agent workflow:
    scenario, collects fresh seed context, and gives control back to the main
    agent.
 
+Subagent Task calls are self-contained request/response handoffs. The main
+agent may call the same subagent role again during a scenario, but it must pass
+prior JSON output and current scenario state in the new request instead of
+relying on live subagent memory.
+
 Agents may use:
 
 - Git status, diff, add, and commit for generated characterization work.

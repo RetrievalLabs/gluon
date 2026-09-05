@@ -440,10 +440,13 @@ Completion output:
             "Each subagent must work silently and return one task-specific JSON "
             "object only to the main agent. No Markdown fences, prose, progress "
             "narration, or text outside JSON. Main agent must read that JSON and "
-            "use it to decide the next step. Main agent may call the same "
-            "subagent again when its JSON reports missing context, failed "
-            "verification, failed database writes, or blockers that the main "
-            "agent can resolve."
+            "use it to decide the next step. Treat every subagent Task call as "
+            "a self-contained request/response handoff; do not rely on live "
+            "subagent memory after the JSON is returned. Main agent may call "
+            "the same subagent role again when its JSON reports missing "
+            "context, failed verification, failed database writes, or blockers "
+            "that the main agent can resolve, but must include prior JSON and "
+            "current scenario state in the new task request."
         )
 
     async def block_gluon_cli_hook(
