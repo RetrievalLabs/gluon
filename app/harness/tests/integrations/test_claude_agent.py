@@ -13,6 +13,10 @@ from integrations.claude_agent import (
 from models.command import CommandResult
 from models.config import HarnessConfig
 
+VALID_AGENT_JSON = (
+    '{"status":"completed","changed_files":[],"verification":[],"blockers":[]}'
+)
+
 
 class FakeResultMessage:
     def __init__(self, result: str) -> None:
@@ -30,7 +34,7 @@ class FakeSdkClient:
         self.prompts.append(prompt)
 
     async def receive_messages(self):
-        yield FakeResultMessage("fixed")
+        yield FakeResultMessage(VALID_AGENT_JSON)
 
     async def disconnect(self) -> None:
         self.disconnected = True
@@ -55,7 +59,7 @@ class ClaudeAgentTests(unittest.TestCase):
             with mock.patch.object(
                 ClaudeAgentClient,
                 "run_agent",
-                return_value="fixed",
+                return_value=VALID_AGENT_JSON,
             ) as run_agent:
                 attempt = ClaudeAgentClient(config, log_path).repair_stage(
                     "parse-build",
@@ -66,15 +70,14 @@ class ClaudeAgentTests(unittest.TestCase):
 
             self.assertEqual(attempt.stage_name, "parse-build")
             self.assertEqual(attempt.status, "completed")
-            self.assertIn("command `cmd`", attempt.message)
-            self.assertIn("cwd `/repo`", attempt.message)
+            self.assertEqual(attempt.message, VALID_AGENT_JSON)
             run_agent.assert_called_once()
             prompt = run_agent.call_args.args[1]
             self.assertIn("Command: cmd", prompt)
             self.assertIn("Stderr:", prompt)
             record = json.loads(log_path.read_text(encoding="utf-8"))
             self.assertEqual(record["attempt"], 1)
-            self.assertIn("command `cmd`", record["message"])
+            self.assertEqual(record["message"], VALID_AGENT_JSON)
 
     def test_agent_options_allow_repair_tools(self) -> None:
         config = HarnessConfig(
@@ -102,6 +105,7 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertEqual(options["hooks"]["PreToolUse"][0].matcher, "Bash")
         self.assertIn("system_prompt", options)
         self.assertTrue(options["system_prompt"]["exclude_dynamic_sections"])
+        self.assert_json_completion_contract(options["system_prompt"]["append"])
 
     def test_reuses_connected_agent_client(self) -> None:
         config = HarnessConfig(
@@ -125,8 +129,8 @@ class ClaudeAgentTests(unittest.TestCase):
         finally:
             client.close()
 
-        self.assertEqual(first, "fixed")
-        self.assertEqual(second, "fixed")
+        self.assertEqual(first, VALID_AGENT_JSON)
+        self.assertEqual(second, VALID_AGENT_JSON)
         self.assertEqual(sdk_client.prompts, ["first", "second"])
         self.assertTrue(sdk_client.disconnected)
 
@@ -227,8 +231,10 @@ class ClaudeAgentTests(unittest.TestCase):
 
         self.assertIn("You are the main agent", prompt)
         self.assertIn("Use the Task tool to give the seed context", prompt)
-        self.assertIn("Context Agent returns structured JSON", prompt)
+        self.assertIn("Context Agent returns one structured JSON", prompt)
         self.assertIn("Implementation Agent writes", prompt)
+        self.assertIn("Subagent output contract", prompt)
+        self.assertIn("return one task-specific JSON object only", prompt)
         self.assertIn("Input/Output Agent enumerates every generated `@Test` method", prompt)
         self.assertIn("one row per test method into `characterization_inputs`", prompt)
         self.assertIn("input_json.method", prompt)
@@ -258,6 +264,8 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertIn("Write", options["allowed_tools"])
         self.assertEqual(options["skills"], ["java-dependency-selection-best-practices"])
         self.assertEqual(options["permission_mode"], "dontAsk")
+        self.assertNotIn("caveman", options["skills"])
+        self.assert_json_completion_contract(options["system_prompt"]["append"])
 
     def test_dependency_selection_prompt_names_inputs_and_output(self) -> None:
         config = HarnessConfig(
@@ -313,6 +321,8 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertIn("WebFetch", options["allowed_tools"])
         self.assertNotIn("Bash", options["tools"])
         self.assertEqual(options["skills"], ["java-build-tool-best-practices"])
+        self.assertNotIn("caveman", options["skills"])
+        self.assert_json_completion_contract(options["system_prompt"]["append"])
 
     def test_build_structure_prompt_limits_legacy_reads(self) -> None:
         config = HarnessConfig(
@@ -372,6 +382,8 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertIn("WebFetch", options["allowed_tools"])
         self.assertIn("version-rewrite-modernization", options["skills"])
         self.assertIn("java-best-practices", options["skills"])
+        self.assertNotIn("caveman", options["skills"])
+        self.assert_json_completion_contract(options["system_prompt"]["append"])
 
     def test_source_migration_prompt_uses_databases_and_multi_agent_flow(self) -> None:
         config = HarnessConfig(
@@ -415,6 +427,8 @@ class ClaudeAgentTests(unittest.TestCase):
             prompt,
         )
         self.assertIn("Verification Agent", prompt)
+        self.assertIn("Subagent output contract", prompt)
+        self.assertIn("return one task-specific JSON object only", prompt)
         self.assertIn("official web documentation", prompt)
         self.assertIn("integration tests", prompt)
         self.assertIn("characterization-tests.db", prompt)
@@ -422,6 +436,16 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertNotIn("Do not use build-report.json", prompt)
         self.assertIn("version-rewrite-modernization", prompt)
         self.assertIn("java-best-practices", prompt)
+
+    def assert_json_completion_contract(self, prompt: str) -> None:
+        self.assertIn("Final response must be one compact JSON object only", prompt)
+        self.assertIn(
+            '{"status":"completed","changed_files":["path"],'
+            '"verification":[{"command":"cmd","status":"passed"}],'
+            '"blockers":[]}',
+            prompt,
+        )
+        self.assertIn("Use `\"status\":\"blocked\"`", prompt)
 
 
 if __name__ == "__main__":

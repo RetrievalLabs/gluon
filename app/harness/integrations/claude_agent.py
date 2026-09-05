@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from models.agent import AgentAttempt
+from models.agent import AgentAttempt, parse_agent_json_response
 from models.command import CommandResult
 from models.config import HarnessConfig
 
@@ -32,19 +32,13 @@ class ClaudeAgentClient:
         repo_path: Path,
         failed: CommandResult,
     ) -> AgentAttempt:
-        command = shlex.join(failed.command)
         prompt = self.build_repair_prompt(stage_name, attempt, repo_path, failed)
         agent_result = self.run_agent(repo_path, prompt)
-        message = (
-            f"repair completed for {stage_name} attempt {attempt} "
-            f"in {repo_path}: command `{command}` cwd `{failed.cwd}` "
-            f"exit {failed.exit_code}; {agent_result}"
-        )
         result = AgentAttempt(
             stage_name=stage_name,
             attempt=attempt,
             status="completed",
-            message=message,
+            message=agent_result,
         )
         self.record(result)
         return result
@@ -90,7 +84,7 @@ class ClaudeAgentClient:
                 raise RuntimeError(f"Claude agent repair failed: {detail}")
             if hasattr(message, "num_turns"):
                 break
-        return excerpt(result_text)
+        return parse_agent_json_response(result_text).to_json()
 
     async def agent_client(self, repo_path: Path) -> Any:
         if self._client is not None:
@@ -323,7 +317,7 @@ Rules:
 - Prefer local project conventions and existing tests.
 - Verify with local build or tests when useful, but leave Gluon CLI stage reruns to harness.
 - Report changed files, verification command, and remaining blocker if any.
-"""
+""" + self.top_level_agent_json_contract()
 
     def dependency_selection_system_prompt(self) -> str:
         return """You are a dependency-selection agent for the Gluon Java modernization harness.
@@ -339,7 +333,7 @@ Rules:
 - Prefer platform-managed versions over manual dependency pins.
 - Preserve existing dependency roles and avoid optional modernization unless required for target Java compatibility.
 - Do not choose milestone, RC, snapshot, or development releases.
-"""
+""" + self.top_level_agent_json_contract()
 
     def build_structure_system_prompt(self) -> str:
         return """You are a build-structure agent for the Gluon Java modernization harness.
@@ -357,7 +351,7 @@ Rules:
 - Use web search/fetch only to verify exact stable Maven, Gradle, or plugin versions from official project sources.
 - Do not choose milestone, RC, snapshot, or development releases.
 - Do not run build or test commands.
-"""
+""" + self.top_level_agent_json_contract()
 
     def source_migration_system_prompt(self) -> str:
         return """You are a source migration agent for the Gluon Java modernization harness.
@@ -389,7 +383,27 @@ Rules:
 - Do not run Gluon pipeline commands. Harness owns Gluon stages.
 - You may run only `gluon[-cli] code-parser db ...` or `gluon[-cli] db ...` commands for bounded characterization database inspection and status updates when needed.
 - Verify with rewrite-workspace compile, focused tests, integration tests, and characterization checks when possible.
+""" + self.top_level_agent_json_contract()
+
+    def top_level_agent_json_contract(self) -> str:
+        return """
+
+Completion output:
+- Work silently. Do not emit progress narration or human-facing summaries.
+- Final response must be one compact JSON object only, with no Markdown fences and no text before or after it.
+- Final response must match this schema exactly:
+{"status":"completed","changed_files":["path"],"verification":[{"command":"cmd","status":"passed"}],"blockers":[]}
+- Use `"status":"blocked"` with one or more short actionable blockers when work cannot complete.
+- Keep generated code, docs, comments, and Markdown reports in normal professional prose; JSON-only applies only to agent completion output.
 """
+
+    def subagent_json_contract(self) -> str:
+        return (
+            "Each subagent must work silently and return one task-specific JSON "
+            "object only to the main agent. No Markdown fences, prose, progress "
+            "narration, or text outside JSON. Main agent must read that JSON and "
+            "use it to decide the next step."
+        )
 
     async def block_gluon_cli_hook(
         self,
@@ -458,10 +472,7 @@ Stderr:
             stage_name="characterization-full-test",
             attempt=1,
             status="completed",
-            message=(
-                f"characterization scenario {scenario_id} completed in "
-                f"{repo_path}: {agent_result}"
-            ),
+            message=agent_result,
         )
         self.record(result)
         return result
@@ -471,13 +482,15 @@ Stderr:
 
 You are the main agent. Follow this order exactly:
 
+Subagent output contract: {self.subagent_json_contract()}
+
 1. Read the seed context below.
 2. Use the Task tool to give the seed context to the Context Agent.
-3. Context Agent returns structured JSON context packet only.
+3. Context Agent returns one structured JSON context packet only.
 4. As main agent, use the Task tool to give the context packet and implementation responsibility to the Implementation Agent.
-5. Implementation Agent writes the executable project-native characterization test using mocks or fakes for external dependencies, then runs the project-local test command and repairs compile/test failures.
+5. Implementation Agent writes the executable project-native characterization test using mocks or fakes for external dependencies, then runs the project-local test command, repairs compile/test failures, and returns one JSON object only.
 6. As main agent, use the Task tool to give the written test and context packet to the Input/Output Agent.
-7. Input/Output Agent enumerates every generated `@Test` method, generates deterministic inputs for each method, reruns the written test with those inputs, captures observed outputs, inserts one row per test method into `characterization_inputs`, inserts one linked row per test method into `characterization_observations`, and updates the scenario status to `accepted` in `characterization-tests.db` using only Gluon CLI database commands.
+7. Input/Output Agent enumerates every generated `@Test` method, generates deterministic inputs for each method, reruns the written test with those inputs, captures observed outputs, inserts one row per test method into `characterization_inputs`, inserts one linked row per test method into `characterization_observations`, updates the scenario status to `accepted` in `characterization-tests.db` using only Gluon CLI database commands, and returns one JSON object only.
 8. Verify with the project-local build/test command after database writes.
 9. Return control to harness only after the test passes, inputs are stored, observations are stored, and scenario status is `accepted`. Do not select the next scenario.
 
@@ -522,10 +535,7 @@ Seed context:
             stage_name="dependency-selection",
             attempt=1,
             status="completed",
-            message=(
-                f"dependency selection report generated at "
-                f"{output_path}: {agent_result}"
-            ),
+            message=agent_result,
         )
         self.record(result)
         return result
@@ -601,10 +611,7 @@ Rules:
             stage_name="build-structure",
             attempt=1,
             status="completed",
-            message=(
-                f"build structure generated in {rewrite_workspace}; "
-                f"report at {build_structure_report_path}: {agent_result}"
-            ),
+            message=agent_result,
         )
         self.record(result)
         return result
@@ -641,10 +648,7 @@ Rules:
             stage_name="source-migration",
             attempt=1,
             status="completed",
-            message=(
-                f"source migration generated in {rewrite_workspace}; "
-                f"report at {output_path}: {agent_result}"
-            ),
+            message=agent_result,
         )
         self.record(result)
         return result
@@ -679,14 +683,16 @@ Instructions:
 2. As main agent, use the Task tool to ask the Context Agent for a JSON context packet from build-report.json, compatibility-report.json, business-kg.db, extraction.db, characterization-tests.db, repository docs, relevant configuration, bounded source reads, and official web documentation when needed.
 3. Context Agent must identify entry points, source files, reachable relationships, business KG priorities, existing tests, characterization scenarios, and any external documentation used.
 4. As main agent, use the Task tool to give the context packet to the Implementation Agent.
-5. Implementation Agent must read and apply version-rewrite-modernization and java-best-practices before source edits, migrate source code, and write integration tests inside the rewrite workspace.
+5. Implementation Agent must read and apply version-rewrite-modernization and java-best-practices before source edits, migrate source code, write integration tests inside the rewrite workspace, and return one JSON object only.
 6. Implementation Agent must start with Main, Lifecycle, Http, Cli, Scheduled, and Message entry points in that order.
 7. Implementation Agent must copy the smallest required source, resources, configuration, and tests from the legacy repository into the rewrite workspace.
 8. Implementation Agent must use extraction.db relationships to expand through direct reachable dependencies.
 9. Implementation Agent must use business-kg.db business_evidence.method_id to prioritize high-confidence business behavior after startup code.
 10. As main agent, use the Task tool to give migrated code, integration tests, and context packet to the Verification Agent.
-11. Verification Agent must run rewrite-workspace compile/tests when possible, verify business logic with characterization-tests.db, and write or repair characterization tests needed for migrated business logic.
+11. Verification Agent must run rewrite-workspace compile/tests when possible, verify business logic with characterization-tests.db, write or repair characterization tests needed for migrated business logic, and return one JSON object only.
 12. Write exactly one Markdown report at `{output_path}`.
+
+Subagent output contract: {self.subagent_json_contract()}
 
 Markdown requirements:
 - Migrated entry points.
