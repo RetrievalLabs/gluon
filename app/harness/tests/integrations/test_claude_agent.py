@@ -25,15 +25,26 @@ class FakeResultMessage:
         self.num_turns = 1
 
 
+class FakeErrorMessage:
+    def __init__(self, errors: list[str]) -> None:
+        self.is_error = True
+        self.errors = errors
+        self.num_turns = 1
+
+
 class FakeSdkClient:
     def __init__(self) -> None:
         self.prompts: list[str] = []
         self.disconnected = False
+        self.fail_compaction = False
 
     async def query(self, prompt: str) -> None:
         self.prompts.append(prompt)
 
     async def receive_messages(self):
+        if self.fail_compaction and self.prompts[-1].startswith("/compact "):
+            yield FakeErrorMessage(["compact failed"])
+            return
         yield FakeResultMessage(VALID_AGENT_JSON)
 
     async def disconnect(self) -> None:
@@ -60,7 +71,10 @@ class ClaudeAgentTests(unittest.TestCase):
                 ClaudeAgentClient,
                 "run_agent",
                 return_value=VALID_AGENT_JSON,
-            ) as run_agent:
+            ) as run_agent, mock.patch.object(
+                ClaudeAgentClient,
+                "compact_agent_context",
+            ) as compact_agent_context:
                 attempt = ClaudeAgentClient(config, log_path).repair_stage(
                     "parse-build",
                     1,
@@ -75,6 +89,11 @@ class ClaudeAgentTests(unittest.TestCase):
             prompt = run_agent.call_args.args[1]
             self.assertIn("Command: cmd", prompt)
             self.assertIn("Stderr:", prompt)
+            compact_agent_context.assert_called_once_with(
+                Path("/repo"),
+                "parse-build",
+                1,
+            )
             record = json.loads(log_path.read_text(encoding="utf-8"))
             self.assertEqual(record["attempt"], 1)
             self.assertEqual(record["message"], VALID_AGENT_JSON)
@@ -133,6 +152,68 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertEqual(second, VALID_AGENT_JSON)
         self.assertEqual(sdk_client.prompts, ["first", "second"])
         self.assertTrue(sdk_client.disconnected)
+
+    def test_repair_compacts_connected_agent_context(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+        failed = CommandResult(["cmd"], "/repo", 1, "", "failed", 1)
+        client = ClaudeAgentClient(config)
+        sdk_client = FakeSdkClient()
+        client._client = sdk_client
+        client._client_repo_path = Path("/repo")
+
+        try:
+            result = client.repair_stage("parse-build", 1, Path("/repo"), failed)
+        finally:
+            client.close()
+
+        self.assertEqual(result.message, VALID_AGENT_JSON)
+        self.assertEqual(len(sdk_client.prompts), 2)
+        self.assertIn("Repair failed Gluon harness stage.", sdk_client.prompts[0])
+        self.assertTrue(sdk_client.prompts[1].startswith("/compact "))
+        self.assertIn("repaired stage parse-build", sdk_client.prompts[1])
+        self.assertTrue(sdk_client.disconnected)
+
+    def test_compaction_failure_stops_repair_after_recording_attempt(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+        failed = CommandResult(["cmd"], "/repo", 1, "", "failed", 1)
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "agents.jsonl"
+            client = ClaudeAgentClient(config, log_path)
+            sdk_client = FakeSdkClient()
+            sdk_client.fail_compaction = True
+            client._client = sdk_client
+            client._client_repo_path = Path("/repo")
+
+            try:
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "Claude agent context compression failed: compact failed",
+                ):
+                    client.repair_stage("parse-build", 1, Path("/repo"), failed)
+            finally:
+                client.close()
+
+            record = json.loads(log_path.read_text(encoding="utf-8"))
+            self.assertEqual(record["stage_name"], "parse-build")
+            self.assertEqual(record["message"], VALID_AGENT_JSON)
 
     def test_blocks_gluon_cli_bash_commands(self) -> None:
         config = HarnessConfig(

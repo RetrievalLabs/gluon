@@ -41,6 +41,7 @@ class ClaudeAgentClient:
             message=agent_result,
         )
         self.record(result)
+        self.compact_agent_context(repo_path, stage_name, attempt)
         return result
 
     def run_agent(self, repo_path: Path, prompt: str) -> str:
@@ -57,6 +58,33 @@ class ClaudeAgentClient:
         client = await self.agent_client(repo_path)
         await client.query(prompt)
         return await self.receive_agent_result(client)
+
+    def compact_agent_context(
+        self,
+        repo_path: Path,
+        stage_name: str,
+        attempt: int,
+    ) -> None:
+        prompt = self.build_compaction_prompt(repo_path, stage_name, attempt)
+        self.event_loop().run_until_complete(
+            self.compact_agent_context_async(repo_path, prompt)
+        )
+
+    async def compact_agent_context_async(self, repo_path: Path, prompt: str) -> None:
+        client = await self.agent_client(repo_path)
+        await client.query(prompt)
+        await self.receive_compaction_result(client)
+
+    async def receive_compaction_result(self, client: Any) -> None:
+        async for message in client.receive_messages():
+            if getattr(message, "is_error", False):
+                errors = getattr(message, "errors", None)
+                detail = ", ".join(errors) if errors else "unknown error"
+                raise RuntimeError(
+                    f"Claude agent context compression failed: {detail}"
+                )
+            if hasattr(message, "num_turns"):
+                break
 
     async def run_agent_with_options_async(
         self,
@@ -462,6 +490,20 @@ Stderr:
 {excerpt(failed.stderr)}
 ```
 """
+
+    def build_compaction_prompt(
+        self,
+        repo_path: Path,
+        stage_name: str,
+        attempt: int,
+    ) -> str:
+        return (
+            "/compact Keep only facts needed to continue the Gluon CLI repair loop: "
+            f"repository path {repo_path}, repaired stage {stage_name}, "
+            f"repair attempt {attempt}, changed files, verification results, "
+            "active blockers, current failed command context, and constraints. "
+            "Drop raw stdout/stderr, tool traces, and stale exploration details."
+        )
 
     def run_characterization_scenario(
         self,
