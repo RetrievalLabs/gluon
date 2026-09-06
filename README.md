@@ -133,6 +133,9 @@ Build Report
 Compatibility Analysis
        │
        ▼
+Model Classification
+       │
+       ▼
 CodeModel Extraction
        │
        ▼
@@ -219,7 +222,33 @@ File → Line → Symbol → Problem → Recommendation
 
 ---
 
-## 4.5 Business Logic Extraction
+## 4.5 Model Classification
+
+```text
+Build Report ───────────────┐
+                            │
+Symbol Registry ────────────┼──► Model Classification
+                            │
+Java Source ────────────────┘
+                                  │
+                         ┌────────┴────────┐
+                         ▼                 ▼
+                    Tree-sitter          JDTLS
+                                           │
+                                           ▼
+                         Model Classification Report
+```
+
+`code-parser classify-models` writes
+`model-classification-report.json`. The report is nested by module and
+separates models, DTOs, request bodies, response bodies, repositories,
+entities, tables, and columns. Dependency data comes from `build-report.json`,
+but only dependencies used as classification evidence are included in the
+report.
+
+---
+
+## 4.6 Business Logic Extraction
 
 ### CodeModel
 
@@ -294,7 +323,7 @@ High-priority methods are selected for business-knowledge extraction.
 
 ---
 
-## 4.6 Integration / E2E Test Extraction
+## 4.7 Integration / E2E Test Extraction
 
 ```text
 Existing Tests
@@ -322,7 +351,7 @@ Unit tests are skipped.
 
 ---
 
-## 4.7 Business Knowledge Graph
+## 4.8 Business Knowledge Graph
 
 ```text
 High-Priority Method
