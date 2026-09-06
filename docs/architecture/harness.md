@@ -34,6 +34,8 @@ Missing or invalid required config is fatal.
 10. Run `gluon-cli build-business-kg` to create `business-kg.db`.
 11. Run characterization test generation.
 12. Create migration rewrite workspace with deterministic Python setup.
+13. Run dependency selection agent and commit its report.
+14. Run build structure agent and commit its report.
 
 ## Error Handling
 

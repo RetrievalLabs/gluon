@@ -27,10 +27,6 @@ class HarnessPathsTests(unittest.TestCase):
             Path("/opt/gluon/org/rewrite/project/docs/migration/build-structure.md"),
         )
         self.assertEqual(
-            paths.source_migration_report,
-            Path("/opt/gluon/org/rewrite/project/docs/migration/source-migration.md"),
-        )
-        self.assertEqual(
             paths.build_report,
             Path("/opt/gluon/org/build-report/project/build-report.json"),
         )

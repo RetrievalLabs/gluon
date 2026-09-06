@@ -15,7 +15,6 @@ from pipeline.dependency_selection import run_dependency_selection_agent
 from pipeline.migration_commit import commit_rewrite_workspace
 from pipeline.migration_rewrite import run_migration_rewrite_setup
 from pipeline.retry import run_stage_with_repair
-from pipeline.source_migration import run_source_migration_agent
 from pipeline.stages import build_stages
 from pipeline.summary import write_summary
 
@@ -99,20 +98,6 @@ class PipelineCoordinator:
                             "Add Java migration build structure",
                         )
                         completed.append("build-structure-commit")
-                        failed_stage_name = "source-migration"
-                        run_source_migration_agent(
-                            self.paths,
-                            agent,
-                            self.config.target_version,
-                        )
-                        completed.append("source-migration")
-                        failed_stage_name = "source-migration-commit"
-                        commit_rewrite_workspace(
-                            runner,
-                            self.paths.rewrite_workspace,
-                            "Add Java source migration",
-                        )
-                        completed.append("source-migration-commit")
             except StageFailedError as error:
                 summary = RunSummary(
                     status="failed",

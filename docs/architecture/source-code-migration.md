@@ -1,10 +1,12 @@
 # Source Code Migration
 
+Status: deferred. Current harness pipeline does not execute this stage.
+
 ## Overview
 
-Source code migration moves the legacy Java application into the rewrite
+Source code migration would move the legacy Java application into the rewrite
 workspace after dependency selection and build structure are already complete.
-The stage preserves behavior while making source code compile and run on the
+The stage would preserve behavior while making source code compile and run on the
 target Java version.
 
 This stage does not choose dependencies, redesign the build, or perform
@@ -27,7 +29,7 @@ The migration uses two read-only databases:
 - `extraction.db`.
 - `characterization-tests.db`, when present.
 - Characterization test artifacts, when present.
-- Java migration skills available to the source migration agent.
+- Java migration skills available to a future source migration agent.
 - Multi-agent orchestration through one main agent, one Context Agent, one
   Implementation Agent, and one Verification Agent.
 - Web search and fetch for official target Java, framework, and library
@@ -54,7 +56,7 @@ reachable from migrated code or required by compiler/test feedback.
 
 ## Multi-Agent Workflow
 
-Harness invokes one source migration main agent. The main agent coordinates
+If restored, harness would invoke one source migration main agent. The main agent would coordinate
 bounded specialist agents through the Task tool:
 
 ```text
@@ -178,7 +180,7 @@ from agent guesses.
 
 ## Agent Rules
 
-The source migration agent must:
+A future source migration agent must:
 
 - Treat the legacy repository as read-only.
 - Write only inside the rewrite workspace.
@@ -225,7 +227,7 @@ Source migration is complete when:
 
 ## Migration Report
 
-The stage writes `docs/migration/source-migration.md` in the rewrite workspace.
+The deferred stage would write `docs/migration/source-migration.md` in the rewrite workspace.
 The report must include:
 
 - Migrated entrypoints.
