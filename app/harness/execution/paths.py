@@ -77,6 +77,18 @@ class HarnessPaths:
         return self.root / "model-classification-report"
 
     @property
+    def configuration_classification_report(self) -> Path:
+        return (
+            self.configuration_classification_report_output_dir
+            / self.project
+            / "configuration-classification-report.json"
+        )
+
+    @property
+    def configuration_classification_report_output_dir(self) -> Path:
+        return self.root / "configuration-classification-report"
+
+    @property
     def extraction_db(self) -> Path:
         return self.root / "extraction.db"
 

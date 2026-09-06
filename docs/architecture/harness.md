@@ -29,14 +29,15 @@ Missing or invalid required config is fatal.
 6. Run `gluon-cli parse-build` and `gluon-cli analyze-report`, passing
    configured output directories so reports are written by the CLI.
 7. Run `gluon-cli classify-models` to create the nested model classification report.
-8. Run `gluon-cli extract-business` to create `/opt/gluon/org/extraction.db`.
-9. Run `gluon-cli extract-tests` to append test extraction tables to `/opt/gluon/org/extraction.db`.
-10. Run `gluon-cli build-business-kg` to create `business-kg.db`.
-11. Run characterization test generation.
-12. Create migration rewrite workspace with deterministic Python setup.
-13. Run dependency selection agent and commit its report.
-14. Run build structure agent and commit its report.
-15. Run per-model source migration loop. Harness selects one model-like row from
+8. Run `gluon-cli classify-configs` to create the nested configuration classification report.
+9. Run `gluon-cli extract-business` to create `/opt/gluon/org/extraction.db`.
+10. Run `gluon-cli extract-tests` to append test extraction tables to `/opt/gluon/org/extraction.db`.
+11. Run `gluon-cli build-business-kg` to create `business-kg.db`.
+12. Run characterization test generation.
+13. Create migration rewrite workspace with deterministic Python setup.
+14. Run dependency selection agent and commit its report.
+15. Run build structure agent and commit its report.
+16. Run per-model source migration loop. Harness selects one model-like row from
     `model-classification-report.json`, gives it to the main agent, receives one
     JSON completion object, commits the migrated rewrite workspace changes, and
     compacts context before selecting the next model.
@@ -58,6 +59,7 @@ Do not skip stages after failure.
 - repo clone in `/opt/gluon/org/project/{}`
 - `/opt/gluon/org/build-report/<project>/build-report.json`
 - `/opt/gluon/org/compatibility-report/<project>/compatibility-report.json`
+- `/opt/gluon/org/configuration-classification-report/<project>/configuration-classification-report.json`
 - `/opt/gluon/org/extraction.db`
 - test extraction tables in `/opt/gluon/org/extraction.db`
 - `/opt/gluon/org/business-kg.db`

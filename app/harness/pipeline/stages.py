@@ -9,6 +9,7 @@ def build_stages(config: HarnessConfig, gluon: GluonCli) -> list[Stage]:
         Stage("parse-build", gluon.parse_build(), cwd),
         Stage("analyze-report", gluon.analyze_report(config.target_version), cwd),
         Stage("classify-models", gluon.classify_models(), cwd),
+        Stage("classify-configs", gluon.classify_configs(), cwd),
         Stage("extract-business", gluon.extract_business(), cwd),
         Stage("extract-tests", gluon.extract_tests(), cwd),
         Stage("build-business-kg", gluon.build_business_kg(), cwd),
