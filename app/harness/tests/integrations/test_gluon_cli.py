@@ -25,6 +25,18 @@ class GluonCliTests(unittest.TestCase):
         self.assertIn("--output-dir", command)
         self.assertIn("/opt/gluon/org/compatibility-report", command)
 
+    def test_builds_classify_models_command_with_build_report(self) -> None:
+        paths = HarnessPaths.from_org_project("org/project", Path("/opt/gluon/org"))
+        command = GluonCli("gluon-cli", paths).classify_models()
+
+        self.assertEqual(command[:3], ["gluon-cli", "code-parser", "classify-models"])
+        self.assertIn("--build-report", command)
+        self.assertIn(str(paths.build_report), command)
+        self.assertIn("--source-path", command)
+        self.assertIn(str(paths.repo), command)
+        self.assertIn("--output-dir", command)
+        self.assertIn("/opt/gluon/org/model-classification-report", command)
+
     def test_builds_extract_business_command_with_build_report(self) -> None:
         paths = HarnessPaths.from_org_project("org/project", Path("/opt/gluon/org"))
         command = GluonCli("gluon-cli", paths).extract_business()

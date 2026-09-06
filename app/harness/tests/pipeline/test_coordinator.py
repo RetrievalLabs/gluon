@@ -62,6 +62,7 @@ class CoordinatorTests(unittest.TestCase):
             [
                 "parse-build",
                 "analyze-report",
+                "classify-models",
                 "extract-business",
                 "extract-tests",
                 "build-business-kg",

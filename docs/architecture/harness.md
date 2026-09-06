@@ -28,11 +28,12 @@ Missing or invalid required config is fatal.
 5. Set `JAVA_HOME` to `/opt/jdks/jdk{CURRENT_VERSION}`.
 6. Run `gluon-cli parse-build` and `gluon-cli analyze-report`, passing
    configured output directories so reports are written by the CLI.
-7. Run `gluon-cli extract-business` to create `/opt/gluon/org/extraction.db`.
-8. Run `gluon-cli extract-tests` to append test extraction tables to `/opt/gluon/org/extraction.db`.
-9. Run `gluon-cli build-business-kg` to create `business-kg.db`.
-10. Run characterization test generation.
-11. Create migration rewrite workspace with deterministic Python setup.
+7. Run `gluon-cli classify-models` to create the nested model classification report.
+8. Run `gluon-cli extract-business` to create `/opt/gluon/org/extraction.db`.
+9. Run `gluon-cli extract-tests` to append test extraction tables to `/opt/gluon/org/extraction.db`.
+10. Run `gluon-cli build-business-kg` to create `business-kg.db`.
+11. Run characterization test generation.
+12. Create migration rewrite workspace with deterministic Python setup.
 
 ## Error Handling
 

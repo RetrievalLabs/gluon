@@ -37,6 +37,19 @@ class GluonCli:
             str(self.paths.compatibility_report_output_dir),
         ]
 
+    def classify_models(self) -> list[str]:
+        return [
+            self.executable,
+            "code-parser",
+            "classify-models",
+            "--build-report",
+            str(self.paths.build_report),
+            "--source-path",
+            str(self.paths.repo),
+            "--output-dir",
+            str(self.paths.model_classification_report_output_dir),
+        ]
+
     def extract_business(self) -> list[str]:
         return [
             self.executable,
