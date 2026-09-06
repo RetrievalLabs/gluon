@@ -18,6 +18,7 @@ A Rust-based CLI tool for parsing Java build metadata.
 - `src/languages/java/build/resolver/gradle.rs` - Gradle resolution commands and output parsing.
 - `src/languages/java/business/` - Java business logic extraction, JDTLS semantic enrichment, candidate scoring, and SQLite extraction storage.
 - `src/languages/java/business/classifier.rs` - Java model, DTO, request/response body, repository, entity, table, and column classification report generation from build reports, symbol registry, tree-sitter, and JDTLS.
+- `src/languages/java/configuration.rs` - Java application configuration discovery and classification from build reports and curated configuration rules.
 - `src/languages/java/business/tree_sitter.rs` - tree-sitter Java structural extraction for classes, methods, annotations, entry points, and call sites.
 - `src/languages/java/business/jdtls.rs` - required Eclipse JDTLS LSP client for semantic definitions and references.
 - `src/languages/java/business/modules.rs` - Maven and Gradle module ownership from build reports or source-tree discovery.

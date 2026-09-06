@@ -1,0 +1,337 @@
+schema_version: 1
+description: >
+  Java application configuration classification rules. This inventory is scoped
+  to runtime and application behavior, not build, container, orchestration, or
+  deployment configuration.
+ignored_file_names:
+  - pom.xml
+  - build.gradle
+  - build.gradle.kts
+  - settings.gradle
+  - settings.gradle.kts
+  - gradle.properties
+  - Dockerfile
+  - docker-compose.yml
+  - docker-compose.yaml
+ignored_path_prefixes:
+  - .git/
+  - .gradle/
+  - target/
+  - build/
+  - k8s/
+  - kubernetes/
+  - helm/
+  - charts/
+secret_key_patterns:
+  - password
+  - passwd
+  - secret
+  - token
+  - api-key
+  - apikey
+  - private-key
+  - credential
+  - access-key
+  - client-secret
+  - authorization
+rules:
+  - id: spring-boot-application
+    type: APPLICATION
+    framework: spring-boot
+    file_name_patterns:
+      - '^application(-[A-Za-z0-9_.-]+)?\.(properties|ya?ml)$'
+      - '^bootstrap(-[A-Za-z0-9_.-]+)?\.(properties|ya?ml)$'
+    property_prefixes:
+      - server.
+      - spring.
+      - management.
+      - logging.
+    categories:
+      - APPLICATION
+      - FRAMEWORK
+    dependency_hints:
+      - artifact_id_pattern: '^spring-boot-starter'
+      - group_id: org.springframework
+
+  - id: spring-database
+    type: DATABASE
+    framework: spring-boot
+    property_prefixes:
+      - spring.datasource.
+      - spring.jpa.
+      - spring.r2dbc.
+      - spring.flyway.
+      - spring.liquibase.
+    categories:
+      - DATABASE
+      - PERSISTENCE
+    dependency_hints:
+      - artifact_id: spring-boot-starter-data-jpa
+      - artifact_id: spring-boot-starter-jdbc
+      - artifact_id: spring-boot-starter-data-r2dbc
+      - group_id_pattern: '^org\.hibernate'
+      - artifact_id_pattern: 'flyway|liquibase|jdbc|r2dbc'
+
+  - id: messaging
+    type: MESSAGING
+    property_prefixes:
+      - spring.kafka.
+      - kafka.
+      - spring.rabbitmq.
+      - spring.amqp.
+      - rabbitmq.
+      - jms.
+      - spring.jms.
+      - activemq.
+      - artemis.
+      - pulsar.
+      - spring.pulsar.
+    categories:
+      - MESSAGING
+    dependency_hints:
+      - artifact_id_pattern: 'kafka|rabbit|amqp|jms|activemq|artemis|pulsar'
+
+  - id: security
+    type: SECURITY
+    file_name_patterns:
+      - '^(spring-)?security\.xml$'
+      - '^oauth.*\.properties$'
+    property_prefixes:
+      - spring.security.
+      - security.
+      - oauth.
+      - oauth2.
+      - jwt.
+      - saml.
+      - ldap.
+      - spring.ldap.
+    categories:
+      - SECURITY
+    dependency_hints:
+      - artifact_id_pattern: 'security|oauth|ldap|jwt|saml'
+
+  - id: logging
+    type: LOGGING
+    file_names:
+      - logback.xml
+      - logback-spring.xml
+      - log4j.properties
+      - log4j.xml
+      - log4j2.xml
+      - log4j2.properties
+      - log4j2.yaml
+      - log4j2.yml
+      - log4j2.json
+      - logging.properties
+    property_prefixes:
+      - logging.
+      - log4j.
+      - log4j2.
+    categories:
+      - LOGGING
+    dependency_hints:
+      - artifact_id_pattern: 'logback|log4j|slf4j|jul'
+
+  - id: spring-xml
+    type: FRAMEWORK
+    framework: spring
+    file_name_patterns:
+      - '^application-?context\.xml$'
+      - '^beans\.xml$'
+      - '^spring\.xml$'
+      - '.*-(context|beans|spring)\.xml$'
+      - '^dispatcher-servlet\.xml$'
+    xml_namespaces:
+      - springframework.org/schema/beans
+      - springframework.org/schema/context
+      - springframework.org/schema/mvc
+      - springframework.org/schema/tx
+    categories:
+      - FRAMEWORK
+    dependency_hints:
+      - group_id: org.springframework
+
+  - id: servlet-web
+    type: FRAMEWORK
+    framework: servlet
+    file_names:
+      - web.xml
+    xml_roots:
+      - web-app
+    categories:
+      - FRAMEWORK
+      - NETWORK
+      - SECURITY
+    dependency_hints:
+      - artifact_id_pattern: 'servlet|tomcat|jetty'
+
+  - id: java-ee-descriptors
+    type: APPLICATION_SERVER
+    framework: jakarta-ee
+    file_names:
+      - beans.xml
+      - ejb-jar.xml
+      - application.xml
+      - application-client.xml
+      - persistence.xml
+      - weblogic.xml
+      - weblogic-application.xml
+      - jboss-web.xml
+      - jboss-ejb3.xml
+      - jboss-deployment-structure.xml
+      - glassfish-web.xml
+      - sun-web.xml
+      - context.xml
+      - server.xml
+    categories:
+      - APPLICATION_SERVER
+      - FRAMEWORK
+    dependency_hints:
+      - group_id_pattern: 'jakarta\.|javax\.'
+      - artifact_id_pattern: 'jakarta|javax|jboss|wildfly|weblogic|glassfish|payara|tomcat|jetty'
+
+  - id: persistence
+    type: PERSISTENCE
+    framework: jpa-hibernate
+    file_names:
+      - persistence.xml
+      - hibernate.cfg.xml
+      - hibernate.properties
+    file_name_patterns:
+      - '.*\.hbm\.xml$'
+    property_prefixes:
+      - jakarta.persistence.
+      - javax.persistence.
+      - hibernate.
+      - jdbc.
+      - datasource.
+      - db.
+      - database.
+    categories:
+      - PERSISTENCE
+      - DATABASE
+    dependency_hints:
+      - group_id_pattern: '^org\.hibernate'
+      - artifact_id_pattern: 'persistence|hibernate|jdbc'
+
+  - id: migrations
+    type: DATABASE
+    file_name_patterns:
+      - '^db\.changelog.*\.(xml|ya?ml|json)$'
+      - '.*\.changelog\.xml$'
+      - '^V[0-9].*__.*\.sql$'
+    path_patterns:
+      - '(^|/)db/migration/'
+    property_prefixes:
+      - flyway.
+      - spring.flyway.
+      - liquibase.
+      - spring.liquibase.
+    categories:
+      - DATABASE
+      - PERSISTENCE
+    dependency_hints:
+      - artifact_id_pattern: 'flyway|liquibase'
+
+  - id: cache
+    type: CACHE
+    file_names:
+      - ehcache.xml
+      - hazelcast.xml
+      - hazelcast.yaml
+      - hazelcast.yml
+      - infinispan.xml
+    property_prefixes:
+      - spring.cache.
+      - cache.
+      - ehcache.
+      - caffeine.
+      - hazelcast.
+      - infinispan.
+      - spring.data.redis.
+      - spring.redis.
+      - redis.
+    categories:
+      - CACHE
+    dependency_hints:
+      - artifact_id_pattern: 'cache|ehcache|caffeine|hazelcast|infinispan|redis|jedis|lettuce'
+
+  - id: external-services
+    type: EXTERNAL_SERVICE
+    property_prefixes:
+      - endpoint
+      - base-url
+      - api-url
+      - url
+      - connect-timeout
+      - read-timeout
+      - proxy.
+      - http.proxy
+      - https.proxy
+    categories:
+      - EXTERNAL_SERVICE
+      - NETWORK
+    dependency_hints:
+      - artifact_id_pattern: 'web|http|feign|okhttp|grpc|jaxrs|resteasy|jersey'
+
+  - id: contracts
+    type: CONTRACT
+    file_name_patterns:
+      - '.*\.(graphql|graphqls|proto|avsc|avdl|avpr|wsdl|xsd)$'
+    categories:
+      - CONTRACT
+      - SERIALIZATION
+    dependency_hints:
+      - artifact_id_pattern: 'graphql|protobuf|grpc|avro|jaxws|wsdl|jackson'
+
+  - id: scheduling
+    type: SCHEDULING
+    file_names:
+      - quartz.properties
+    property_prefixes:
+      - quartz.
+      - org.quartz.
+      - spring.task.scheduling.
+      - scheduler.
+      - cron.
+    categories:
+      - SCHEDULING
+    dependency_hints:
+      - artifact_id_pattern: 'quartz|scheduler'
+
+  - id: framework-specific
+    type: FRAMEWORK
+    property_prefixes:
+      - micronaut.
+      - datasources.
+      - quarkus.
+      - vertx.
+      - netty.
+      - spring.graphql.
+      - spring.jackson.
+      - jackson.
+      - transaction.
+      - spring.transaction.
+      - jta.
+      - xa.
+      - ssl.
+      - tls.
+      - server.ssl.
+      - javax.net.ssl.
+      - feature.
+      - features.
+      - toggle.
+      - flag.
+    categories:
+      - FRAMEWORK
+    dependency_hints:
+      - group_id_pattern: 'io\.micronaut|io\.quarkus|io\.vertx|io\.netty'
+      - artifact_id_pattern: 'graphql|jackson|transaction|jta|narayana|atomikos|bitronix'
+
+  - id: dotenv
+    type: ENVIRONMENT
+    file_name_patterns:
+      - '^\.env(\.[A-Za-z0-9_.-]+)?$'
+    categories:
+      - ENVIRONMENT
+

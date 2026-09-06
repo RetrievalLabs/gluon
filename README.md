@@ -246,6 +246,11 @@ entities, tables, and columns. Dependency data comes from `build-report.json`,
 but only dependencies used as classification evidence are included in the
 report.
 
+`code-parser classify-configs` writes
+`configuration-classification-report.json`. The report is nested by module and
+classifies Java application/runtime configuration files while ignoring build,
+container, orchestration, deployment, and Java toolchain configuration.
+
 ---
 
 ## 4.6 Business Logic Extraction

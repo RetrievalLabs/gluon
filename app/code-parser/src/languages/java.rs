@@ -5,6 +5,7 @@ use crate::languages::{LanguageParser, ParseOptions};
 pub mod build;
 pub mod business;
 pub mod compatibility;
+pub mod configuration;
 
 pub struct JavaLanguageParser;
 

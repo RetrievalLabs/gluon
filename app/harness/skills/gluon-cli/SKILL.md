@@ -143,6 +143,33 @@ Example:
 gluon-cli code-parser classify-models --build-report /path/to/gluon/data/project/build-report.json --output-dir /path/to/gluon/data
 ```
 
+### `code-parser classify-configs`
+
+Generates a JSON report classifying Java application/runtime configuration
+files and links them to direct dependencies from `build-report.json`.
+
+Required input:
+
+- `--build-report <build-report.json>`: build report produced by `parse-build`; supplies project root, module boundaries, and dependency context.
+- `--output-dir <directory>`: writes `<directory>/<project-directory-name>/configuration-classification-report.json`.
+
+Flags:
+
+- `--source-path <project-root>`: override `project_root` from `build-report.json`.
+
+Outputs:
+
+- Nested module JSON report with classified configuration files, extracted properties, profiles, scope, evidence, and linked dependencies.
+- Build, container, orchestration, deployment, and Java toolchain configuration are ignored.
+- Secret-looking literal values are not emitted; secret references include only key and reference metadata.
+- The command loads bundled rules at `data/java/configuration_classification.yaml`; no rule path flag is required.
+
+Example:
+
+```bash
+gluon-cli code-parser classify-configs --build-report /path/to/gluon/data/project/build-report.json --output-dir /path/to/gluon/data
+```
+
 ### `code-parser extract-business`
 
 Extracts Java business logic structure into a SQLite database.

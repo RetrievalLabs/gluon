@@ -17,6 +17,9 @@ use crate::languages::java::business::{
 };
 use crate::languages::java::compatibility::analyzer::analyze_report_with_options;
 use crate::languages::java::compatibility::jdk_tools::{DEFAULT_JDK_ROOT, JdkToolOptions};
+use crate::languages::java::configuration::{
+    ClassifyConfigsError, ClassifyConfigsOptions, classify_configs,
+};
 use rusqlite::{Connection, params_from_iter, types::ValueRef};
 use serde_json::{Value, json};
 
@@ -25,6 +28,7 @@ enum CliOptions {
     ParseBuild(ParseBuildOptions),
     AnalyzeReport(AnalyzeReportOptions),
     ClassifyModels(ClassifyModelsCliOptions),
+    ClassifyConfigs(ClassifyConfigsCliOptions),
     ExtractBusiness(ExtractBusinessOptions),
     ExtractTests(ExtractTestsOptions),
     BuildBusinessKg(BuildBusinessKgCliOptions),
@@ -62,6 +66,13 @@ struct ClassifyModelsCliOptions {
     jdtls_command: String,
     jdtls_workspace: Option<PathBuf>,
     jdtls_max_in_flight: usize,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ClassifyConfigsCliOptions {
+    build_report: PathBuf,
+    output_dir: PathBuf,
+    source_path: Option<PathBuf>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -181,6 +192,7 @@ where
         },
         Ok(CliOptions::AnalyzeReport(options)) => run_analyze_report(options),
         Ok(CliOptions::ClassifyModels(options)) => run_classify_models(options),
+        Ok(CliOptions::ClassifyConfigs(options)) => run_classify_configs(options),
         Ok(CliOptions::ExtractBusiness(options)) => run_extract_business(options),
         Ok(CliOptions::ExtractTests(options)) => run_extract_tests(options),
         Ok(CliOptions::BuildBusinessKg(options)) => run_build_business_kg(options),
@@ -213,6 +225,7 @@ where
         "parse-build" => parse_parse_build_args(args).map(CliOptions::ParseBuild),
         "analyze-report" => parse_analyze_report_args(args).map(CliOptions::AnalyzeReport),
         "classify-models" => parse_classify_models_args(args).map(CliOptions::ClassifyModels),
+        "classify-configs" => parse_classify_configs_args(args).map(CliOptions::ClassifyConfigs),
         "extract-business" => parse_extract_business_args(args).map(CliOptions::ExtractBusiness),
         "extract-tests" => parse_extract_tests_args(args).map(CliOptions::ExtractTests),
         "build-business-kg" => parse_build_business_kg_args(args).map(CliOptions::BuildBusinessKg),
@@ -410,6 +423,39 @@ fn parse_classify_models_args(
         jdtls_command,
         jdtls_workspace,
         jdtls_max_in_flight,
+    })
+}
+
+fn parse_classify_configs_args(
+    mut args: impl Iterator<Item = String>,
+) -> Result<ClassifyConfigsCliOptions, String> {
+    let mut build_report = None;
+    let mut output_dir = None;
+    let mut source_path = None;
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--build-report" => {
+                let value = args.next().ok_or("--build-report requires a value")?;
+                build_report = Some(PathBuf::from(value));
+            }
+            "--output-dir" => {
+                let value = args.next().ok_or("--output-dir requires a value")?;
+                output_dir = Some(PathBuf::from(value));
+            }
+            "--source-path" => {
+                let value = args.next().ok_or("--source-path requires a value")?;
+                source_path = Some(PathBuf::from(value));
+            }
+            "--help" | "-h" => return Err("help requested".to_string()),
+            other => return Err(format!("unsupported argument: {other}")),
+        }
+    }
+
+    Ok(ClassifyConfigsCliOptions {
+        build_report: build_report.ok_or("missing required --build-report")?,
+        output_dir: output_dir.ok_or("missing required --output-dir")?,
+        source_path,
     })
 }
 
@@ -988,6 +1034,35 @@ fn run_classify_models(options: ClassifyModelsCliOptions) -> i32 {
     }
 }
 
+fn run_classify_configs(options: ClassifyConfigsCliOptions) -> i32 {
+    let classify_options = ClassifyConfigsOptions {
+        build_report: options.build_report,
+        output_dir: options.output_dir,
+        source_path: options.source_path,
+    };
+
+    match classify_configs(&classify_options) {
+        Ok(summary) => {
+            println!("report: {}", summary.report_path);
+            println!("modules: {}", summary.module_count);
+            println!("configuration_files: {}", summary.configuration_file_count);
+            println!("properties: {}", summary.property_count);
+            println!("linked_dependencies: {}", summary.linked_dependency_count);
+            println!("diagnostics: {}", summary.diagnostic_count);
+            0
+        }
+        Err(error) => {
+            let error_text = error.to_string();
+            command_failed("classify-configs", &error_text);
+            if is_classify_configs_usage_error(&error) {
+                2
+            } else {
+                1
+            }
+        }
+    }
+}
+
 fn extract_business_continue_command(options: &ExtractBusinessOptions) -> String {
     let mut parts = vec![
         "code-parser".to_string(),
@@ -1444,7 +1519,7 @@ fn hex_string(value: &[u8]) -> String {
 
 fn print_usage() {
     eprintln!(
-        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser classify-models --build-report <build-report.json> --output-dir <directory> [--source-path <project-root>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--build-report <build-report.json>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--continue]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]\n       code-parser generate-characterization-tests --business-database <business-extraction.db> --kg-database <business-kg.db> --source-path <legacy-project-root> --output-dir <gluon-output-dir> [--max-behaviors <count>] [--node-kind BusinessRule|Workflow|Invariant|StateTransition|SideEffect] [--continue] [--force]\n       code-parser db tables --database <database.db>\n       code-parser db schema --database <database.db> [--table <table>]\n       code-parser db rows --database <database.db> --table <table> [--limit <1-100>] [--offset <count>]\n       code-parser db insert --database <database.db> --table <table> --set <column=value> [--set <column=value> ...]\n       code-parser db update --database <database.db> --table <table> --id-column <column> --id <value> --set <column=value> [--set <column=value> ...]"
+        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser classify-models --build-report <build-report.json> --output-dir <directory> [--source-path <project-root>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser classify-configs --build-report <build-report.json> --output-dir <directory> [--source-path <project-root>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--build-report <build-report.json>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--continue]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]\n       code-parser generate-characterization-tests --business-database <business-extraction.db> --kg-database <business-kg.db> --source-path <legacy-project-root> --output-dir <gluon-output-dir> [--max-behaviors <count>] [--node-kind BusinessRule|Workflow|Invariant|StateTransition|SideEffect] [--continue] [--force]\n       code-parser db tables --database <database.db>\n       code-parser db schema --database <database.db> [--table <table>]\n       code-parser db rows --database <database.db> --table <table> [--limit <1-100>] [--offset <count>]\n       code-parser db insert --database <database.db> --table <table> --set <column=value> [--set <column=value> ...]\n       code-parser db update --database <database.db> --table <table> --id-column <column> --id <value> --set <column=value> [--set <column=value> ...]"
     );
 }
 
@@ -1550,6 +1625,13 @@ fn is_business_extraction_usage_error(error: &BusinessExtractionError) -> bool {
         | BusinessExtractionError::Checkpoint(_)
         | BusinessExtractionError::Parser(_) => false,
         BusinessExtractionError::Database(error) => is_database_usage_error(error),
+    }
+}
+
+fn is_classify_configs_usage_error(error: &ClassifyConfigsError) -> bool {
+    match error {
+        ClassifyConfigsError::Path(error) => is_path_usage_error(error),
+        ClassifyConfigsError::File(_) | ClassifyConfigsError::Parser(_) => true,
     }
 }
 
@@ -1826,6 +1908,30 @@ mod tests {
                 jdtls_command: "/bin/jdtls".to_string(),
                 jdtls_workspace: Some(PathBuf::from("workspace")),
                 jdtls_max_in_flight: 12,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_classify_configs_arguments() {
+        let options = parse_args([
+            "code-parser",
+            "classify-configs",
+            "--build-report",
+            "build-report.json",
+            "--output-dir",
+            "data",
+            "--source-path",
+            "project",
+        ])
+        .expect("valid arguments");
+
+        assert_eq!(
+            options,
+            CliOptions::ClassifyConfigs(ClassifyConfigsCliOptions {
+                build_report: PathBuf::from("build-report.json"),
+                output_dir: PathBuf::from("data"),
+                source_path: Some(PathBuf::from("project")),
             })
         );
     }

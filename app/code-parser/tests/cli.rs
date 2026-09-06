@@ -669,6 +669,83 @@ fn classify_models_writes_nested_report_with_used_dependencies() {
 }
 
 #[test]
+fn classify_configs_writes_nested_report_and_ignores_build_configuration() {
+    let root = test_dir("classify-configs-project");
+    fs::create_dir_all(root.join("service/src/main/resources")).unwrap();
+    fs::write(root.join("service/pom.xml"), "<project/>").unwrap();
+    fs::write(root.join("service/build.gradle"), "plugins { id 'java' }").unwrap();
+    fs::write(root.join("service/Dockerfile"), "FROM eclipse-temurin:25").unwrap();
+    fs::write(
+        root.join("service/src/main/resources/application-prod.yml"),
+        r#"
+        spring:
+          datasource:
+            url: jdbc:postgresql://localhost/app
+            password: ${DB_PASSWORD}
+          kafka:
+            bootstrap-servers: localhost:9092
+        payment:
+          base-url: https://payment.internal
+        "#,
+    )
+    .unwrap();
+    let report_path = root.join("build-report.json");
+    fs::write(
+        &report_path,
+        format!(
+            r#"{{
+              "project_root":"{}",
+              "parent":{{"name":"parent","path":".","build_tools":[],"java_versions":[],"direct_dependencies":[{{"group_id":"org.unused","artifact_id":"unused-lib","version":"1.0","configuration":null,"scope":null,"file":"pom.xml","source":"test"}}],"direct_plugins":[]}},
+              "modules":[{{"name":"service","path":"service","build_tools":[],"java_versions":[],"direct_dependencies":[{{"group_id":"org.springframework.boot","artifact_id":"spring-boot-starter-data-jpa","version":"3.3.0","configuration":null,"scope":null,"file":"service/pom.xml","source":"test"}},{{"group_id":"org.springframework.kafka","artifact_id":"spring-kafka","version":"3.2.0","configuration":null,"scope":null,"file":"service/pom.xml","source":"test"}}],"direct_plugins":[]}}],
+              "diagnostics":[]
+            }}"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+    let output_root = test_dir("classify-configs-output");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["classify-configs", "--build-report"])
+        .arg(&report_path)
+        .args(["--output-dir"])
+        .arg(&output_root)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let report_file = output_root
+        .join(root.file_name().unwrap())
+        .join("configuration-classification-report.json");
+    let value: Value = serde_json::from_str(&fs::read_to_string(&report_file).unwrap()).unwrap();
+    let service = &value["modules"][0]["children"][0];
+    assert_eq!(service["path"], "service");
+    let files = service["configuration_files"].as_array().unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(
+        files[0]["path"],
+        "service/src/main/resources/application-prod.yml"
+    );
+    assert_eq!(files[0]["profile"], "prod");
+    assert_eq!(
+        files[0]["properties"][1]["value_kind"],
+        "ENVIRONMENT_REFERENCE"
+    );
+    assert_eq!(files[0]["properties"][1]["reference"], "DB_PASSWORD");
+    assert_eq!(files[0]["properties"][1]["sensitivity"], "secret");
+    let dependencies = service["used_dependencies"].as_array().unwrap();
+    assert_eq!(dependencies.len(), 2);
+    assert!(
+        !serde_json::to_string(dependencies)
+            .unwrap()
+            .contains("unused-lib")
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains(&report_file.display().to_string()));
+    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_dir_all(output_root);
+}
+
+#[test]
 fn analyze_report_rejects_missing_report() {
     let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
         .args([
