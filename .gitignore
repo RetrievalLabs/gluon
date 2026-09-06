@@ -17,7 +17,7 @@ bin/
 .env.*
 !.env.example
 
-data/
+/data/
 
 .claude
 .codex

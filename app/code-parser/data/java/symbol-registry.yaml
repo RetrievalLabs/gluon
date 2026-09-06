@@ -1,0 +1,1220 @@
+schema_version: 1
+
+# ============================================================
+# SPRING MVC
+# ============================================================
+
+spring_mvc:
+  symbols:
+    # Controllers
+    - org.springframework.stereotype.Controller
+    - org.springframework.web.bind.annotation.RestController
+
+    # Routing
+    - org.springframework.web.bind.annotation.RequestMapping
+    - org.springframework.web.bind.annotation.GetMapping
+    - org.springframework.web.bind.annotation.PostMapping
+    - org.springframework.web.bind.annotation.PutMapping
+    - org.springframework.web.bind.annotation.PatchMapping
+    - org.springframework.web.bind.annotation.DeleteMapping
+
+    # Request
+    - org.springframework.web.bind.annotation.RequestBody
+    - org.springframework.web.bind.annotation.RequestParam
+    - org.springframework.web.bind.annotation.PathVariable
+    - org.springframework.web.bind.annotation.RequestHeader
+    - org.springframework.web.bind.annotation.CookieValue
+    - org.springframework.web.bind.annotation.RequestPart
+    - org.springframework.web.multipart.MultipartFile
+    - jakarta.servlet.http.HttpServletRequest
+    - javax.servlet.http.HttpServletRequest
+
+    # Response
+    - org.springframework.web.bind.annotation.ResponseBody
+    - org.springframework.http.ResponseEntity
+    - org.springframework.http.HttpEntity
+    - jakarta.servlet.http.HttpServletResponse
+    - javax.servlet.http.HttpServletResponse
+
+
+# ============================================================
+# SPRING WEBFLUX
+# ============================================================
+
+spring_webflux:
+  symbols:
+    # Reactive types
+    - reactor.core.publisher.Mono
+    - reactor.core.publisher.Flux
+    - org.reactivestreams.Publisher
+
+    # Functional routing
+    - org.springframework.web.reactive.function.server.RouterFunction
+    - org.springframework.web.reactive.function.server.RouterFunctions
+    - org.springframework.web.reactive.function.server.RequestPredicate
+    - org.springframework.web.reactive.function.server.RequestPredicates
+
+    # Request / response
+    - org.springframework.web.reactive.function.server.ServerRequest
+    - org.springframework.web.reactive.function.server.ServerResponse
+    - org.springframework.web.reactive.function.BodyExtractors
+    - org.springframework.web.reactive.function.BodyInserters
+
+    # Outbound HTTP
+    - org.springframework.web.reactive.function.client.WebClient
+
+
+# ============================================================
+# SPRING DATA COMMONS
+# ============================================================
+
+spring_data:
+  symbols:
+    - org.springframework.data.repository.Repository
+    - org.springframework.data.repository.CrudRepository
+    - org.springframework.data.repository.ListCrudRepository
+    - org.springframework.data.repository.PagingAndSortingRepository
+    - org.springframework.data.repository.ListPagingAndSortingRepository
+    - org.springframework.data.repository.NoRepositoryBean
+    - org.springframework.data.repository.query.Param
+    - org.springframework.data.domain.Page
+    - org.springframework.data.domain.Pageable
+    - org.springframework.data.domain.Sort
+
+
+# ============================================================
+# SPRING DATA JPA
+# ============================================================
+
+spring_data_jpa:
+  symbols:
+    - org.springframework.data.jpa.repository.JpaRepository
+    - org.springframework.data.jpa.repository.JpaSpecificationExecutor
+    - org.springframework.data.jpa.repository.Query
+    - org.springframework.data.jpa.repository.Modifying
+    - org.springframework.data.jpa.repository.EntityGraph
+    - org.springframework.data.jpa.repository.Lock
+    - org.springframework.data.jpa.repository.QueryHints
+
+
+# ============================================================
+# JPA - JAKARTA
+# ============================================================
+
+jakarta_persistence:
+  symbol_prefixes:
+    - jakarta.persistence.
+
+  important_symbols:
+    - jakarta.persistence.Entity
+    - jakarta.persistence.Table
+    - jakarta.persistence.Column
+    - jakarta.persistence.Id
+    - jakarta.persistence.GeneratedValue
+
+    - jakarta.persistence.Embeddable
+    - jakarta.persistence.Embedded
+    - jakarta.persistence.EmbeddedId
+    - jakarta.persistence.MappedSuperclass
+
+    - jakarta.persistence.OneToOne
+    - jakarta.persistence.OneToMany
+    - jakarta.persistence.ManyToOne
+    - jakarta.persistence.ManyToMany
+
+    - jakarta.persistence.JoinColumn
+    - jakarta.persistence.JoinColumns
+    - jakarta.persistence.JoinTable
+
+    - jakarta.persistence.ElementCollection
+    - jakarta.persistence.CollectionTable
+
+    - jakarta.persistence.Inheritance
+    - jakarta.persistence.DiscriminatorColumn
+    - jakarta.persistence.DiscriminatorValue
+    - jakarta.persistence.SecondaryTable
+
+    - jakarta.persistence.EntityManager
+    - jakarta.persistence.EntityManagerFactory
+    - jakarta.persistence.Query
+    - jakarta.persistence.TypedQuery
+    - jakarta.persistence.Persistence
+
+
+# ============================================================
+# LEGACY JPA
+# ============================================================
+
+javax_persistence:
+  symbol_prefixes:
+    - javax.persistence.
+
+  important_symbols:
+    - javax.persistence.Entity
+    - javax.persistence.Table
+    - javax.persistence.Column
+    - javax.persistence.Id
+    - javax.persistence.GeneratedValue
+
+    - javax.persistence.Embeddable
+    - javax.persistence.Embedded
+    - javax.persistence.EmbeddedId
+    - javax.persistence.MappedSuperclass
+
+    - javax.persistence.OneToOne
+    - javax.persistence.OneToMany
+    - javax.persistence.ManyToOne
+    - javax.persistence.ManyToMany
+
+    - javax.persistence.JoinColumn
+    - javax.persistence.JoinTable
+
+    - javax.persistence.EntityManager
+    - javax.persistence.EntityManagerFactory
+    - javax.persistence.Query
+    - javax.persistence.TypedQuery
+    - javax.persistence.Persistence
+
+
+# ============================================================
+# HIBERNATE
+# ============================================================
+
+hibernate:
+  symbol_prefixes:
+    - org.hibernate.
+
+  important_symbols:
+    - org.hibernate.Session
+    - org.hibernate.SessionFactory
+    - org.hibernate.Transaction
+    - org.hibernate.query.Query
+    - org.hibernate.annotations.Type
+    - org.hibernate.annotations.CreationTimestamp
+    - org.hibernate.annotations.UpdateTimestamp
+
+
+# ============================================================
+# JDBC
+# ============================================================
+
+jdbc:
+  symbols:
+    - java.sql.Connection
+    - java.sql.Statement
+    - java.sql.PreparedStatement
+    - java.sql.CallableStatement
+    - java.sql.ResultSet
+    - java.sql.Driver
+    - java.sql.DriverManager
+    - java.sql.DatabaseMetaData
+    - java.sql.ResultSetMetaData
+
+    - javax.sql.DataSource
+    - javax.sql.ConnectionPoolDataSource
+    - javax.sql.XADataSource
+
+
+# ============================================================
+# SPRING JDBC
+# ============================================================
+
+spring_jdbc:
+  symbols:
+    - org.springframework.jdbc.core.JdbcTemplate
+    - org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
+    - org.springframework.jdbc.core.RowMapper
+    - org.springframework.jdbc.core.ResultSetExtractor
+    - org.springframework.jdbc.core.PreparedStatementCreator
+    - org.springframework.jdbc.core.simple.JdbcClient
+
+
+# ============================================================
+# JAKARTA REST / JAX-RS
+# ============================================================
+
+jakarta_rest:
+  symbols:
+    - jakarta.ws.rs.Path
+    - jakarta.ws.rs.GET
+    - jakarta.ws.rs.POST
+    - jakarta.ws.rs.PUT
+    - jakarta.ws.rs.PATCH
+    - jakarta.ws.rs.DELETE
+    - jakarta.ws.rs.HEAD
+    - jakarta.ws.rs.OPTIONS
+
+    - jakarta.ws.rs.Consumes
+    - jakarta.ws.rs.Produces
+
+    - jakarta.ws.rs.PathParam
+    - jakarta.ws.rs.QueryParam
+    - jakarta.ws.rs.HeaderParam
+    - jakarta.ws.rs.CookieParam
+    - jakarta.ws.rs.FormParam
+
+    - jakarta.ws.rs.core.Response
+    - jakarta.ws.rs.core.Request
+    - jakarta.ws.rs.core.HttpHeaders
+    - jakarta.ws.rs.core.UriInfo
+
+
+# ============================================================
+# LEGACY JAX-RS
+# ============================================================
+
+javax_rest:
+  symbol_prefixes:
+    - javax.ws.rs.
+
+  important_symbols:
+    - javax.ws.rs.Path
+    - javax.ws.rs.GET
+    - javax.ws.rs.POST
+    - javax.ws.rs.PUT
+    - javax.ws.rs.DELETE
+    - javax.ws.rs.Consumes
+    - javax.ws.rs.Produces
+    - javax.ws.rs.core.Response
+
+
+# ============================================================
+# SERVLET
+# ============================================================
+
+jakarta_servlet:
+  symbols:
+    - jakarta.servlet.Servlet
+    - jakarta.servlet.GenericServlet
+    - jakarta.servlet.ServletRequest
+    - jakarta.servlet.ServletResponse
+    - jakarta.servlet.ServletInputStream
+    - jakarta.servlet.ServletOutputStream
+
+    - jakarta.servlet.http.HttpServlet
+    - jakarta.servlet.http.HttpServletRequest
+    - jakarta.servlet.http.HttpServletResponse
+
+    - jakarta.servlet.annotation.WebServlet
+    - jakarta.servlet.annotation.WebFilter
+    - jakarta.servlet.annotation.WebListener
+
+legacy_servlet:
+  symbol_prefixes:
+    - javax.servlet.
+
+
+# ============================================================
+# JDK HTTP SERVER
+# ============================================================
+
+jdk_http:
+  symbols:
+    - com.sun.net.httpserver.HttpServer
+    - com.sun.net.httpserver.HttpsServer
+    - com.sun.net.httpserver.HttpHandler
+    - com.sun.net.httpserver.HttpExchange
+    - com.sun.net.httpserver.HttpsExchange
+
+
+# ============================================================
+# JACKSON
+# ============================================================
+
+jackson:
+  symbols:
+    - com.fasterxml.jackson.databind.ObjectMapper
+    - com.fasterxml.jackson.databind.JsonNode
+    - com.fasterxml.jackson.core.JsonParser
+    - com.fasterxml.jackson.core.JsonGenerator
+
+    - com.fasterxml.jackson.annotation.JsonProperty
+    - com.fasterxml.jackson.annotation.JsonCreator
+    - com.fasterxml.jackson.annotation.JsonIgnore
+    - com.fasterxml.jackson.annotation.JsonIgnoreProperties
+    - com.fasterxml.jackson.annotation.JsonTypeInfo
+    - com.fasterxml.jackson.annotation.JsonSubTypes
+
+
+# ============================================================
+# GSON
+# ============================================================
+
+gson:
+  symbols:
+    - com.google.gson.Gson
+    - com.google.gson.GsonBuilder
+    - com.google.gson.JsonObject
+    - com.google.gson.JsonElement
+    - com.google.gson.annotations.SerializedName
+
+
+# ============================================================
+# SPRING KAFKA
+# ============================================================
+
+spring_kafka:
+  symbols:
+    - org.springframework.kafka.core.KafkaTemplate
+    - org.springframework.kafka.annotation.KafkaListener
+    - org.springframework.kafka.annotation.KafkaHandler
+    - org.springframework.kafka.support.SendResult
+
+
+# ============================================================
+# APACHE KAFKA
+# ============================================================
+
+kafka:
+  symbols:
+    - org.apache.kafka.clients.producer.KafkaProducer
+    - org.apache.kafka.clients.producer.Producer
+    - org.apache.kafka.clients.producer.ProducerRecord
+
+    - org.apache.kafka.clients.consumer.KafkaConsumer
+    - org.apache.kafka.clients.consumer.Consumer
+    - org.apache.kafka.clients.consumer.ConsumerRecord
+    - org.apache.kafka.clients.consumer.ConsumerRecords
+
+
+# ============================================================
+# JMS
+# ============================================================
+
+jakarta_jms:
+  symbol_prefixes:
+    - jakarta.jms.
+
+  important_symbols:
+    - jakarta.jms.Message
+    - jakarta.jms.TextMessage
+    - jakarta.jms.ObjectMessage
+    - jakarta.jms.BytesMessage
+    - jakarta.jms.JMSContext
+    - jakarta.jms.JMSProducer
+    - jakarta.jms.JMSConsumer
+    - jakarta.jms.Queue
+    - jakarta.jms.Topic
+
+javax_jms:
+  symbol_prefixes:
+    - javax.jms.
+
+
+# ============================================================
+# SPRING JMS
+# ============================================================
+
+spring_jms:
+  symbols:
+    - org.springframework.jms.core.JmsTemplate
+    - org.springframework.jms.annotation.JmsListener
+
+
+# ============================================================
+# gRPC
+# ============================================================
+
+grpc:
+  symbol_prefixes:
+    - io.grpc.
+
+  important_symbols:
+    - io.grpc.Server
+    - io.grpc.ServerBuilder
+    - io.grpc.ManagedChannel
+    - io.grpc.ManagedChannelBuilder
+    - io.grpc.stub.StreamObserver
+    - io.grpc.BindableService
+
+
+# ============================================================
+# JAVA RMI
+# ============================================================
+
+rmi:
+  symbols:
+    - java.rmi.Remote
+    - java.rmi.RemoteException
+    - java.rmi.registry.Registry
+    - java.rmi.registry.LocateRegistry
+    - java.rmi.server.UnicastRemoteObject
+
+
+# ============================================================
+# SPRING TRANSACTIONS
+# ============================================================
+
+spring_transactions:
+  symbols:
+    - org.springframework.transaction.annotation.Transactional
+    - org.springframework.transaction.PlatformTransactionManager
+    - org.springframework.transaction.TransactionManager
+    - org.springframework.transaction.support.TransactionTemplate
+
+
+# ============================================================
+# JAKARTA TRANSACTIONS / JTA
+# ============================================================
+
+jakarta_transactions:
+  symbols:
+    - jakarta.transaction.Transactional
+    - jakarta.transaction.UserTransaction
+    - jakarta.transaction.TransactionManager
+
+javax_transactions:
+  symbol_prefixes:
+    - javax.transaction.
+
+# ============================================================
+# MYBATIS
+# ============================================================
+
+mybatis:
+  symbol_prefixes:
+    - org.apache.ibatis.
+  important_symbols:
+    - org.apache.ibatis.annotations.Mapper
+    - org.apache.ibatis.annotations.Select
+    - org.apache.ibatis.annotations.Insert
+    - org.apache.ibatis.annotations.Update
+    - org.apache.ibatis.annotations.Delete
+    - org.apache.ibatis.annotations.SelectProvider
+    - org.apache.ibatis.annotations.InsertProvider
+    - org.apache.ibatis.annotations.UpdateProvider
+    - org.apache.ibatis.annotations.DeleteProvider
+    - org.apache.ibatis.annotations.Result
+    - org.apache.ibatis.annotations.Results
+    - org.apache.ibatis.annotations.Param
+    - org.apache.ibatis.session.SqlSession
+    - org.apache.ibatis.session.SqlSessionFactory
+
+
+# ============================================================
+# JOOQ
+# ============================================================
+
+jooq:
+  symbol_prefixes:
+    - org.jooq.
+  important_symbols:
+    - org.jooq.DSLContext
+    - org.jooq.Table
+    - org.jooq.Field
+    - org.jooq.Record
+    - org.jooq.Result
+    - org.jooq.Select
+    - org.jooq.Insert
+    - org.jooq.Update
+    - org.jooq.Delete
+    - org.jooq.Query
+    - org.jooq.Condition
+    - org.jooq.impl.DSL
+
+
+# ============================================================
+# SPRING DATA MONGODB
+# ============================================================
+
+spring_data_mongodb:
+  symbols:
+    - org.springframework.data.mongodb.core.mapping.Document
+    - org.springframework.data.mongodb.core.mapping.Field
+    - org.springframework.data.mongodb.core.mapping.MongoId
+    - org.springframework.data.annotation.Id
+    - org.springframework.data.mongodb.core.MongoTemplate
+    - org.springframework.data.mongodb.core.ReactiveMongoTemplate
+    - org.springframework.data.mongodb.repository.MongoRepository
+    - org.springframework.data.mongodb.repository.ReactiveMongoRepository
+    - org.springframework.data.mongodb.repository.Query
+
+
+# ============================================================
+# MONGODB JAVA DRIVER
+# ============================================================
+
+mongodb_driver:
+  symbol_prefixes:
+    - com.mongodb.
+    - org.bson.
+  important_symbols:
+    - com.mongodb.client.MongoClient
+    - com.mongodb.client.MongoClients
+    - com.mongodb.client.MongoDatabase
+    - com.mongodb.client.MongoCollection
+    - com.mongodb.client.FindIterable
+    - com.mongodb.client.MongoCursor
+    - com.mongodb.client.model.Filters
+    - com.mongodb.client.model.Updates
+    - com.mongodb.client.model.Indexes
+    - org.bson.Document
+    - org.bson.codecs.pojo.annotations.BsonProperty
+    - org.bson.codecs.pojo.annotations.BsonId
+
+
+# ============================================================
+# SPRING DATA R2DBC
+# ============================================================
+
+spring_data_r2dbc:
+  symbols:
+    - org.springframework.data.r2dbc.repository.R2dbcRepository
+    - org.springframework.data.r2dbc.repository.Query
+    - org.springframework.data.r2dbc.core.R2dbcEntityTemplate
+    - org.springframework.data.relational.core.mapping.Table
+    - org.springframework.data.relational.core.mapping.Column
+    - org.springframework.data.annotation.Id
+    - org.springframework.r2dbc.core.DatabaseClient
+
+
+# ============================================================
+# R2DBC SPI
+# ============================================================
+
+r2dbc:
+  symbol_prefixes:
+    - io.r2dbc.spi.
+  important_symbols:
+    - io.r2dbc.spi.ConnectionFactory
+    - io.r2dbc.spi.Connection
+    - io.r2dbc.spi.Statement
+    - io.r2dbc.spi.Result
+    - io.r2dbc.spi.Row
+    - io.r2dbc.spi.RowMetadata
+
+
+# ============================================================
+# SPRING DATA REDIS
+# ============================================================
+
+spring_data_redis:
+  symbols:
+    - org.springframework.data.redis.core.RedisTemplate
+    - org.springframework.data.redis.core.StringRedisTemplate
+    - org.springframework.data.redis.core.ReactiveRedisTemplate
+    - org.springframework.data.redis.core.RedisOperations
+    - org.springframework.data.redis.core.ValueOperations
+    - org.springframework.data.redis.core.HashOperations
+    - org.springframework.data.redis.core.ListOperations
+    - org.springframework.data.redis.core.SetOperations
+    - org.springframework.data.redis.core.ZSetOperations
+    - org.springframework.data.redis.core.RedisHash
+    - org.springframework.data.redis.repository.configuration.EnableRedisRepositories
+
+
+# ============================================================
+# LETTUCE
+# ============================================================
+
+lettuce:
+  symbol_prefixes:
+    - io.lettuce.core.
+  important_symbols:
+    - io.lettuce.core.RedisClient
+    - io.lettuce.core.RedisURI
+    - io.lettuce.core.api.StatefulRedisConnection
+    - io.lettuce.core.api.sync.RedisCommands
+    - io.lettuce.core.api.async.RedisAsyncCommands
+    - io.lettuce.core.api.reactive.RedisReactiveCommands
+
+
+# ============================================================
+# JEDIS
+# ============================================================
+
+jedis:
+  symbol_prefixes:
+    - redis.clients.jedis.
+  important_symbols:
+    - redis.clients.jedis.Jedis
+    - redis.clients.jedis.JedisPool
+    - redis.clients.jedis.JedisPooled
+    - redis.clients.jedis.UnifiedJedis
+    - redis.clients.jedis.Pipeline
+    - redis.clients.jedis.Transaction
+
+
+# ============================================================
+# SPRING HTTP CLIENTS
+# ============================================================
+
+spring_http_clients:
+  symbols:
+    - org.springframework.web.client.RestTemplate
+    - org.springframework.web.client.RestClient
+    - org.springframework.web.reactive.function.client.WebClient
+    - org.springframework.http.HttpEntity
+    - org.springframework.http.RequestEntity
+    - org.springframework.http.ResponseEntity
+
+
+# ============================================================
+# OPENFEIGN / SPRING CLOUD OPENFEIGN
+# ============================================================
+
+feign:
+  symbols:
+    - org.springframework.cloud.openfeign.FeignClient
+    - feign.Feign
+    - feign.RequestLine
+    - feign.Headers
+    - feign.Param
+    - feign.RequestInterceptor
+    - feign.Response
+
+
+# ============================================================
+# JAVA HTTP CLIENT
+# ============================================================
+
+java_http_client:
+  symbols:
+    - java.net.http.HttpClient
+    - java.net.http.HttpRequest
+    - java.net.http.HttpResponse
+    - java.net.http.WebSocket
+
+
+# ============================================================
+# APACHE HTTPCLIENT 4
+# ============================================================
+
+apache_httpclient4:
+  symbol_prefixes:
+    - org.apache.http.
+  important_symbols:
+    - org.apache.http.client.HttpClient
+    - org.apache.http.impl.client.CloseableHttpClient
+    - org.apache.http.impl.client.HttpClients
+    - org.apache.http.client.methods.HttpGet
+    - org.apache.http.client.methods.HttpPost
+    - org.apache.http.client.methods.HttpPut
+    - org.apache.http.client.methods.HttpDelete
+    - org.apache.http.client.methods.CloseableHttpResponse
+
+
+# ============================================================
+# APACHE HTTPCLIENT 5
+# ============================================================
+
+apache_httpclient5:
+  symbol_prefixes:
+    - org.apache.hc.client5.
+    - org.apache.hc.core5.
+  important_symbols:
+    - org.apache.hc.client5.http.classic.HttpClient
+    - org.apache.hc.client5.http.impl.classic.CloseableHttpClient
+    - org.apache.hc.client5.http.impl.classic.HttpClients
+    - org.apache.hc.client5.http.classic.methods.HttpGet
+    - org.apache.hc.client5.http.classic.methods.HttpPost
+    - org.apache.hc.client5.http.classic.methods.HttpPut
+    - org.apache.hc.client5.http.classic.methods.HttpDelete
+
+
+# ============================================================
+# OKHTTP
+# ============================================================
+
+okhttp:
+  symbol_prefixes:
+    - okhttp3.
+  important_symbols:
+    - okhttp3.OkHttpClient
+    - okhttp3.Request
+    - okhttp3.RequestBody
+    - okhttp3.Response
+    - okhttp3.ResponseBody
+    - okhttp3.Call
+    - okhttp3.Interceptor
+
+
+# ============================================================
+# RETROFIT
+# ============================================================
+
+retrofit:
+  symbol_prefixes:
+    - retrofit2.
+  important_symbols:
+    - retrofit2.Retrofit
+    - retrofit2.Call
+    - retrofit2.Response
+    - retrofit2.http.GET
+    - retrofit2.http.POST
+    - retrofit2.http.PUT
+    - retrofit2.http.PATCH
+    - retrofit2.http.DELETE
+    - retrofit2.http.Body
+    - retrofit2.http.Path
+    - retrofit2.http.Query
+    - retrofit2.http.Header
+
+
+# ============================================================
+# SPRING GRAPHQL
+# ============================================================
+
+spring_graphql:
+  symbols:
+    - org.springframework.graphql.data.method.annotation.QueryMapping
+    - org.springframework.graphql.data.method.annotation.MutationMapping
+    - org.springframework.graphql.data.method.annotation.SubscriptionMapping
+    - org.springframework.graphql.data.method.annotation.SchemaMapping
+    - org.springframework.graphql.data.method.annotation.BatchMapping
+    - org.springframework.graphql.data.method.annotation.Argument
+    - org.springframework.graphql.data.method.annotation.ContextValue
+    - org.springframework.graphql.data.method.annotation.LocalContextValue
+
+
+# ============================================================
+# GRAPHQL JAVA
+# ============================================================
+
+graphql_java:
+  symbol_prefixes:
+    - graphql.
+  important_symbols:
+    - graphql.GraphQL
+    - graphql.schema.DataFetcher
+    - graphql.schema.DataFetchingEnvironment
+    - graphql.schema.GraphQLSchema
+    - graphql.schema.idl.RuntimeWiring
+    - graphql.schema.idl.SchemaParser
+
+
+# ============================================================
+# JAX-WS / SOAP - JAKARTA
+# ============================================================
+
+jakarta_jaxws:
+  symbol_prefixes:
+    - jakarta.xml.ws.
+    - jakarta.jws.
+  important_symbols:
+    - jakarta.jws.WebService
+    - jakarta.jws.WebMethod
+    - jakarta.jws.WebParam
+    - jakarta.jws.WebResult
+    - jakarta.jws.Oneway
+    - jakarta.xml.ws.Service
+    - jakarta.xml.ws.Endpoint
+    - jakarta.xml.ws.BindingProvider
+    - jakarta.xml.ws.WebServiceClient
+
+
+# ============================================================
+# JAX-WS / SOAP - LEGACY JAVAX
+# ============================================================
+
+javax_jaxws:
+  symbol_prefixes:
+    - javax.xml.ws.
+    - javax.jws.
+  important_symbols:
+    - javax.jws.WebService
+    - javax.jws.WebMethod
+    - javax.jws.WebParam
+    - javax.jws.WebResult
+    - javax.xml.ws.Service
+    - javax.xml.ws.Endpoint
+    - javax.xml.ws.BindingProvider
+    - javax.xml.ws.WebServiceClient
+
+
+# ============================================================
+# SAAJ
+# ============================================================
+
+saaj:
+  symbol_prefixes:
+    - jakarta.xml.soap.
+    - javax.xml.soap.
+  important_symbols:
+    - jakarta.xml.soap.SOAPMessage
+    - jakarta.xml.soap.MessageFactory
+    - jakarta.xml.soap.SOAPEnvelope
+    - jakarta.xml.soap.SOAPBody
+    - javax.xml.soap.SOAPMessage
+    - javax.xml.soap.MessageFactory
+
+
+# ============================================================
+# JAXB / XML BINDING
+# ============================================================
+
+jaxb:
+  symbol_prefixes:
+    - jakarta.xml.bind.
+    - javax.xml.bind.
+  important_symbols:
+    - jakarta.xml.bind.JAXBContext
+    - jakarta.xml.bind.Marshaller
+    - jakarta.xml.bind.Unmarshaller
+    - jakarta.xml.bind.annotation.XmlRootElement
+    - jakarta.xml.bind.annotation.XmlElement
+    - jakarta.xml.bind.annotation.XmlType
+    - jakarta.xml.bind.annotation.XmlAttribute
+    - javax.xml.bind.JAXBContext
+    - javax.xml.bind.annotation.XmlRootElement
+    - javax.xml.bind.annotation.XmlElement
+
+
+# ============================================================
+# PROTOBUF
+# ============================================================
+
+protobuf:
+  symbol_prefixes:
+    - com.google.protobuf.
+  important_symbols:
+    - com.google.protobuf.Message
+    - com.google.protobuf.MessageLite
+    - com.google.protobuf.GeneratedMessage
+    - com.google.protobuf.GeneratedMessageV3
+    - com.google.protobuf.Parser
+    - com.google.protobuf.ByteString
+    - com.google.protobuf.Descriptors
+
+
+# ============================================================
+# APACHE AVRO
+# ============================================================
+
+avro:
+  symbol_prefixes:
+    - org.apache.avro.
+  important_symbols:
+    - org.apache.avro.Schema
+    - org.apache.avro.generic.GenericRecord
+    - org.apache.avro.specific.SpecificRecord
+    - org.apache.avro.specific.SpecificRecordBase
+    - org.apache.avro.io.DatumReader
+    - org.apache.avro.io.DatumWriter
+    - org.apache.avro.file.DataFileReader
+    - org.apache.avro.file.DataFileWriter
+
+
+# ============================================================
+# SPRING AMQP / RABBITMQ
+# ============================================================
+
+spring_amqp:
+  symbols:
+    - org.springframework.amqp.rabbit.core.RabbitTemplate
+    - org.springframework.amqp.rabbit.annotation.RabbitListener
+    - org.springframework.amqp.rabbit.annotation.RabbitHandler
+    - org.springframework.amqp.core.Message
+    - org.springframework.amqp.core.MessageProperties
+    - org.springframework.amqp.core.Queue
+    - org.springframework.amqp.core.Exchange
+    - org.springframework.amqp.core.Binding
+
+
+# ============================================================
+# RABBITMQ JAVA CLIENT
+# ============================================================
+
+rabbitmq:
+  symbol_prefixes:
+    - com.rabbitmq.client.
+  important_symbols:
+    - com.rabbitmq.client.ConnectionFactory
+    - com.rabbitmq.client.Connection
+    - com.rabbitmq.client.Channel
+    - com.rabbitmq.client.Consumer
+    - com.rabbitmq.client.DeliverCallback
+    - com.rabbitmq.client.GetResponse
+    - com.rabbitmq.client.AMQP
+
+
+# ============================================================
+# APACHE PULSAR
+# ============================================================
+
+pulsar:
+  symbol_prefixes:
+    - org.apache.pulsar.client.api.
+  important_symbols:
+    - org.apache.pulsar.client.api.PulsarClient
+    - org.apache.pulsar.client.api.Producer
+    - org.apache.pulsar.client.api.Consumer
+    - org.apache.pulsar.client.api.Reader
+    - org.apache.pulsar.client.api.Message
+    - org.apache.pulsar.client.api.Schema
+    - org.apache.pulsar.client.api.MessageListener
+
+
+# ============================================================
+# JAKARTA VALIDATION
+# ============================================================
+
+jakarta_validation:
+  symbol_prefixes:
+    - jakarta.validation.
+  important_symbols:
+    - jakarta.validation.Valid
+    - jakarta.validation.Validator
+    - jakarta.validation.Constraint
+    - jakarta.validation.constraints.NotNull
+    - jakarta.validation.constraints.NotBlank
+    - jakarta.validation.constraints.NotEmpty
+    - jakarta.validation.constraints.Size
+    - jakarta.validation.constraints.Min
+    - jakarta.validation.constraints.Max
+    - jakarta.validation.constraints.DecimalMin
+    - jakarta.validation.constraints.DecimalMax
+    - jakarta.validation.constraints.Positive
+    - jakarta.validation.constraints.PositiveOrZero
+    - jakarta.validation.constraints.Negative
+    - jakarta.validation.constraints.NegativeOrZero
+    - jakarta.validation.constraints.Pattern
+    - jakarta.validation.constraints.Email
+    - jakarta.validation.constraints.Past
+    - jakarta.validation.constraints.Future
+
+javax_validation:
+  symbol_prefixes:
+    - javax.validation.
+
+
+# ============================================================
+# MICRONAUT HTTP
+# ============================================================
+
+micronaut_http:
+  symbol_prefixes:
+    - io.micronaut.http.
+  important_symbols:
+    - io.micronaut.http.annotation.Controller
+    - io.micronaut.http.annotation.Get
+    - io.micronaut.http.annotation.Post
+    - io.micronaut.http.annotation.Put
+    - io.micronaut.http.annotation.Patch
+    - io.micronaut.http.annotation.Delete
+    - io.micronaut.http.annotation.Body
+    - io.micronaut.http.annotation.PathVariable
+    - io.micronaut.http.annotation.QueryValue
+    - io.micronaut.http.HttpRequest
+    - io.micronaut.http.HttpResponse
+    - io.micronaut.http.client.HttpClient
+    - io.micronaut.http.client.annotation.Client
+
+
+# ============================================================
+# MICRONAUT DATA
+# ============================================================
+
+micronaut_data:
+  symbol_prefixes:
+    - io.micronaut.data.
+  important_symbols:
+    - io.micronaut.data.repository.CrudRepository
+    - io.micronaut.data.repository.PageableRepository
+    - io.micronaut.data.repository.jpa.JpaRepository
+    - io.micronaut.data.annotation.Repository
+    - io.micronaut.data.annotation.Query
+    - io.micronaut.data.annotation.MappedEntity
+    - io.micronaut.data.annotation.MappedProperty
+    - io.micronaut.data.annotation.Id
+
+
+# ============================================================
+# QUARKUS
+# ============================================================
+
+quarkus:
+  symbol_prefixes:
+    - io.quarkus.
+  important_symbols:
+    - io.quarkus.runtime.Quarkus
+    - io.quarkus.runtime.Startup
+    - io.quarkus.runtime.Shutdown
+    - io.quarkus.arc.DefaultBean
+
+
+# ============================================================
+# QUARKUS / REST CLIENT
+# ============================================================
+
+quarkus_rest_client:
+  symbols:
+    - org.eclipse.microprofile.rest.client.inject.RegisterRestClient
+    - org.eclipse.microprofile.rest.client.inject.RestClient
+    - org.eclipse.microprofile.rest.client.RestClientBuilder
+
+
+# ============================================================
+# QUARKUS PANACHE
+# ============================================================
+
+quarkus_panache:
+  symbols:
+    - io.quarkus.hibernate.orm.panache.PanacheEntity
+    - io.quarkus.hibernate.orm.panache.PanacheEntityBase
+    - io.quarkus.hibernate.orm.panache.PanacheRepository
+    - io.quarkus.hibernate.orm.panache.PanacheRepositoryBase
+    - io.quarkus.hibernate.reactive.panache.PanacheEntity
+    - io.quarkus.hibernate.reactive.panache.PanacheRepository
+
+
+# ============================================================
+# VERT.X
+# ============================================================
+
+vertx:
+  symbol_prefixes:
+    - io.vertx.
+  important_symbols:
+    - io.vertx.core.Vertx
+    - io.vertx.core.AbstractVerticle
+    - io.vertx.core.http.HttpServer
+    - io.vertx.core.http.HttpServerRequest
+    - io.vertx.core.http.HttpServerResponse
+    - io.vertx.core.http.HttpClient
+    - io.vertx.ext.web.Router
+    - io.vertx.ext.web.Route
+    - io.vertx.ext.web.RoutingContext
+    - io.vertx.ext.web.handler.BodyHandler
+    - io.vertx.sqlclient.SqlClient
+    - io.vertx.sqlclient.Pool
+    - io.vertx.sqlclient.Row
+    - io.vertx.sqlclient.RowSet
+
+
+# ============================================================
+# NETTY
+# ============================================================
+
+netty:
+  symbol_prefixes:
+    - io.netty.
+  important_symbols:
+    - io.netty.bootstrap.ServerBootstrap
+    - io.netty.bootstrap.Bootstrap
+    - io.netty.channel.Channel
+    - io.netty.channel.ChannelHandler
+    - io.netty.channel.ChannelInboundHandlerAdapter
+    - io.netty.channel.ChannelOutboundHandlerAdapter
+    - io.netty.channel.ChannelInitializer
+    - io.netty.channel.ChannelPipeline
+    - io.netty.handler.codec.http.HttpRequest
+    - io.netty.handler.codec.http.HttpResponse
+    - io.netty.handler.codec.http.FullHttpRequest
+    - io.netty.handler.codec.http.FullHttpResponse
+    - io.netty.handler.codec.http.HttpServerCodec
+
+
+# ============================================================
+# SPARK JAVA
+# ============================================================
+
+spark_java:
+  symbol_prefixes:
+    - spark.
+  important_symbols:
+    - spark.Spark
+    - spark.Route
+    - spark.Filter
+    - spark.Request
+    - spark.Response
+    - spark.Service
+
+
+# ============================================================
+# APACHE CASSANDRA JAVA DRIVER
+# ============================================================
+
+cassandra_driver:
+  symbol_prefixes:
+    - com.datastax.oss.driver.api.
+  important_symbols:
+    - com.datastax.oss.driver.api.core.CqlSession
+    - com.datastax.oss.driver.api.core.CqlIdentifier
+    - com.datastax.oss.driver.api.core.cql.SimpleStatement
+    - com.datastax.oss.driver.api.core.cql.PreparedStatement
+    - com.datastax.oss.driver.api.core.cql.BoundStatement
+    - com.datastax.oss.driver.api.core.cql.ResultSet
+    - com.datastax.oss.driver.api.core.cql.Row
+
+
+# ============================================================
+# SPRING DATA CASSANDRA
+# ============================================================
+
+spring_data_cassandra:
+  symbols:
+    - org.springframework.data.cassandra.core.mapping.Table
+    - org.springframework.data.cassandra.core.mapping.Column
+    - org.springframework.data.cassandra.core.mapping.PrimaryKey
+    - org.springframework.data.cassandra.core.mapping.PrimaryKeyColumn
+    - org.springframework.data.cassandra.core.CassandraTemplate
+    - org.springframework.data.cassandra.repository.CassandraRepository
+    - org.springframework.data.cassandra.repository.ReactiveCassandraRepository
+    - org.springframework.data.cassandra.repository.Query
+
+
+# ============================================================
+# ELASTICSEARCH JAVA CLIENT
+# ============================================================
+
+elasticsearch:
+  symbol_prefixes:
+    - co.elastic.clients.elasticsearch.
+  important_symbols:
+    - co.elastic.clients.elasticsearch.ElasticsearchClient
+    - co.elastic.clients.elasticsearch.ElasticsearchAsyncClient
+    - co.elastic.clients.elasticsearch.core.SearchRequest
+    - co.elastic.clients.elasticsearch.core.SearchResponse
+    - co.elastic.clients.elasticsearch.core.IndexRequest
+    - co.elastic.clients.elasticsearch.core.GetRequest
+    - co.elastic.clients.elasticsearch.core.UpdateRequest
+    - co.elastic.clients.elasticsearch.core.DeleteRequest
+
+
+# ============================================================
+# LEGACY ELASTICSEARCH REST HIGH LEVEL CLIENT
+# ============================================================
+
+elasticsearch_legacy:
+  symbol_prefixes:
+    - org.elasticsearch.
+  important_symbols:
+    - org.elasticsearch.client.RestHighLevelClient
+    - org.elasticsearch.action.search.SearchRequest
+    - org.elasticsearch.action.search.SearchResponse
+    - org.elasticsearch.action.index.IndexRequest
+    - org.elasticsearch.action.get.GetRequest
+    - org.elasticsearch.action.update.UpdateRequest
+    - org.elasticsearch.action.delete.DeleteRequest
+
+
+# ============================================================
+# SPRING DATA ELASTICSEARCH
+# ============================================================
+
+spring_data_elasticsearch:
+  symbols:
+    - org.springframework.data.elasticsearch.annotations.Document
+    - org.springframework.data.elasticsearch.annotations.Field
+    - org.springframework.data.elasticsearch.core.ElasticsearchOperations
+    - org.springframework.data.elasticsearch.repository.ElasticsearchRepository
+    - org.springframework.data.elasticsearch.repository.ReactiveElasticsearchRepository
+
+
+# ============================================================
+# OPENSEARCH JAVA CLIENT
+# ============================================================
+
+opensearch:
+  symbol_prefixes:
+    - org.opensearch.client.
+  important_symbols:
+    - org.opensearch.client.opensearch.OpenSearchClient
+    - org.opensearch.client.opensearch.OpenSearchAsyncClient
+    - org.opensearch.client.opensearch.core.SearchRequest
+    - org.opensearch.client.opensearch.core.SearchResponse
+    - org.opensearch.client.opensearch.core.IndexRequest
+    - org.opensearch.client.opensearch.core.GetRequest
+    - org.opensearch.client.opensearch.core.UpdateRequest
+    - org.opensearch.client.opensearch.core.DeleteRequest
