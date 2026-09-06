@@ -280,6 +280,52 @@ class ClaudeAgentClient:
             "env": self.agent_env(),
         }
 
+    def model_migration_agent_options_kwargs(
+        self,
+        rewrite_workspace: Path,
+        skills: list[str],
+    ) -> dict[str, Any]:
+        return {
+            "model": self.config.anthropic_model,
+            "cwd": rewrite_workspace,
+            "tools": [
+                "Task",
+                "Bash",
+                "Read",
+                "Write",
+                "Edit",
+                "MultiEdit",
+                "Glob",
+                "Grep",
+                "LS",
+                "WebSearch",
+                "WebFetch",
+            ],
+            "allowed_tools": [
+                "Task",
+                "Bash",
+                "Read",
+                "Write",
+                "Edit",
+                "MultiEdit",
+                "Glob",
+                "Grep",
+                "LS",
+                "WebSearch",
+                "WebFetch",
+            ],
+            "permission_mode": "dontAsk",
+            "max_turns": 80,
+            "skills": skills,
+            "system_prompt": {
+                "type": "preset",
+                "preset": "claude_code",
+                "append": self.model_migration_system_prompt(),
+                "exclude_dynamic_sections": True,
+            },
+            "env": self.agent_env(),
+        }
+
     def agent_env(self) -> dict[str, str]:
         env = dict(os.environ)
         env["ANTHROPIC_API_KEY"] = self.config.anthropic_api_key
@@ -451,6 +497,31 @@ Stderr:
             "requirements, and the rule against editing production source or "
             "user-authored tests. Drop raw logs, tool traces, and stale "
             "scenario exploration details."
+        )
+
+    def compact_model_migration_context(
+        self,
+        rewrite_workspace: Path,
+        task_id: str,
+        result_json: str,
+    ) -> None:
+        prompt = self.build_model_migration_compaction_prompt(task_id, result_json)
+        self.event_loop().run_until_complete(
+            self.compact_agent_context_async(rewrite_workspace, prompt)
+        )
+
+    def build_model_migration_compaction_prompt(
+        self,
+        task_id: str,
+        result_json: str,
+    ) -> str:
+        return (
+            "/compact Keep only facts needed to continue the per-model source "
+            f"migration loop: completed model task {task_id}, agent result JSON "
+            f"{result_json}, changed files, verification results, blockers, "
+            "selected Java skills, rewrite workspace constraints, and any "
+            "reusable migration decisions. Drop raw logs, tool traces, and stale "
+            "model exploration details."
         )
 
     def run_characterization_scenario(
@@ -656,6 +727,122 @@ Rules:
 - Do not invent application dependencies absent from the reports or dependency selection doc.
 - Do not run build or test commands.
 - Use only stable versions. No milestone, RC, snapshot, or development releases.
+"""
+
+    def run_model_migration(
+        self,
+        rewrite_workspace: Path,
+        legacy_repo_path: Path,
+        build_report_path: Path,
+        compatibility_report_path: Path,
+        model_classification_report_path: Path,
+        dependency_selection_report_path: Path,
+        build_structure_report_path: Path,
+        extraction_db_path: Path,
+        business_kg_db_path: Path,
+        characterization_db_path: Path | None,
+        target_version: str,
+        task_context: dict[str, Any],
+        skills: list[str],
+    ) -> AgentAttempt:
+        prompt = self.build_model_migration_prompt(
+            legacy_repo_path,
+            build_report_path,
+            compatibility_report_path,
+            model_classification_report_path,
+            dependency_selection_report_path,
+            build_structure_report_path,
+            extraction_db_path,
+            business_kg_db_path,
+            characterization_db_path,
+            target_version,
+            task_context,
+        )
+        agent_result = self.run_agent_with_options(
+            self.model_migration_agent_options_kwargs(rewrite_workspace, skills),
+            prompt,
+        )
+        result = AgentAttempt(
+            stage_name="model-migration",
+            attempt=1,
+            status="completed",
+            message=agent_result,
+        )
+        self.record(result)
+        return result
+
+    def model_migration_system_prompt(self) -> str:
+        return """You are a per-model source migration main agent for the Gluon Java modernization harness.
+
+Goal: migrate exactly one selected Java model into the rewrite workspace, then return JSON to harness.
+
+Rules:
+- Use Task subagents only when they reduce bounded context or verification risk.
+- Treat the legacy repository as read-only.
+- Write only inside the rewrite workspace.
+- Build files in the rewrite workspace are authoritative.
+- Do not add dependencies that are absent from the selected dependency report or rewrite build files.
+- Prefer Spring Boot-managed dependencies when the rewrite build already uses Spring Boot.
+- Preserve package names, public APIs, serialization, persistence, validation, equality, constructors, Lombok-generated behavior, and framework binding.
+- Keep Lombok when safe replacement is not proven.
+- Do not select the next model.
+- Do not commit.
+- Do not run Gluon pipeline commands.
+- Return control to harness immediately after the selected model work is complete.
+""" + self.top_level_agent_json_contract()
+
+    def build_model_migration_prompt(
+        self,
+        legacy_repo_path: Path,
+        build_report_path: Path,
+        compatibility_report_path: Path,
+        model_classification_report_path: Path,
+        dependency_selection_report_path: Path,
+        build_structure_report_path: Path,
+        extraction_db_path: Path,
+        business_kg_db_path: Path,
+        characterization_db_path: Path | None,
+        target_version: str,
+        task_context: dict[str, Any],
+    ) -> str:
+        characterization_db = (
+            str(characterization_db_path) if characterization_db_path else "not present"
+        )
+        return f"""Migrate one Java model into the rewrite workspace.
+
+Inputs:
+- Legacy repository: {legacy_repo_path}
+- Build report: {build_report_path}
+- Compatibility report: {compatibility_report_path}
+- Model classification report: {model_classification_report_path}
+- Dependency selection report: {dependency_selection_report_path}
+- Build structure report: {build_structure_report_path}
+- Extraction DB: {extraction_db_path}
+- Business KG DB: {business_kg_db_path}
+- Characterization DB: {characterization_db}
+- Target Java version: {target_version}
+
+Selected model context:
+```json
+{json.dumps(task_context, indent=2, sort_keys=True)}
+```
+
+Instructions:
+1. Read the selected source file and bounded call sites needed to preserve model API compatibility.
+2. Read rewrite build files and migration docs before choosing imports, annotations, or Lombok handling.
+3. Migrate only the selected model and compile-required immediate dependencies.
+4. Use dependency-specific skills already enabled for this task.
+5. Run focused compile or tests for the affected module when possible.
+6. Stop after this one model and return one JSON object to harness.
+
+Rules:
+- Legacy repository is read-only reference.
+- Write only inside the rewrite workspace.
+- Expected migrated file is `selected_model_context.expected_rewrite_file`.
+- Do not add unselected dependencies.
+- Do not replace Jakarta APIs with Spring Boot APIs unless the selected rewrite build already uses Spring Boot for that role.
+- Keep observable behavior over optional Java syntax modernization.
+- Final response must be JSON only. Harness parses it before commit and next-model selection.
 """
 
     def record(self, attempt: AgentAttempt) -> None:

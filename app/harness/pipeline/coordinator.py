@@ -14,6 +14,7 @@ from pipeline.characterization import run_characterization_agent_loop
 from pipeline.dependency_selection import run_dependency_selection_agent
 from pipeline.migration_commit import commit_rewrite_workspace
 from pipeline.migration_rewrite import run_migration_rewrite_setup
+from pipeline.model_migration import run_model_migration_agent_loop
 from pipeline.retry import run_stage_with_repair
 from pipeline.stages import build_stages
 from pipeline.summary import write_summary
@@ -98,6 +99,16 @@ class PipelineCoordinator:
                             "Add Java migration build structure",
                         )
                         completed.append("build-structure-commit")
+                        failed_stage_name = "model-migration"
+                        model_tasks = run_model_migration_agent_loop(
+                            self.paths,
+                            agent,
+                            runner,
+                            self.config.target_version,
+                        )
+                        completed.extend(
+                            f"model-migration:{task_id}" for task_id in model_tasks
+                        )
             except StageFailedError as error:
                 summary = RunSummary(
                     status="failed",

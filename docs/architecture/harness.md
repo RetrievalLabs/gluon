@@ -36,6 +36,10 @@ Missing or invalid required config is fatal.
 12. Create migration rewrite workspace with deterministic Python setup.
 13. Run dependency selection agent and commit its report.
 14. Run build structure agent and commit its report.
+15. Run per-model source migration loop. Harness selects one model-like row from
+    `model-classification-report.json`, gives it to the main agent, receives one
+    JSON completion object, commits the migrated rewrite workspace changes, and
+    compacts context before selecting the next model.
 
 ## Error Handling
 
@@ -142,5 +146,16 @@ pipeline commands and resumes failed stages after repair.
    workspace.
 9. After build-structure agent returns, harness commits rewrite workspace
    changes with message `Add Java migration build structure`.
-10. Perform workspace setup deterministically in Python. Do not invoke agents for
-   workspace creation, git setup, tree capture, or scaffold creation.
+10. Run the per-model source migration loop. Harness flattens the nested
+    `model-classification-report.json`, selects one pending row from models,
+    DTOs, request bodies, response bodies, entities, and repositories, and gives
+    bounded context to the main source migration agent.
+11. The source migration agent writes only inside the rewrite workspace, migrates
+    the selected model and compile-required immediate dependencies, then returns
+    one compact JSON object to harness. The agent must not commit or select the
+    next model.
+12. Harness validates the JSON, checks the expected same-path source exists in
+    the rewrite workspace, commits with message `Migrate model <name>`, compacts
+    agent context, and then selects the next pending model.
+13. Perform workspace setup deterministically in Python. Do not invoke agents for
+    workspace creation, git setup, tree capture, or scaffold creation.

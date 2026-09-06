@@ -47,6 +47,9 @@ class CoordinatorTests(unittest.TestCase):
             ), mock.patch(
                 "pipeline.coordinator.run_build_structure_agent",
             ), mock.patch(
+                "pipeline.coordinator.run_model_migration_agent_loop",
+                return_value=["service:entities:demo.Order:src/main/java/demo/Order.java:3"],
+            ), mock.patch(
                 "pipeline.coordinator.commit_rewrite_workspace",
             ) as commit_rewrite, mock.patch(
                 "execution.commands.CommandRunner.run",
@@ -70,6 +73,7 @@ class CoordinatorTests(unittest.TestCase):
                 "dependency-selection-commit",
                 "build-structure",
                 "build-structure-commit",
+                "model-migration:service:entities:demo.Order:src/main/java/demo/Order.java:3",
             ],
         )
         self.assertEqual(
@@ -115,6 +119,8 @@ class CoordinatorTests(unittest.TestCase):
                 "pipeline.coordinator.run_dependency_selection_agent",
             ), mock.patch(
                 "pipeline.coordinator.run_build_structure_agent",
+            ), mock.patch(
+                "pipeline.coordinator.run_model_migration_agent_loop",
             ), mock.patch(
                 "pipeline.coordinator.commit_rewrite_workspace",
                 side_effect=StageFailedError("commit failed"),
@@ -165,6 +171,8 @@ class CoordinatorTests(unittest.TestCase):
             ), mock.patch(
                 "pipeline.coordinator.run_build_structure_agent",
             ), mock.patch(
+                "pipeline.coordinator.run_model_migration_agent_loop",
+            ), mock.patch(
                 "pipeline.coordinator.commit_rewrite_workspace",
             ), mock.patch(
                 "execution.commands.CommandRunner.run",
@@ -213,6 +221,8 @@ class CoordinatorTests(unittest.TestCase):
                 "pipeline.coordinator.run_build_structure_agent",
                 side_effect=StageFailedError("missing build structure"),
             ), mock.patch(
+                "pipeline.coordinator.run_model_migration_agent_loop",
+            ), mock.patch(
                 "pipeline.coordinator.commit_rewrite_workspace",
             ), mock.patch(
                 "execution.commands.CommandRunner.run",
@@ -260,6 +270,8 @@ class CoordinatorTests(unittest.TestCase):
             ), mock.patch(
                 "pipeline.coordinator.run_build_structure_agent",
             ), mock.patch(
+                "pipeline.coordinator.run_model_migration_agent_loop",
+            ), mock.patch(
                 "pipeline.coordinator.commit_rewrite_workspace",
                 side_effect=[None, StageFailedError("commit failed")],
             ), mock.patch(
@@ -272,6 +284,56 @@ class CoordinatorTests(unittest.TestCase):
             summary = paths.summary.read_text(encoding="utf-8")
 
         self.assertIn('"failed_stage": "build-structure-commit"', summary)
+
+    def test_reports_model_migration_failure_stage(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+        env = {"MOCK_REPO_URL": "https://repo.test/project", "MOCK_SOURCE_BRANCH": "main"}
+
+        with tempfile.TemporaryDirectory() as directory:
+            paths = HarnessPaths.from_org_project("org/project", Path(directory))
+
+            with mock.patch(
+                "pipeline.coordinator.HarnessPaths.from_org_project",
+                return_value=paths,
+            ), mock.patch(
+                "pipeline.coordinator.BackendClient.fetch_repo",
+                return_value=RepoInfo("repo", "main"),
+            ), mock.patch(
+                "pipeline.coordinator.ClaudeAgentClient.validate",
+            ), mock.patch(
+                "pipeline.coordinator.ClaudeAgentClient.close",
+            ), mock.patch(
+                "pipeline.coordinator.GitWorkspace.prepare",
+            ), mock.patch(
+                "pipeline.coordinator.run_migration_rewrite_setup",
+            ), mock.patch(
+                "pipeline.coordinator.run_dependency_selection_agent",
+            ), mock.patch(
+                "pipeline.coordinator.run_build_structure_agent",
+            ), mock.patch(
+                "pipeline.coordinator.run_model_migration_agent_loop",
+                side_effect=StageFailedError("model blocked"),
+            ), mock.patch(
+                "pipeline.coordinator.commit_rewrite_workspace",
+            ), mock.patch(
+                "execution.commands.CommandRunner.run",
+                return_value=CommandResult(["cmd"], None, 0, "{}", "", 1),
+            ):
+                with self.assertRaises(StageFailedError):
+                    PipelineCoordinator(config, env).run()
+
+            summary = paths.summary.read_text(encoding="utf-8")
+
+        self.assertIn('"failed_stage": "model-migration"', summary)
 
 if __name__ == "__main__":
     unittest.main()

@@ -452,6 +452,7 @@ Harness Skills
 │   ├── database-orm-best-practices
 │   ├── jakarta-ee-best-practices
 │   ├── junit-mockito-testing-best-practices
+│   ├── lombook-mordernization
 │   ├── spring-boot-best-practices
 │   ├── spring-mvc-best-practices
 │   └── spring-security-best-practices
@@ -624,7 +625,48 @@ Skill:
 
 ## 5.8 Source Migration — WIP
 
-The objective is to preserve legacy behavior, not only to make the project compile on Java 25.
+Source migration runs after dependency selection and build structure generation.
+The objective is to preserve legacy behavior, not only to make the project
+compile on Java 25.
+
+```text
+model-classification-report.json
+          │
+          ▼
+Harness selects one model-like row
+          │
+          ▼
+Main Agent migrates selected model
+          │
+          ▼
+JSON completion handoff
+          │
+          ▼
+Harness validates, commits, compacts
+          │
+          ▼
+Next model
+```
+
+The loop processes models, DTOs, request bodies, response bodies, entities, and
+repositories from the nested classification report. Each selected row gets
+bounded context: report row, module dependencies, migration docs, database
+paths, legacy source path, and same-path rewrite destination.
+
+The main agent returns one compact JSON object after one model migration. It
+does not commit, select the next model, or continue after the handoff. Harness
+owns commit, compaction, and next-model selection.
+
+Base skills:
+
+```text
+version-rewrite-modernization
+java-best-practices
+lombook-mordernization
+```
+
+Harness adds dependency-specific skills when selected module evidence requires
+Spring Boot, Spring MVC, Spring Security, ORM/JPA, Jakarta EE, or test work.
 
 ---
 
@@ -643,4 +685,4 @@ The objective is to preserve legacy behavior, not only to make the project compi
 | Characterization Agent Loop | ✅ |
 | Dependency Selection | ✅ |
 | Build Structure | ✅ |
-| Source Migration | 🚧 WIP |
+| Source Migration | ✅ Per-model loop |

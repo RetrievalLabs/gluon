@@ -1,6 +1,7 @@
 # Source Code Migration
 
-Status: deferred. Current harness pipeline does not execute this stage.
+Status: active as a per-model harness loop after dependency selection and build
+structure generation.
 
 ## Overview
 
@@ -56,21 +57,25 @@ reachable from migrated code or required by compiler/test feedback.
 
 ## Multi-Agent Workflow
 
-If restored, harness would invoke one source migration main agent. The main agent would coordinate
-bounded specialist agents through the Task tool:
+Harness invokes one source migration main agent per selected model-like row. The
+main agent may coordinate bounded specialist agents through the Task tool:
 
 ```text
-1. Main Agent receives DB paths, legacy repo, rewrite workspace, and target Java.
-2. Context Agent reads business-kg.db, extraction.db, characterization-tests.db,
+1. Harness selects one pending model from model-classification-report.json.
+2. Main Agent receives DB paths, legacy repo, rewrite workspace, target Java,
+   dependency reports, build reports, selected model row, and expected
+   same-path rewrite destination.
+3. Context Agent reads business-kg.db, extraction.db, characterization-tests.db,
    repository docs, relevant configuration, bounded source context, and
    official web documentation when needed, then returns a JSON context packet.
-3. Implementation Agent uses the context packet and Java skills to migrate
+4. Implementation Agent uses the context packet and Java skills to migrate
    source code and write integration tests in the rewrite workspace.
-4. Verification Agent compiles, runs focused tests, verifies business behavior
+5. Verification Agent compiles, runs focused tests, verifies business behavior
    through characterization-tests.db, and writes or repairs characterization
    tests needed for migrated business logic.
-5. Main Agent writes docs/migration/source-migration.md and returns control to
-   harness.
+6. Main Agent returns one compact JSON completion object to harness and stops.
+7. Harness validates the JSON, commits the rewrite workspace, compacts context,
+   and selects the next pending model.
 ```
 
 The Context Agent does not edit files. The Implementation Agent writes only in
@@ -192,6 +197,8 @@ A future source migration agent must:
   when local evidence is not enough.
 - Use framework and domain skills only when touched code requires them, such as
   Spring Boot, Spring Security, Jakarta EE, persistence, or testing.
+- Return one JSON completion object after one model migration. Do not commit,
+  select the next model, or continue after JSON handoff.
 - Write integration tests for migrated entrypoints or business slices when
   existing tests do not cover the migrated path.
 - Use `characterization-tests.db` to write, repair, or run characterization

@@ -472,6 +472,104 @@ class ClaudeAgentTests(unittest.TestCase):
         self.assertIn("java-build-tool-best-practices", prompt)
         self.assertIn("Create module directories", prompt)
 
+    def test_model_migration_agent_options_include_skills_and_bash(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+
+        options = ClaudeAgentClient(config).model_migration_agent_options_kwargs(
+            Path("/rewrite"),
+            [
+                "version-rewrite-modernization",
+                "java-best-practices",
+                "java-lombok-modernization",
+                "spring-boot-best-practices",
+            ],
+        )
+
+        self.assertEqual(options["cwd"], Path("/rewrite"))
+        self.assertIn("Task", options["allowed_tools"])
+        self.assertIn("Bash", options["allowed_tools"])
+        self.assertIn("Write", options["allowed_tools"])
+        self.assertEqual(
+            options["skills"],
+            [
+                "version-rewrite-modernization",
+                "java-best-practices",
+                "java-lombok-modernization",
+                "spring-boot-best-practices",
+            ],
+        )
+        self.assertIn("Do not select the next model", options["system_prompt"]["append"])
+        self.assertIn("Do not commit", options["system_prompt"]["append"])
+        self.assert_json_completion_contract(options["system_prompt"]["append"])
+
+    def test_model_migration_prompt_requires_one_model_json_handoff(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+
+        prompt = ClaudeAgentClient(config).build_model_migration_prompt(
+            Path("/legacy"),
+            Path("/data/build-report.json"),
+            Path("/data/compatibility-report.json"),
+            Path("/data/model-classification-report.json"),
+            Path("/rewrite/docs/migration/dependency-selection.md"),
+            Path("/rewrite/docs/migration/build-structure.md"),
+            Path("/data/extraction.db"),
+            Path("/data/business-kg.db"),
+            None,
+            "25",
+            {
+                "task_id": "service:entities:demo.Order:src/main/java/demo/Order.java:3",
+                "expected_rewrite_file": "/rewrite/src/main/java/demo/Order.java",
+            },
+        )
+
+        self.assertIn("Migrate one Java model", prompt)
+        self.assertIn("Model classification report: /data/model-classification-report.json", prompt)
+        self.assertIn("Dependency selection report", prompt)
+        self.assertIn("Expected migrated file", prompt)
+        self.assertIn("Do not add unselected dependencies", prompt)
+        self.assertIn("Stop after this one model", prompt)
+        self.assertIn("Final response must be JSON only", prompt)
+
+    def test_model_migration_compaction_uses_model_prompt(self) -> None:
+        config = HarnessConfig(
+            backend_url="mock://local",
+            language="java",
+            current_version="9",
+            target_version="25",
+            org_project_name="org/project",
+            anthropic_api_key="key",
+            anthropic_model="model",
+            anthropic_base_url="base",
+        )
+
+        prompt = ClaudeAgentClient(config).build_model_migration_compaction_prompt(
+            "task:one",
+            VALID_AGENT_JSON,
+        )
+
+        self.assertTrue(prompt.startswith("/compact "))
+        self.assertIn("per-model source migration loop", prompt)
+        self.assertIn("completed model task task:one", prompt)
+        self.assertIn("agent result JSON", prompt)
+
     def assert_json_completion_contract(self, prompt: str) -> None:
         self.assertIn("Final response must be one compact JSON object only", prompt)
         self.assertIn(

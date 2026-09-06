@@ -41,6 +41,7 @@ These guidelines bias toward caution over speed. For trivial tasks, use judgment
 - Remove imports, variables, functions, and files made unused by your changes.
 - Mention unrelated dead code or issues, but do not change them unless asked.
 - Update `docs/` when architecture changes.
+- Update `README.md` when user-facing pipeline, status, setup, or workflow behavior changes.
 
 ### Goal-Driven Execution
 
