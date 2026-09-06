@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::core::error::PathError;
+pub mod classifier;
 pub mod extractor;
 pub mod jdtls;
 pub mod modules;
@@ -14,6 +15,7 @@ pub use crate::languages::business::kg::{
     BuildBusinessKgOptions, BuildBusinessKgSummary, BuildError, Priority, build_business_kg,
 };
 pub use crate::languages::business::model::ExtractionSummary;
+pub use classifier::{ClassifyModelsOptions, ClassifyModelsSummary, classify_models};
 pub use extractor::{BusinessExtractionError, JavaBusinessExtractor, extract_business};
 pub use test_extractor::{
     TestExtractionError, TestExtractionOptions, TestExtractionSummary, extract_tests,

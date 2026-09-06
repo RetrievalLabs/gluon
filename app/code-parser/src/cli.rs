@@ -12,8 +12,8 @@ use crate::languages::java::build::model::BuildReport;
 use crate::languages::java::build::{BuildParseError, parse_build};
 use crate::languages::java::business::jdtls::JdtlsOptions;
 use crate::languages::java::business::{
-    BusinessExtractionError, TestExtractionError, TestExtractionOptions, extract_business,
-    extract_tests,
+    BusinessExtractionError, ClassifyModelsOptions, TestExtractionError, TestExtractionOptions,
+    classify_models, extract_business, extract_tests,
 };
 use crate::languages::java::compatibility::analyzer::analyze_report_with_options;
 use crate::languages::java::compatibility::jdk_tools::{DEFAULT_JDK_ROOT, JdkToolOptions};
@@ -24,6 +24,7 @@ use serde_json::{Value, json};
 enum CliOptions {
     ParseBuild(ParseBuildOptions),
     AnalyzeReport(AnalyzeReportOptions),
+    ClassifyModels(ClassifyModelsCliOptions),
     ExtractBusiness(ExtractBusinessOptions),
     ExtractTests(ExtractTestsOptions),
     BuildBusinessKg(BuildBusinessKgCliOptions),
@@ -48,6 +49,16 @@ struct AnalyzeReportOptions {
     enable_jdk_tools: bool,
     jdk_root: PathBuf,
     classes_paths: Vec<PathBuf>,
+    jdtls_command: String,
+    jdtls_workspace: Option<PathBuf>,
+    jdtls_max_in_flight: usize,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ClassifyModelsCliOptions {
+    build_report: PathBuf,
+    output_dir: PathBuf,
+    source_path: Option<PathBuf>,
     jdtls_command: String,
     jdtls_workspace: Option<PathBuf>,
     jdtls_max_in_flight: usize,
@@ -169,6 +180,7 @@ where
             }
         },
         Ok(CliOptions::AnalyzeReport(options)) => run_analyze_report(options),
+        Ok(CliOptions::ClassifyModels(options)) => run_classify_models(options),
         Ok(CliOptions::ExtractBusiness(options)) => run_extract_business(options),
         Ok(CliOptions::ExtractTests(options)) => run_extract_tests(options),
         Ok(CliOptions::BuildBusinessKg(options)) => run_build_business_kg(options),
@@ -200,6 +212,7 @@ where
     match command.as_str() {
         "parse-build" => parse_parse_build_args(args).map(CliOptions::ParseBuild),
         "analyze-report" => parse_analyze_report_args(args).map(CliOptions::AnalyzeReport),
+        "classify-models" => parse_classify_models_args(args).map(CliOptions::ClassifyModels),
         "extract-business" => parse_extract_business_args(args).map(CliOptions::ExtractBusiness),
         "extract-tests" => parse_extract_tests_args(args).map(CliOptions::ExtractTests),
         "build-business-kg" => parse_build_business_kg_args(args).map(CliOptions::BuildBusinessKg),
@@ -337,6 +350,63 @@ fn parse_analyze_report_args(
         enable_jdk_tools,
         jdk_root,
         classes_paths,
+        jdtls_command,
+        jdtls_workspace,
+        jdtls_max_in_flight,
+    })
+}
+
+fn parse_classify_models_args(
+    mut args: impl Iterator<Item = String>,
+) -> Result<ClassifyModelsCliOptions, String> {
+    let mut build_report = None;
+    let mut output_dir = None;
+    let mut source_path = None;
+    let mut jdtls_command = "jdtls".to_string();
+    let mut jdtls_workspace = None;
+    let mut jdtls_max_in_flight = 32;
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--build-report" => {
+                let value = args.next().ok_or("--build-report requires a value")?;
+                build_report = Some(PathBuf::from(value));
+            }
+            "--output-dir" => {
+                let value = args.next().ok_or("--output-dir requires a value")?;
+                output_dir = Some(PathBuf::from(value));
+            }
+            "--source-path" => {
+                let value = args.next().ok_or("--source-path requires a value")?;
+                source_path = Some(PathBuf::from(value));
+            }
+            "--jdtls-command" => {
+                jdtls_command = args.next().ok_or("--jdtls-command requires a value")?;
+            }
+            "--jdtls-workspace" => {
+                let value = args.next().ok_or("--jdtls-workspace requires a value")?;
+                jdtls_workspace = Some(PathBuf::from(value));
+            }
+            "--jdtls-max-in-flight" => {
+                let value = args
+                    .next()
+                    .ok_or("--jdtls-max-in-flight requires a value")?;
+                jdtls_max_in_flight = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid --jdtls-max-in-flight: {value}"))?;
+                if jdtls_max_in_flight == 0 {
+                    return Err("--jdtls-max-in-flight must be greater than 0".to_string());
+                }
+            }
+            "--help" | "-h" => return Err("help requested".to_string()),
+            other => return Err(format!("unsupported argument: {other}")),
+        }
+    }
+
+    Ok(ClassifyModelsCliOptions {
+        build_report: build_report.ok_or("missing required --build-report")?,
+        output_dir: output_dir.ok_or("missing required --output-dir")?,
+        source_path,
         jdtls_command,
         jdtls_workspace,
         jdtls_max_in_flight,
@@ -876,6 +946,48 @@ fn run_extract_business(options: ExtractBusinessOptions) -> i32 {
     }
 }
 
+fn run_classify_models(options: ClassifyModelsCliOptions) -> i32 {
+    let classify_options = ClassifyModelsOptions {
+        build_report: options.build_report,
+        output_dir: options.output_dir,
+        source_path: options.source_path,
+        jdtls_command: options.jdtls_command,
+        jdtls_workspace: options.jdtls_workspace,
+        jdtls_max_in_flight: options.jdtls_max_in_flight,
+    };
+
+    match classify_models(&classify_options) {
+        Ok(summary) => {
+            println!("report: {}", summary.report_path);
+            println!("modules: {}", summary.module_count);
+            println!("models: {}", summary.model_count);
+            println!("dtos: {}", summary.dto_count);
+            println!("request_bodies: {}", summary.request_body_count);
+            println!("response_bodies: {}", summary.response_body_count);
+            println!("repositories: {}", summary.repository_count);
+            println!("entities: {}", summary.entity_count);
+            println!("tables: {}", summary.table_count);
+            println!("columns: {}", summary.column_count);
+            println!("diagnostics: {}", summary.diagnostic_count);
+            0
+        }
+        Err(error) => {
+            let error_text = error.to_string();
+            command_failed("classify-models", &error_text);
+            if error_text.contains("missing required")
+                || error_text.contains("failed to read")
+                || error_text.contains("failed to parse build report")
+                || error_text.contains("path does not exist")
+                || is_usage_or_jdtls_startup_error(&error_text)
+            {
+                2
+            } else {
+                1
+            }
+        }
+    }
+}
+
 fn extract_business_continue_command(options: &ExtractBusinessOptions) -> String {
     let mut parts = vec![
         "code-parser".to_string(),
@@ -1332,7 +1444,7 @@ fn hex_string(value: &[u8]) -> String {
 
 fn print_usage() {
     eprintln!(
-        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--build-report <build-report.json>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--continue]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]\n       code-parser generate-characterization-tests --business-database <business-extraction.db> --kg-database <business-kg.db> --source-path <legacy-project-root> --output-dir <gluon-output-dir> [--max-behaviors <count>] [--node-kind BusinessRule|Workflow|Invariant|StateTransition|SideEffect] [--continue] [--force]\n       code-parser db tables --database <database.db>\n       code-parser db schema --database <database.db> [--table <table>]\n       code-parser db rows --database <database.db> --table <table> [--limit <1-100>] [--offset <count>]\n       code-parser db insert --database <database.db> --table <table> --set <column=value> [--set <column=value> ...]\n       code-parser db update --database <database.db> --table <table> --id-column <column> --id <value> --set <column=value> [--set <column=value> ...]"
+        "usage: code-parser parse-build --path <project-root> [--resolve] [--format json] [--output-dir <directory>]\n       code-parser analyze-report --report <build-report.json> --target-java <version> [--format json] [--output-dir <directory>] [--source-path <project-root>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--enable-jdk-tools] [--jdk-root <directory>] [--classes-path <directory>]\n       code-parser classify-models --build-report <build-report.json> --output-dir <directory> [--source-path <project-root>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser extract-business --path <project-root> --output-dir <directory> [--database <path>] [--build-report <build-report.json>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>] [--continue]\n       code-parser extract-tests --path <project-root> --database <business-extraction.db> [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]\n       code-parser build-business-kg --database <business-extraction.db> --source-path <project-root> [--output <business-kg.db>] [--min-priority high|medium|low] [--max-methods <count>] [--max-failures <count>] [--continue] [--force]\n       code-parser generate-characterization-tests --business-database <business-extraction.db> --kg-database <business-kg.db> --source-path <legacy-project-root> --output-dir <gluon-output-dir> [--max-behaviors <count>] [--node-kind BusinessRule|Workflow|Invariant|StateTransition|SideEffect] [--continue] [--force]\n       code-parser db tables --database <database.db>\n       code-parser db schema --database <database.db> [--table <table>]\n       code-parser db rows --database <database.db> --table <table> [--limit <1-100>] [--offset <count>]\n       code-parser db insert --database <database.db> --table <table> --set <column=value> [--set <column=value> ...]\n       code-parser db update --database <database.db> --table <table> --id-column <column> --id <value> --set <column=value> [--set <column=value> ...]"
     );
 }
 
@@ -1681,6 +1793,39 @@ mod tests {
                 jdtls_command: "/bin/jdtls".to_string(),
                 jdtls_workspace: Some(PathBuf::from(".jdtls")),
                 jdtls_max_in_flight: 8,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_classify_models_arguments() {
+        let options = parse_args([
+            "code-parser",
+            "classify-models",
+            "--build-report",
+            "build-report.json",
+            "--output-dir",
+            "data",
+            "--source-path",
+            "project",
+            "--jdtls-command",
+            "/bin/jdtls",
+            "--jdtls-workspace",
+            "workspace",
+            "--jdtls-max-in-flight",
+            "12",
+        ])
+        .expect("valid arguments");
+
+        assert_eq!(
+            options,
+            CliOptions::ClassifyModels(ClassifyModelsCliOptions {
+                build_report: PathBuf::from("build-report.json"),
+                output_dir: PathBuf::from("data"),
+                source_path: Some(PathBuf::from("project")),
+                jdtls_command: "/bin/jdtls".to_string(),
+                jdtls_workspace: Some(PathBuf::from("workspace")),
+                jdtls_max_in_flight: 12,
             })
         );
     }

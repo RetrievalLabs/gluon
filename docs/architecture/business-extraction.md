@@ -466,7 +466,30 @@ confidence
 source      // tree_sitter, jdtls, heuristic
 ```
 
-SQLite is the stable interface for agents that need to query extraction results. A JSON export command can be added later if an external interchange format becomes necessary.
+SQLite is the stable interface for agents that need to query extraction results.
+
+### Model classification report
+
+`code-parser classify-models` generates a JSON sidecar for agents that need API
+and persistence model boundaries without querying SQLite:
+
+```bash
+code-parser classify-models --build-report <build-report.json> --output-dir <directory> [--source-path <project-root>] [--jdtls-command <command>] [--jdtls-workspace <directory>] [--jdtls-max-in-flight <count>]
+```
+
+The command uses `build-report.json` for module and dependency context, loads
+the bundled Java symbol registry from `data/java/symbol-registry.yaml`, scans
+production Java source with tree-sitter, and resolves candidate symbols with
+JDTLS. It writes:
+
+```text
+<directory>/<project-directory-name>/model-classification-report.json
+```
+
+The report is nested by module and contains only dependencies that were used as
+classification evidence. It separates models, DTOs, request bodies, response
+bodies, repositories, entities, tables, and columns. Rows include source paths
+and line ranges so downstream agents can map classifications back to source.
 
 ---
 

@@ -581,6 +581,94 @@ fn analyze_report_writes_report_to_output_dir() {
 }
 
 #[test]
+fn classify_models_writes_nested_report_with_used_dependencies() {
+    let root = test_dir("classify-models-project");
+    fs::create_dir_all(root.join("service/src/main/java/demo")).unwrap();
+    fs::write(
+        root.join("service/src/main/java/demo/OrderController.java"),
+        r#"
+        package demo;
+        import org.springframework.web.bind.annotation.*;
+        import org.springframework.http.ResponseEntity;
+        @RestController
+        class OrderController {
+          @PostMapping("/orders")
+          ResponseEntity<OrderResponse> create(@RequestBody CreateOrderRequest request) {
+            return null;
+          }
+        }
+        record CreateOrderRequest(String name) {}
+        record OrderResponse(String id) {}
+        "#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("service/src/main/java/demo/Order.java"),
+        r#"
+        package demo;
+        import jakarta.persistence.*;
+        @Entity
+        @Table(name = "orders")
+        class Order {
+          @Id Long id;
+          @Column(name = "status") String status;
+        }
+        "#,
+    )
+    .unwrap();
+    let report_path = root.join("build-report.json");
+    fs::write(
+        &report_path,
+        format!(
+            r#"{{
+              "project_root":"{}",
+              "parent":{{"name":"parent","path":".","build_tools":[],"java_versions":[],"direct_dependencies":[{{"group_id":"org.unused","artifact_id":"unused-lib","version":"1.0","configuration":null,"scope":null,"file":"pom.xml","source":"test"}}],"direct_plugins":[]}},
+              "modules":[{{"name":"service","path":"service","build_tools":[],"java_versions":[],"direct_dependencies":[{{"group_id":"org.springframework.boot","artifact_id":"spring-boot-starter-web","version":"3.3.0","configuration":null,"scope":null,"file":"service/pom.xml","source":"test"}},{{"group_id":"jakarta.persistence","artifact_id":"jakarta.persistence-api","version":"3.1.0","configuration":null,"scope":null,"file":"service/pom.xml","source":"test"}}],"direct_plugins":[]}}],
+              "diagnostics":[]
+            }}"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+    let output_root = test_dir("classify-models-output");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
+        .args(["classify-models", "--build-report"])
+        .arg(&report_path)
+        .args(["--output-dir"])
+        .arg(&output_root)
+        .args(["--jdtls-command"])
+        .arg(write_fake_jdtls(&root))
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let report_file = output_root
+        .join(root.file_name().unwrap())
+        .join("model-classification-report.json");
+    let value: Value = serde_json::from_str(&fs::read_to_string(&report_file).unwrap()).unwrap();
+    assert!(value["build_report_path"].is_null());
+    let service = &value["modules"][0]["children"][0];
+    assert_eq!(service["path"], "service");
+    assert_eq!(service["dtos"].as_array().unwrap().len(), 2);
+    assert_eq!(service["request_bodies"].as_array().unwrap().len(), 1);
+    assert_eq!(service["response_bodies"].as_array().unwrap().len(), 1);
+    assert_eq!(service["entities"].as_array().unwrap().len(), 1);
+    assert_eq!(service["tables"][0]["name"], "orders");
+    assert_eq!(service["columns"].as_array().unwrap().len(), 2);
+    let dependencies = service["used_dependencies"].as_array().unwrap();
+    assert_eq!(dependencies.len(), 2);
+    assert!(
+        !serde_json::to_string(dependencies)
+            .unwrap()
+            .contains("unused-lib")
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains(&report_file.display().to_string()));
+    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_dir_all(output_root);
+}
+
+#[test]
 fn analyze_report_rejects_missing_report() {
     let output = Command::new(env!("CARGO_BIN_EXE_code-parser"))
         .args([

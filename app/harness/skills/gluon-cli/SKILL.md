@@ -113,6 +113,36 @@ gluon-cli code-parser analyze-report --report /path/to/gluon/data/project/build-
 gluon-cli code-parser analyze-report --report /path/to/gluon/data/project/build-report.json --target-java 25 --source-path /path/to/project --enable-jdk-tools
 ```
 
+### `code-parser classify-models`
+
+Generates a JSON report classifying Java models, DTOs, request bodies, response
+bodies, repositories, entities, tables, and columns.
+
+Required input:
+
+- `--build-report <build-report.json>`: build report produced by `parse-build`; supplies project root, module boundaries, and dependency context.
+- `--output-dir <directory>`: writes `<directory>/<project-directory-name>/model-classification-report.json`.
+
+Flags:
+
+- `--source-path <project-root>`: override `project_root` from `build-report.json`.
+- `--jdtls-command <command>`: JDTLS executable. Defaults to `jdtls`.
+- `--jdtls-workspace <directory>`: JDTLS workspace directory. Defaults beside the generated report.
+- `--jdtls-max-in-flight <count>`: maximum concurrent JDTLS symbol requests. Defaults to `32`.
+
+Outputs:
+
+- Nested module JSON report with source paths for each classified model.
+- `used_dependencies` includes only dependencies used as evidence for classified DTOs, request/response bodies, repositories, entities, tables, or columns.
+- The command loads the bundled registry at `data/java/symbol-registry.yaml`; no registry path flag is required.
+- Stdout summary with report path and counts.
+
+Example:
+
+```bash
+gluon-cli code-parser classify-models --build-report /path/to/gluon/data/project/build-report.json --output-dir /path/to/gluon/data
+```
+
 ### `code-parser extract-business`
 
 Extracts Java business logic structure into a SQLite database.
